@@ -2,6 +2,7 @@
 .swiftpm/
 DerivedData/
 .DS_Store
+.worktrees/
 
 # transient browser-automation logs
 .playwright-cli/
