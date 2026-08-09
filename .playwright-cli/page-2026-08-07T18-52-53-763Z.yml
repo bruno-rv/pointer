@@ -1,0 +1,101 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - paragraph [ref=e5]: Pointer architecture prototype
+      - heading "Where should a mark live?" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Compare one canvas per physical display with one canvas spanning the virtual desktop. Push both models through resolution, arrangement, disconnect, reconnect, and Space changes.
+    - generic "Architecture" [ref=e8]:
+      - button "Per display" [ref=e9] [cursor=pointer]
+      - button "Virtual desktop" [ref=e10] [cursor=pointer]
+  - generic [ref=e11]: ↳ Projector panel recreated from the retained display canvas.
+  - generic [ref=e12]:
+    - generic [ref=e13]:
+      - heading "Current presentation state" [level=2] [ref=e14]
+      - generic [ref=e15]:
+        - generic [ref=e225]: Recommended model
+        - generic [ref=e226]: Slides Space
+        - generic [ref=e227]: 2 overlay panels
+        - generic [ref=e228]: Union 2792×982
+    - generic [ref=e20]:
+      - article [ref=e229]:
+        - generic [ref=e230]:
+          - generic [ref=e231]:
+            - generic [ref=e232]: Built-in Display
+            - generic [ref=e233]: display-built-in
+          - generic [ref=e234]: 0,0 · 1512×982
+        - generic [ref=e235]: Overlay panel
+        - generic [ref=e237]:
+          - generic [ref=e238]:
+            - generic [ref=e239]: Panel
+            - strong [ref=e240]: present
+          - generic [ref=e241]:
+            - generic [ref=e242]: Visible marks
+            - strong [ref=e243]: "0"
+          - generic [ref=e244]:
+            - generic [ref=e245]: Retained marks
+            - strong [ref=e246]: "0"
+      - article [ref=e247]:
+        - generic [ref=e248]:
+          - generic [ref=e249]:
+            - generic [ref=e250]: Projector
+            - generic [ref=e251]: display-projector
+          - generic [ref=e252]: 1512,0 · 1280×720
+        - generic [ref=e253]:
+          - generic [ref=e254]: Overlay panel
+          - generic "Mark" [ref=e255]
+        - generic [ref=e256]:
+          - generic [ref=e257]:
+            - generic [ref=e258]: Panel
+            - strong [ref=e259]: present
+          - generic [ref=e260]:
+            - generic [ref=e261]: Visible marks
+            - strong [ref=e262]: "1"
+          - generic [ref=e263]:
+            - generic [ref=e264]: Retained marks
+            - strong [ref=e265]: "1"
+    - group [ref=e57]:
+      - generic "Inspect the complete state" [ref=e58] [cursor=pointer]
+  - generic [ref=e59]:
+    - generic [ref=e60]:
+      - generic [ref=e61]:
+        - heading "Free play" [level=2] [ref=e62]
+        - generic [ref=e63]: Every action is reversible with Reset
+      - generic [ref=e64]:
+        - button "Add mark to Built-in" [ref=e65] [cursor=pointer]
+        - button "Add mark to Projector" [ref=e66] [cursor=pointer]
+        - button "Toggle Projector resolution" [ref=e67] [cursor=pointer]
+        - button "Move Projector left/right" [ref=e68] [cursor=pointer]
+        - button "Disconnect Projector" [ref=e69] [cursor=pointer]
+        - button "Reconnect Projector" [active] [ref=e70] [cursor=pointer]
+        - button "Switch macOS Space" [ref=e71] [cursor=pointer]
+        - button "Reset this architecture" [ref=e72] [cursor=pointer]
+    - generic [ref=e73]:
+      - heading "Guided walkthroughs" [level=2] [ref=e74]
+      - generic [ref=e75]:
+        - button "Resolution" [ref=e76] [cursor=pointer]
+        - button "Reconnect" [ref=e77] [cursor=pointer]
+        - button "Arrangement" [ref=e78] [cursor=pointer]
+        - button "Spaces" [ref=e79] [cursor=pointer]
+      - paragraph [ref=e80]: Put a mark on the projector, then change its resolution. Watch whether the mark stays attached to the same local place.
+      - generic [ref=e81]:
+        - button "1 Add a mark to Projector" [ref=e82] [cursor=pointer]
+        - button "2 Change Projector to 1280×720" [ref=e83] [cursor=pointer]
+        - button "3 Restore Projector to 1920×1080" [ref=e84] [cursor=pointer]
+  - generic [ref=e85]:
+    - heading "Decision lens" [level=2] [ref=e86]
+    - generic [ref=e87]:
+      - generic [ref=e88]: Concern
+      - generic [ref=e89]: Per-display overlays
+      - generic [ref=e90]: One virtual overlay
+      - generic [ref=e91]: Display ownership
+      - generic [ref=e92]: "Explicit: one panel and canvas per display ID"
+      - generic [ref=e93]: Implicit regions inside one changing global frame
+      - generic [ref=e94]: Resolution change
+      - generic [ref=e95]: Normalized local marks scale with their display
+      - generic [ref=e96]: Global normalized marks drift as the union frame changes
+      - generic [ref=e97]: Disconnect/reconnect
+      - generic [ref=e98]: Hide panel; retain and restore its canvas
+      - generic [ref=e99]: Union collapses and remaining marks remap immediately
+      - generic [ref=e100]: Full-screen Spaces
+      - generic [ref=e101]: Each panel joins Spaces on its own display
+      - generic [ref=e102]: One window crosses independent display/Space boundaries

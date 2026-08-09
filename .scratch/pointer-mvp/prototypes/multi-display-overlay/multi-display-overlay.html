@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Pointer — Multi-display architecture prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172032;
+      --muted: #657087;
+      --line: #d9dfeb;
+      --panel: #ffffff;
+      --surface: #f5f7fb;
+      --accent: #5b4ef4;
+      --accent-soft: #eceaff;
+      --good: #18794e;
+      --warn: #b54708;
+      --shadow: 0 18px 44px rgba(24, 31, 52, 0.11);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 900px;
+      background:
+        radial-gradient(circle at 8% -4%, rgba(91, 78, 244, 0.12), transparent 28rem),
+        var(--surface);
+      color: var(--ink);
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .shell {
+      width: min(1220px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 44px 0 64px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 28px;
+      align-items: end;
+      margin-bottom: 26px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .intro {
+      max-width: 780px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .architecture-switch {
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.82);
+      box-shadow: 0 8px 24px rgba(24, 31, 52, 0.07);
+    }
+
+    .architecture-switch button,
+    .action,
+    .step,
+    .tab {
+      border: 1px solid transparent;
+      border-radius: 9px;
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+
+    .architecture-switch button {
+      padding: 9px 12px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .architecture-switch button.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .change {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 46px;
+      margin-bottom: 18px;
+      padding: 11px 15px;
+      border: 1px solid #d9d5ff;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      color: #4037b7;
+      font-weight: 650;
+    }
+
+    .change::before {
+      content: "↳";
+      font-size: 20px;
+    }
+
+    .state {
+      padding: 22px;
+    }
+
+    .state-head,
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    h2, h3 { margin: 0; }
+    h2 { font-size: 20px; letter-spacing: -0.02em; }
+    h3 { font-size: 15px; }
+
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .badge {
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #eef1f7;
+      color: #4e5a70;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .badge.good { background: #e6f7ef; color: var(--good); }
+    .badge.warn { background: #fff1e8; color: var(--warn); }
+
+    .displays {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .display-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfcff;
+    }
+
+    .display-card.disconnected {
+      border-style: dashed;
+      opacity: 0.72;
+    }
+
+    .display-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .display-name { font-weight: 800; }
+    .display-id, .frame {
+      color: var(--muted);
+      font: 12px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+
+    .screen {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      margin: 14px;
+      overflow: hidden;
+      border: 2px solid #96a0b7;
+      border-radius: 8px;
+      background:
+        linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.7)),
+        repeating-linear-gradient(0deg, transparent 0 19px, #dde2ec 20px),
+        repeating-linear-gradient(90deg, transparent 0 19px, #dde2ec 20px);
+    }
+
+    .display-card.disconnected .screen {
+      filter: grayscale(1);
+    }
+
+    .screen-label {
+      position: absolute;
+      top: 9px;
+      left: 9px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: rgba(23, 32, 50, 0.82);
+      color: white;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .mark {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      translate: -50% -50%;
+      border: 4px solid #ff4d61;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 2px 8px rgba(23,32,50,0.2);
+    }
+
+    .mark.drifted { border-color: var(--warn); }
+
+    .canvas-state {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 0 14px 14px;
+    }
+
+    .metric {
+      padding: 9px;
+      border-radius: 8px;
+      background: #eef1f7;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .metric strong { font-size: 13px; }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .controls, .walkthroughs { padding: 20px; }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+      margin-top: 15px;
+    }
+
+    .action, .step {
+      padding: 10px 12px;
+      border-color: var(--line);
+      background: white;
+      color: var(--ink);
+      text-align: left;
+      font-weight: 650;
+    }
+
+    .action:hover, .step:hover {
+      border-color: #aaa3ff;
+      background: #f5f3ff;
+    }
+
+    .action.primary {
+      border-color: #cbc7ff;
+      background: var(--accent-soft);
+      color: #4037b7;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin: 15px 0;
+      padding-bottom: 10px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      flex: 0 0 auto;
+      padding: 7px 9px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .tab.active {
+      background: var(--accent-soft);
+      color: #4037b7;
+    }
+
+    .scenario-copy {
+      min-height: 48px;
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+
+    .steps { display: grid; gap: 8px; }
+    .step::before {
+      content: attr(data-number);
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      margin-right: 8px;
+      border-radius: 50%;
+      background: #eef1f7;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .decision {
+      margin-top: 18px;
+      padding: 20px;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 160px 1fr 1fr;
+      margin-top: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .comparison > div {
+      padding: 11px 12px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .comparison > div:nth-child(3n) { border-right: 0; }
+    .comparison > div:nth-last-child(-n + 3) { border-bottom: 0; }
+    .comparison .head { background: #eef1f7; font-weight: 800; }
+    .comparison .row { color: var(--muted); font-weight: 700; }
+    .recommended { color: var(--good); }
+
+    details {
+      margin-top: 16px;
+      color: var(--muted);
+    }
+
+    summary { cursor: pointer; font-weight: 700; }
+    pre {
+      max-height: 260px;
+      overflow: auto;
+      padding: 14px;
+      border-radius: 10px;
+      background: #111827;
+      color: #d8e0ef;
+      font: 12px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">Pointer architecture prototype</p>
+        <h1>Where should a mark live?</h1>
+        <p class="intro">
+          Compare one canvas per physical display with one canvas spanning the virtual desktop.
+          Push both models through resolution, arrangement, disconnect, reconnect, and Space changes.
+        </p>
+      </div>
+      <div class="architecture-switch" aria-label="Architecture">
+        <button id="perDisplay" class="active">Per display</button>
+        <button id="virtualDesktop">Virtual desktop</button>
+      </div>
+    </header>
+
+    <div id="change" class="change"></div>
+
+    <section class="panel state">
+      <div class="state-head">
+        <h2>Current presentation state</h2>
+        <div id="badges" class="badges"></div>
+      </div>
+      <div id="displays" class="displays"></div>
+      <details>
+        <summary>Inspect the complete state</summary>
+        <pre id="rawState"></pre>
+      </details>
+    </section>
+
+    <div class="workbench">
+      <section class="panel controls">
+        <div class="section-head">
+          <h2>Free play</h2>
+          <span class="badge">Every action is reversible with Reset</span>
+        </div>
+        <div class="actions">
+          <button class="action primary" data-action="add-built-in">Add mark to Built-in</button>
+          <button class="action primary" data-action="add-projector">Add mark to Projector</button>
+          <button class="action" data-action="resize-projector">Toggle Projector resolution</button>
+          <button class="action" data-action="move-projector">Move Projector left/right</button>
+          <button class="action" data-action="disconnect-projector">Disconnect Projector</button>
+          <button class="action" data-action="reconnect-projector">Reconnect Projector</button>
+          <button class="action" data-action="switch-space">Switch macOS Space</button>
+          <button class="action" data-action="reset">Reset this architecture</button>
+        </div>
+      </section>
+
+      <section class="panel walkthroughs">
+        <h2>Guided walkthroughs</h2>
+        <div id="tabs" class="tabs"></div>
+        <p id="scenarioCopy" class="scenario-copy"></p>
+        <div id="steps" class="steps"></div>
+      </section>
+    </div>
+
+    <section class="panel decision">
+      <h2>Decision lens</h2>
+      <div class="comparison">
+        <div class="head">Concern</div>
+        <div class="head">Per-display overlays</div>
+        <div class="head">One virtual overlay</div>
+
+        <div class="row">Display ownership</div>
+        <div class="recommended">Explicit: one panel and canvas per display ID</div>
+        <div>Implicit regions inside one changing global frame</div>
+
+        <div class="row">Resolution change</div>
+        <div class="recommended">Normalized local marks scale with their display</div>
+        <div>Global normalized marks drift as the union frame changes</div>
+
+        <div class="row">Disconnect/reconnect</div>
+        <div class="recommended">Hide panel; retain and restore its canvas</div>
+        <div>Union collapses and remaining marks remap immediately</div>
+
+        <div class="row">Full-screen Spaces</div>
+        <div class="recommended">Each panel joins Spaces on its own display</div>
+        <div>One window crosses independent display/Space boundaries</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const DisplayArchitectureModel = (() => {
+      const markPositions = [
+        { u: 0.68, v: 0.34 },
+        { u: 0.38, v: 0.67 },
+        { u: 0.78, v: 0.72 }
+      ];
+
+      const copy = value => JSON.parse(JSON.stringify(value));
+
+      function initialState(architecture = "perDisplay") {
+        return {
+          architecture,
+          activeSpace: "Slides",
+          nextMarkID: 1,
+          lastChange: architecture === "perDisplay"
+            ? "Per-display mode: each connected display owns one panel and one normalized canvas."
+            : "Virtual-desktop mode: every mark is normalized against the union of all connected displays.",
+          displays: [
+            {
+              id: "display-built-in",
+              name: "Built-in Display",
+              connected: true,
+              frame: { x: 0, y: 0, width: 1512, height: 982 },
+              marks: []
+            },
+            {
+              id: "display-projector",
+              name: "Projector",
+              connected: true,
+              frame: { x: 1512, y: 0, width: 1920, height: 1080 },
+              marks: []
+            }
+          ],
+          virtualMarks: []
+        };
+      }
+
+      function connectedDisplays(state) {
+        return state.displays.filter(display => display.connected);
+      }
+
+      function unionFrame(state) {
+        const displays = connectedDisplays(state);
+        const minX = Math.min(...displays.map(display => display.frame.x));
+        const minY = Math.min(...displays.map(display => display.frame.y));
+        const maxX = Math.max(...displays.map(display => display.frame.x + display.frame.width));
+        const maxY = Math.max(...displays.map(display => display.frame.y + display.frame.height));
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+
+      function addMark(state, displayID) {
+        const next = copy(state);
+        const display = next.displays.find(candidate => candidate.id === displayID);
+        if (!display?.connected) {
+          next.lastChange = "No mark added: that presentation display is disconnected.";
+          return next;
+        }
+
+        const existingCount = next.architecture === "perDisplay"
+          ? display.marks.length
+          : next.virtualMarks.filter(mark => mark.sourceDisplayID === displayID).length;
+        const local = markPositions[existingCount % markPositions.length];
+        const markID = next.nextMarkID;
+        next.nextMarkID += 1;
+
+        if (next.architecture === "perDisplay") {
+          display.marks.push({
+            id: `mark-${markID}`,
+            u: local.u,
+            v: local.v
+          });
+          next.lastChange = `Added a display-local mark to ${display.name} at (${local.u.toFixed(2)}, ${local.v.toFixed(2)}).`;
+        } else {
+          const desktop = unionFrame(next);
+          const pixelX = display.frame.x + local.u * display.frame.width;
+          const pixelY = display.frame.y + local.v * display.frame.height;
+          next.virtualMarks.push({
+            id: `mark-${markID}`,
+            sourceDisplayID: displayID,
+            u: (pixelX - desktop.x) / desktop.width,
+            v: (pixelY - desktop.y) / desktop.height
+          });
+          next.lastChange = `Added a virtual-desktop mark from ${display.name}; its coordinates now belong to the changing union frame.`;
+        }
+        return next;
+      }
+
+      function reduce(state, action) {
+        if (action.type === "choose-architecture") {
+          return initialState(action.architecture);
+        }
+        if (action.type === "reset") {
+          return initialState(state.architecture);
+        }
+        if (action.type === "add-built-in") {
+          return addMark(state, "display-built-in");
+        }
+        if (action.type === "add-projector") {
+          return addMark(state, "display-projector");
+        }
+
+        const next = copy(state);
+        const projector = next.displays.find(display => display.id === "display-projector");
+
+        switch (action.type) {
+          case "resize-projector": {
+            const isFullHD = projector.frame.width === 1920;
+            projector.frame.width = isFullHD ? 1280 : 1920;
+            projector.frame.height = isFullHD ? 720 : 1080;
+            next.lastChange = `Projector resolution changed to ${projector.frame.width}×${projector.frame.height}. Canvas data was not rewritten.`;
+            return next;
+          }
+          case "move-projector": {
+            projector.frame.x = projector.frame.x < 0 ? 1512 : -projector.frame.width;
+            next.lastChange = `Projector moved ${projector.frame.x < 0 ? "left of" : "right of"} the Built-in Display.`;
+            return next;
+          }
+          case "disconnect-projector": {
+            projector.connected = false;
+            next.lastChange = next.architecture === "perDisplay"
+              ? "Projector panel removed; its display canvas remains retained in memory."
+              : "Projector removed; the virtual-desktop union collapsed and global marks were reprojected.";
+            return next;
+          }
+          case "reconnect-projector": {
+            projector.connected = true;
+            next.lastChange = next.architecture === "perDisplay"
+              ? "Projector panel recreated from the retained display canvas."
+              : "Projector rejoined the union; global marks were reprojected again.";
+            return next;
+          }
+          case "switch-space": {
+            next.activeSpace = next.activeSpace === "Slides" ? "Demo Video" : "Slides";
+            next.lastChange = `Moved to the “${next.activeSpace}” Space. Connected overlay panels remain joined; canvas data is unchanged.`;
+            return next;
+          }
+          default:
+            return state;
+        }
+      }
+
+      function projectedMarks(state, display) {
+        if (!display.connected) return [];
+        if (state.architecture === "perDisplay") {
+          return display.marks.map(mark => ({ ...mark, drifted: false }));
+        }
+
+        const desktop = unionFrame(state);
+        return state.virtualMarks.flatMap(mark => {
+          const pixelX = desktop.x + mark.u * desktop.width;
+          const pixelY = desktop.y + mark.v * desktop.height;
+          const belongsHere =
+            pixelX >= display.frame.x &&
+            pixelX <= display.frame.x + display.frame.width &&
+            pixelY >= display.frame.y &&
+            pixelY <= display.frame.y + display.frame.height;
+          if (!belongsHere) return [];
+          return [{
+            id: mark.id,
+            u: (pixelX - display.frame.x) / display.frame.width,
+            v: (pixelY - display.frame.y) / display.frame.height,
+            drifted: mark.sourceDisplayID !== display.id
+          }];
+        });
+      }
+
+      function retainedMarkCount(state, display) {
+        if (state.architecture === "perDisplay") return display.marks.length;
+        return state.virtualMarks.filter(mark => mark.sourceDisplayID === display.id).length;
+      }
+
+      return {
+        initialState,
+        reduce,
+        unionFrame,
+        projectedMarks,
+        retainedMarkCount
+      };
+    })();
+
+    const scenarios = [
+      {
+        name: "Resolution",
+        copy: "Put a mark on the projector, then change its resolution. Watch whether the mark stays attached to the same local place.",
+        actions: [
+          ["add-projector", "Add a mark to Projector"],
+          ["resize-projector", "Change Projector to 1280×720"],
+          ["resize-projector", "Restore Projector to 1920×1080"]
+        ]
+      },
+      {
+        name: "Reconnect",
+        copy: "Disconnect a display during a presentation, then reconnect it. The per-display canvas remains parked in memory.",
+        actions: [
+          ["add-projector", "Add a mark to Projector"],
+          ["disconnect-projector", "Disconnect Projector"],
+          ["reconnect-projector", "Reconnect Projector"]
+        ]
+      },
+      {
+        name: "Arrangement",
+        copy: "Move the projector from the right side to the left side. Local coordinates should not care about global desktop origin.",
+        actions: [
+          ["add-projector", "Add a mark to Projector"],
+          ["move-projector", "Move Projector left"],
+          ["move-projector", "Move Projector right"]
+        ]
+      },
+      {
+        name: "Spaces",
+        copy: "Switch from slides to a full-screen video Space. Panels follow their physical displays; marks do not migrate between canvases.",
+        actions: [
+          ["add-built-in", "Add a mark to Built-in"],
+          ["add-projector", "Add a mark to Projector"],
+          ["switch-space", "Switch to Demo Video Space"]
+        ]
+      }
+    ];
+
+    let state = DisplayArchitectureModel.initialState();
+    let activeScenario = 0;
+
+    const elements = {
+      change: document.querySelector("#change"),
+      badges: document.querySelector("#badges"),
+      displays: document.querySelector("#displays"),
+      rawState: document.querySelector("#rawState"),
+      perDisplay: document.querySelector("#perDisplay"),
+      virtualDesktop: document.querySelector("#virtualDesktop"),
+      tabs: document.querySelector("#tabs"),
+      scenarioCopy: document.querySelector("#scenarioCopy"),
+      steps: document.querySelector("#steps")
+    };
+
+    function dispatch(action) {
+      state = DisplayArchitectureModel.reduce(state, action);
+      render();
+    }
+
+    function renderMark(mark) {
+      const node = document.createElement("span");
+      node.className = `mark${mark.drifted ? " drifted" : ""}`;
+      node.style.left = `${mark.u * 100}%`;
+      node.style.top = `${mark.v * 100}%`;
+      node.title = mark.drifted ? "This mark drifted from its source display" : "Mark";
+      return node;
+    }
+
+    function renderDisplay(display) {
+      const marks = DisplayArchitectureModel.projectedMarks(state, display);
+      const retained = DisplayArchitectureModel.retainedMarkCount(state, display);
+      const panelState = display.connected ? "present" : "removed";
+      const card = document.createElement("article");
+      card.className = `display-card${display.connected ? "" : " disconnected"}`;
+      card.innerHTML = `
+        <div class="display-meta">
+          <div>
+            <div class="display-name">${display.name}</div>
+            <div class="display-id">${display.id}</div>
+          </div>
+          <div class="frame">${display.frame.x},${display.frame.y} · ${display.frame.width}×${display.frame.height}</div>
+        </div>
+        <div class="screen">
+          <span class="screen-label">${display.connected ? "Overlay panel" : "Disconnected"}</span>
+        </div>
+        <div class="canvas-state">
+          <div class="metric"><span>Panel</span><strong>${panelState}</strong></div>
+          <div class="metric"><span>Visible marks</span><strong>${marks.length}</strong></div>
+          <div class="metric"><span>Retained marks</span><strong>${retained}</strong></div>
+        </div>
+      `;
+      const screen = card.querySelector(".screen");
+      marks.forEach(mark => screen.appendChild(renderMark(mark)));
+      return card;
+    }
+
+    function render() {
+      elements.change.textContent = state.lastChange;
+      elements.perDisplay.classList.toggle("active", state.architecture === "perDisplay");
+      elements.virtualDesktop.classList.toggle("active", state.architecture === "virtualDesktop");
+
+      const connected = state.displays.filter(display => display.connected).length;
+      const desktop = DisplayArchitectureModel.unionFrame(state);
+      elements.badges.innerHTML = `
+        <span class="badge ${state.architecture === "perDisplay" ? "good" : "warn"}">
+          ${state.architecture === "perDisplay" ? "Recommended model" : "Comparison model"}
+        </span>
+        <span class="badge">${state.activeSpace} Space</span>
+        <span class="badge">${connected} overlay panel${connected === 1 ? "" : "s"}</span>
+        <span class="badge">Union ${desktop.width}×${desktop.height}</span>
+      `;
+
+      elements.displays.replaceChildren(...state.displays.map(renderDisplay));
+      elements.rawState.textContent = JSON.stringify(state, null, 2);
+    }
+
+    function renderScenarios() {
+      elements.tabs.replaceChildren(...scenarios.map((scenario, index) => {
+        const button = document.createElement("button");
+        button.className = `tab${index === activeScenario ? " active" : ""}`;
+        button.textContent = scenario.name;
+        button.addEventListener("click", () => {
+          activeScenario = index;
+          state = DisplayArchitectureModel.initialState(state.architecture);
+          renderScenarios();
+          render();
+        });
+        return button;
+      }));
+
+      const scenario = scenarios[activeScenario];
+      elements.scenarioCopy.textContent = scenario.copy;
+      elements.steps.replaceChildren(...scenario.actions.map(([type, label], index) => {
+        const button = document.createElement("button");
+        button.className = "step";
+        button.dataset.number = index + 1;
+        button.textContent = label;
+        button.addEventListener("click", () => dispatch({ type }));
+        return button;
+      }));
+    }
+
+    document.querySelectorAll("[data-action]").forEach(button => {
+      button.addEventListener("click", () => dispatch({ type: button.dataset.action }));
+    });
+    elements.perDisplay.addEventListener("click", () => dispatch({
+      type: "choose-architecture",
+      architecture: "perDisplay"
+    }));
+    elements.virtualDesktop.addEventListener("click", () => dispatch({
+      type: "choose-architecture",
+      architecture: "virtualDesktop"
+    }));
+
+    renderScenarios();
+    render();
+  </script>
+</body>
+</html>
