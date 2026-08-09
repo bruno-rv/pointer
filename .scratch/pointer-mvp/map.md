@@ -47,15 +47,12 @@ as a locally built and tested MVP with current validation evidence.
 - [Prove palette placement across displays and Spaces](issues/05-prove-palette-placement-across-displays.md)
   — Show one draggable palette on the pointer display while independent,
   click-through annotation overlays remain available on every display.
+- [Lock the MVP interaction specification](issues/06-lock-the-mvp-interaction-specification.md)
+  — Use the approved production interaction, failure, build, and validation
+  contract in the stable source-build design.
 
 ## Not yet specified
 
-- The application and module specification, after the overlay, input, and
-  rendering mechanisms are validated.
-- The exact visual treatment of the production palette, now that its approved
-  cross-display window behavior is fixed.
-- The automated and manual validation matrix, after the macOS mechanisms and
-  their test seams are known.
 - The implementation sequence, which will be derived when the decision
   frontier closes.
 
@@ -64,4 +61,5 @@ as a locally built and tested MVP with current validation evidence.
 - Screenshot capture, export, saved canvases, and text annotations.
 - Rotating completed marks.
 - Intel Mac support for the first version.
-- Signing, notarization, automatic updates, and public distribution.
+- Developer ID signing, notarization, automatic updates, and downloadable app
+  distribution.
