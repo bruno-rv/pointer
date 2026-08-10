@@ -29,6 +29,9 @@ Manager, native macOS shell tools, GitHub Actions.
   `CGDirectDisplayID` as model identity.
 - Start in click-through standby with Arrow selected and red, 4-point, fully
   opaque styling.
+- Use emoji presets `👉` (default), `⭐️`, `✅`, `❗️`, `❤️`, and `🎯`.
+- Expose color, stroke width, opacity, spotlight radius, and spotlight dimness;
+  style changes update a compatible selection and the future-mark default.
 - Keep one palette and one overlay per connected physical display; disconnected
   display canvases remain in memory until process exit.
 - Treat every gesture as a transaction: preview during drag, create at most one
@@ -176,8 +179,9 @@ Manager, native macOS shell tools, GitHub Actions.
 - Consumes all Task 1 value types.
 - Produces `GestureTransaction`, `GestureUpdate`, `GestureCommit`,
   `GestureCancellation`, `ResizeHandle`, and `HitTestTarget`.
-- `GestureUpdate` contains preview marks, selection, and a redraw flag but never
-  emits an observable boundary publication.
+- `GestureUpdate` contains preview marks, selection, redraw state, and an
+  optional boundary event. Begin and commit/cancel return boundary events;
+  continuation returns none, keeping `PointerSession` a closure-free value type.
 - `PointerSession` exposes `beginGesture`, `advanceGesture`, `commitGesture`, and
   `cancelGesture`, plus `previewCanvas(for:)` for rendering.
 
@@ -189,7 +193,7 @@ Manager, native macOS shell tools, GitHub Actions.
   func testCancelledShapeRestoresCanvasWithoutUndoEntry()
   func testZeroLengthShapeCommitIsDiscardedWithoutUndoEntry()
   func testFreehandAdvanceAppendsToGestureLocalDraft()
-  func testBoundaryObserverFiresAtBeginAndCommitNotAdvance()
+  func testBeginAndCommitReturnBoundaryEventsButAdvanceDoesNot()
   func testSparseEraserSamplesRemoveMarkCrossedBySweptSegment()
   func testEmojiClickUsesDefaultSquareAndDragUsesSquareExtent()
   func testFreehandCornerResizeUsesUniformScaleFromOppositeAnchor()
@@ -424,7 +428,8 @@ Manager, native macOS shell tools, GitHub Actions.
 **Interfaces:**
 
 - `CommandRouter` is the only keyboard/menu/palette mutation route for Escape,
-  Delete/Backspace, Undo, Clear, Clear All, tool selection, style, and mode.
+  Delete/Backspace, Undo, Clear, confirmed Clear All, Undo Clear All, tool
+  selection, style, and mode.
 - `PaletteLayout` returns a deterministic two-row or compact-overflow plan from
   available visible width; every tool remains reachable.
 - Explicit show moves the palette to the pointer display and clamps it. Normal
@@ -439,6 +444,7 @@ Manager, native macOS shell tools, GitHub Actions.
   func testExplicitShowMovesAndClampsPaletteToPointerDisplay()
   func testNormalRefreshPreservesManualPaletteDrag()
   func testEveryPaletteControlHasLabelHelpIdentifierAndEnabledState()
+  func testClearAllRequiresConfirmationAndEnablesUndoClearAll()
   ```
 
 - [ ] **Step 2: Run and confirm RED**
