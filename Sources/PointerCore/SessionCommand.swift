@@ -5,9 +5,18 @@ public enum SessionCommand: Equatable, Sendable {
     case undo(on: DisplayUUID)
     case clearAll
     case undoClearAll
+    case deleteSelected
     case setMode(PointerMode)
     case setTool(PointerTool)
     case setStyle(MarkStyle)
     case setEmoji(String)
     case setSpotlight(radius: Double, dimness: Double)
+
+    /// Standby transitions cancel any open gesture before the mode change.
+    public var cancelsActiveGesture: Bool {
+        if case .setMode(.standby) = self {
+            return true
+        }
+        return false
+    }
 }

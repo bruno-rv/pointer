@@ -23,4 +23,18 @@ public struct Canvas: Equatable, Sendable {
     mutating func clear() {
         marks.removeAll()
     }
+
+    mutating func replace(_ mark: Mark) {
+        guard let index = marks.firstIndex(where: { $0.id == mark.id }) else {
+            return
+        }
+        if mark.geometry.isSpotlight {
+            marks.removeAll { $0.geometry.isSpotlight && $0.id != mark.id }
+        }
+        marks[index] = mark
+    }
+
+    mutating func setMarks(_ newMarks: [Mark]) {
+        marks = newMarks
+    }
 }
