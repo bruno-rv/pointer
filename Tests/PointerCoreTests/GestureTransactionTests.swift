@@ -283,4 +283,96 @@ final class GestureTransactionTests: XCTestCase {
         _ = session.commitGesture()
         XCTAssertNil(session.selection)
     }
+
+    /// Non-meaningful draw commit must restore selectionDisplay with selection,
+    /// or deleteSelected / style-on-selection silently no-op.
+    func testDiscardedDrawCommitRestoresSelectionDisplayForDeleteAndStyle() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let existing = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000080")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.3, height: 0.3)),
+            style: .default
+        )
+        session.apply(.append(existing, to: display))
+
+        _ = session.beginGesture(tool: .select, at: NormalizedPoint(x: 0.35, y: 0.35), on: display)
+        _ = session.commitGesture()
+        XCTAssertEqual(session.selection, existing.id)
+
+        let start = NormalizedPoint(x: 0.7, y: 0.7)
+        _ = session.beginGesture(tool: .arrow, at: start, on: display)
+        let commit = session.commitGesture()
+        XCTAssertFalse(commit.didMutate)
+        XCTAssertEqual(session.selection, existing.id)
+
+        session.apply(.setStyle(MarkStyle(color: .red, strokeWidth: 8, opacity: 0.5)))
+        guard let styled = session.canvas(for: display).marks.first(where: { $0.id == existing.id }) else {
+            return XCTFail("Expected selected mark to remain")
+        }
+        XCTAssertEqual(styled.style.strokeWidth, 8)
+        XCTAssertEqual(styled.style.opacity, 0.5)
+
+        session.apply(.deleteSelected)
+        XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
+        XCTAssertNil(session.selection)
+    }
+
+    /// Cancel must restore selectionDisplay from the pre-gesture display,
+    /// not the gesture's display, when selection lived elsewhere.
+    func testCancelRestoresSelectionDisplayFromPriorDisplay() {
+        let other = DisplayUUID(rawValue: "other-display")
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let selected = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000081")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)),
+            style: .default
+        )
+        session.apply(.append(selected, to: other))
+
+        _ = session.beginGesture(tool: .select, at: NormalizedPoint(x: 0.3, y: 0.3), on: other)
+        _ = session.commitGesture()
+        XCTAssertEqual(session.selection, selected.id)
+
+        _ = session.beginGesture(tool: .rectangle, at: NormalizedPoint(x: 0.1, y: 0.1), on: display)
+        _ = session.advanceGesture(to: NormalizedPoint(x: 0.4, y: 0.4))
+        _ = session.cancelGesture()
+
+        XCTAssertEqual(session.selection, selected.id)
+
+        session.apply(.deleteSelected)
+        XCTAssertTrue(session.canvas(for: other).marks.isEmpty)
+        XCTAssertEqual(session.canvas(for: display).marks.count, 0)
+        XCTAssertNil(session.selection)
+    }
+
+    /// Handle press + advance to the same point must not create a no-op undo entry.
+    func testNoOpResizeAdvanceDoesNotCreateUndoSnapshot() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let mark = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000082")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)),
+            style: .default
+        )
+        session.apply(.append(mark, to: display))
+
+        _ = session.beginGesture(tool: .select, at: NormalizedPoint(x: 0.4, y: 0.4), on: display)
+        _ = session.commitGesture()
+        XCTAssertEqual(session.selection, mark.id)
+
+        let handle = NormalizedPoint(x: 0.2, y: 0.2)
+        _ = session.beginGesture(tool: .select, at: handle, on: display)
+        _ = session.advanceGesture(to: handle)
+        let commit = session.commitGesture()
+        XCTAssertFalse(commit.didMutate)
+        XCTAssertEqual(session.canvas(for: display).marks[0].geometry, mark.geometry)
+
+        session.apply(.undo(on: display))
+        XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
+    }
 }

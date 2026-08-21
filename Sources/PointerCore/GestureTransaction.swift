@@ -61,6 +61,7 @@ public struct GestureTransaction: Equatable, Sendable {
 
     let baseCanvas: Canvas
     let baseSelection: Mark.ID?
+    let baseSelectionDisplay: DisplayUUID?
     var previewCanvas: Canvas
     var selection: Mark.ID?
     var startPoint: NormalizedPoint
@@ -144,19 +145,19 @@ public struct GestureTransaction: Equatable, Sendable {
             previewCanvas.replace(mark)
             geometryDidChange = true
         case let .resize(handle, original):
-            var mark = previewCanvas.marks[index]
-            mark = Mark(
-                id: mark.id,
-                geometry: ResizeGeometry.resize(
-                    mark.geometry,
-                    using: handle,
-                    to: point,
-                    original: original.geometry
-                ),
-                style: mark.style
+            if point == previousPoint { return }
+            let current = previewCanvas.marks[index]
+            let newGeometry = ResizeGeometry.resize(
+                current.geometry,
+                using: handle,
+                to: point,
+                original: original.geometry
             )
-            previewCanvas.replace(mark)
-            geometryDidChange = true
+            guard newGeometry != current.geometry else { return }
+            previewCanvas.replace(
+                Mark(id: current.id, geometry: newGeometry, style: current.style)
+            )
+            geometryDidChange = newGeometry != original.geometry
         case .selecting, nil:
             break
         }

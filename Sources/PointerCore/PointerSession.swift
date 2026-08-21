@@ -66,6 +66,7 @@ public struct PointerSession: Equatable, Sendable {
             tool: tool,
             baseCanvas: baseCanvas,
             baseSelection: selection,
+            baseSelectionDisplay: selectionDisplay,
             previewCanvas: baseCanvas,
             selection: selection,
             startPoint: point,
@@ -136,9 +137,12 @@ public struct PointerSession: Equatable, Sendable {
             selectionDisplay = transaction.selection == nil ? nil : transaction.display
         } else {
             canvases[transaction.display] = transaction.baseCanvas
-            selection = transaction.tool == .select ? transaction.selection : transaction.baseSelection
             if transaction.tool == .select {
+                selection = transaction.selection
                 selectionDisplay = selection == nil ? nil : transaction.display
+            } else {
+                selection = transaction.baseSelection
+                selectionDisplay = transaction.baseSelectionDisplay
             }
         }
 
@@ -154,7 +158,7 @@ public struct PointerSession: Equatable, Sendable {
 
         canvases[transaction.display] = transaction.baseCanvas
         selection = transaction.baseSelection
-        selectionDisplay = selection == nil ? nil : transaction.display
+        selectionDisplay = transaction.baseSelectionDisplay
         activeGesture = nil
 
         let marks = canvas(for: transaction.display).marks
