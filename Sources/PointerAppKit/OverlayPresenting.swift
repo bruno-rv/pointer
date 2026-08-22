@@ -7,6 +7,7 @@ public protocol OverlayPresenting: AnyObject {
     func update(display: DisplayDescriptor)
     func update(session: PointerSession)
     func setMode(_ mode: PointerMode)
+    func show()
     func setEventHandlers(
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
@@ -15,6 +16,8 @@ public protocol OverlayPresenting: AnyObject {
 }
 
 public extension OverlayPresenting {
+    func show() {}
+
     func setEventHandlers(
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void

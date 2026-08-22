@@ -34,6 +34,27 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.session.canvas(for: uuid), Canvas())
     }
 
+    func testNewlyConnectedOverlayIsPresentedExactlyOnce() {
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        var created: [FakeOverlay] = []
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { descriptor in
+                let overlay = FakeOverlay(display: descriptor)
+                created.append(overlay)
+                return overlay
+            }
+        )
+
+        coordinator.synchronize()
+        XCTAssertEqual(created.count, 1)
+        XCTAssertEqual(created[0].presentationCount, 1)
+
+        coordinator.synchronize()
+        XCTAssertEqual(created[0].presentationCount, 1)
+    }
+
     func testRemovingScreenClosesOnlyItsOverlayAndRetainsItsCanvas() {
         let retainedUUID = DisplayUUID(rawValue: "display-a")
         let removedUUID = DisplayUUID(rawValue: "display-b")
@@ -104,6 +125,7 @@ private final class FakeScreenProvider: ScreenProviding {
 private final class FakeOverlay: OverlayPresenting {
     var display: DisplayDescriptor
     var didClose = false
+    var presentationCount = 0
 
     init(display: DisplayDescriptor) {
         self.display = display
@@ -119,5 +141,6 @@ private final class FakeOverlay: OverlayPresenting {
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {}
+    func show() { presentationCount += 1 }
     func close() { didClose = true }
 }

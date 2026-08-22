@@ -42,6 +42,7 @@ public final class DisplayCoordinator {
                 configure(overlay, for: descriptor.uuid)
                 overlay.update(session: session)
                 overlay.setMode(session.mode)
+                overlay.show()
                 overlays[descriptor.uuid] = overlay
             }
         }

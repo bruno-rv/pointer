@@ -99,7 +99,9 @@ public final class CanvasView: NSView {
             needsDisplay = true
             onRedrawRequested?()
         }
-        onSessionUpdate?(session)
+        if update.boundaryEvent != nil {
+            onSessionUpdate?(session)
+        }
         if let boundaryEvent = update.boundaryEvent {
             onBoundaryEvent?(boundaryEvent)
         }
