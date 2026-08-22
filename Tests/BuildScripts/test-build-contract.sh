@@ -69,7 +69,7 @@ test_untracked_plist_rejected() {
 }
 
 test_verifier_rejects_wrong_overlay_count() {
-    local fixture output
+    local overlay_count="$1" fixture output
     fixture="$(mktemp -d "${TMPDIR:-/tmp}/pointer-verify-contract.XXXXXX")"
     fixture_roots+=("$fixture")
     mkdir -p "$fixture/Bundle" "$fixture/scripts" "$fixture/build/Pointer.app/Contents/MacOS"
@@ -97,14 +97,14 @@ test_verifier_rejects_wrong_overlay_count() {
         '}' > "$fixture/Tests/VerifyFixtureTests/VerifyFixtureTests.swift"
 
     printf '%s\n' \
-        'print(#"{"mode":"standby","overlayCount":0,"paletteCount":1,"shortcutID":"control-option-command-p"}"#)' \
+        "print(#\"{\"mode\":\"standby\",\"overlayCount\":${overlay_count},\"paletteCount\":1,\"shortcutID\":\"control-option-command-p\"}\"#)" \
         > "$fixture/Smoke.swift"
     /usr/bin/xcrun swiftc -O -o "$fixture/build/Pointer.app/Contents/MacOS/Pointer" "$fixture/Smoke.swift"
     chmod +x "$fixture/build/Pointer.app/Contents/MacOS/Pointer"
     /usr/bin/codesign --force --sign - "$fixture/build/Pointer.app"
 
     if output="$(cd -- "$fixture" && "$fixture/scripts/verify.sh" 2>&1)"; then
-        echo "verifier accepted the wrong overlay count: $output" >&2
+        echo "verifier accepted overlayCount=$overlay_count: $output" >&2
         return 1
     fi
     if [[ "$output" != *"smoke report did not plan one overlay"* ]]; then
@@ -117,7 +117,10 @@ regression_failures=0
 if ! test_untracked_plist_rejected; then
     regression_failures=$((regression_failures + 1))
 fi
-if ! test_verifier_rejects_wrong_overlay_count; then
+if ! test_verifier_rejects_wrong_overlay_count 0; then
+    regression_failures=$((regression_failures + 1))
+fi
+if ! test_verifier_rejects_wrong_overlay_count 10; then
     regression_failures=$((regression_failures + 1))
 fi
 if (( regression_failures > 0 )); then
