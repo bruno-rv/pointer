@@ -7,6 +7,7 @@ public protocol OverlayPresenting: AnyObject {
     func update(display: DisplayDescriptor)
     func update(session: PointerSession)
     func setMode(_ mode: PointerMode)
+    func cancelActiveGesture()
     func show()
     func setEventHandlers(
         onSessionUpdate: @escaping (PointerSession) -> Void,
@@ -22,4 +23,6 @@ public extension OverlayPresenting {
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {}
+
+    func cancelActiveGesture() {}
 }

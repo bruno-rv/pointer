@@ -1,4 +1,4 @@
-public enum PointerTool: Equatable, Sendable {
+public enum PointerTool: CaseIterable, Equatable, Sendable {
     case select
     case arrow
     case rectangle

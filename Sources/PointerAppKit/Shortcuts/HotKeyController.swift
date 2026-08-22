@@ -10,6 +10,7 @@ public final class HotKeyController {
     public private(set) var pendingToken: HotKeyToken?
     public private(set) var registrationError: String?
     public var onToggle: (() -> Void)?
+    public var onStateChange: (() -> Void)?
 
     private let registrar: any HotKeyRegistering
     private let store: any ShortcutStoring
@@ -54,16 +55,19 @@ public final class HotKeyController {
 
         let stored = store.load()
         if let stored, registerImmediately(stored) {
+            onStateChange?()
             return
         }
 
         if stored != ShortcutPreset.defaultPreset,
            registerImmediately(.defaultPreset) {
             registrationError = nil
+            onStateChange?()
             return
         }
 
         registrationError = "No global shortcut could be registered."
+        onStateChange?()
     }
 
     public func setShortcut(_ preset: ShortcutPreset) {
@@ -74,6 +78,7 @@ public final class HotKeyController {
         if activePreset == preset {
             cancelPending()
             registrationError = nil
+            onStateChange?()
             return
         }
 
@@ -91,8 +96,10 @@ public final class HotKeyController {
                 self?.candidateTimedOut(token: token)
             }
             registrationError = nil
+            onStateChange?()
         } catch {
             registrationError = "Unable to register " + preset.displayName + ": " + String(describing: error)
+            onStateChange?()
         }
     }
 
@@ -105,6 +112,7 @@ public final class HotKeyController {
         activePreset = nil
         registrar.onEvent = nil
         started = false
+        onStateChange?()
     }
 
     private func registerImmediately(_ preset: ShortcutPreset) -> Bool {
@@ -135,6 +143,7 @@ public final class HotKeyController {
             activePreset = candidate
             registrationError = nil
             onToggle?()
+            onStateChange?()
             return
         }
 
@@ -149,6 +158,7 @@ public final class HotKeyController {
         timeoutToken = nil
         registrar.unregister(token)
         registrationError = candidate.displayName + " was not delivered within five seconds."
+        onStateChange?()
     }
 
     private func cancelPending() {

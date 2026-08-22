@@ -58,6 +58,10 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
         ignoresMouseEvents = mode == .standby
     }
 
+    public func cancelActiveGesture() {
+        canvasView.cancelGesture()
+    }
+
     public func setEventHandlers(
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void

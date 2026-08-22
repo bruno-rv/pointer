@@ -5,6 +5,10 @@ public struct PointerSession: Equatable, Sendable {
     public private(set) var toolState: ToolState
     public private(set) var selection: Mark.ID?
 
+    public var canUndoClearAll: Bool {
+        clearAllSnapshot != nil
+    }
+
     private var canvases: [DisplayUUID: Canvas]
     private var undoHistories: [DisplayUUID: UndoHistory]
     private var connectedDisplays: Set<DisplayUUID>

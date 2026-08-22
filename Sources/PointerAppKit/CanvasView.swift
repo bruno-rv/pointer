@@ -9,6 +9,7 @@ public final class CanvasView: NSView {
     public var onBoundaryEvent: ((GestureBoundaryEvent) -> Void)?
     public var onSessionUpdate: ((PointerSession) -> Void)?
     public var onRedrawRequested: (() -> Void)?
+    public private(set) var hasActiveGesture = false
 
     public init(
         frame frameRect: NSRect,
@@ -44,6 +45,7 @@ public final class CanvasView: NSView {
     }
 
     public func beginGesture(at point: NSPoint) {
+        hasActiveGesture = true
         let update = session.beginGesture(
             tool: tool,
             at: normalizedPoint(for: point),
@@ -58,6 +60,8 @@ public final class CanvasView: NSView {
     }
 
     public func endGesture() {
+        guard hasActiveGesture else { return }
+        hasActiveGesture = false
         let commit = session.commitGesture()
         needsDisplay = true
         onRedrawRequested?()
@@ -66,6 +70,8 @@ public final class CanvasView: NSView {
     }
 
     public func cancelGesture() {
+        guard hasActiveGesture else { return }
+        hasActiveGesture = false
         let cancellation = session.cancelGesture()
         needsDisplay = true
         onRedrawRequested?()

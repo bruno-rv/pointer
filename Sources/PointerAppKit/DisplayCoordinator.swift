@@ -9,6 +9,7 @@ public final class DisplayCoordinator {
     public private(set) var session: PointerSession
     public private(set) var overlays: [DisplayUUID: any OverlayPresenting] = [:]
     public var onBoundaryEvent: ((DisplayUUID, GestureBoundaryEvent) -> Void)?
+    public var onSessionUpdate: ((PointerSession) -> Void)?
 
     public init(
         screenProvider: any ScreenProviding,
@@ -58,6 +59,17 @@ public final class DisplayCoordinator {
     public func apply(_ command: SessionCommand) {
         session.apply(command)
         updateOverlays()
+        onSessionUpdate?(session)
+    }
+
+    public func cancelActiveGestures() {
+        for overlay in overlays.values {
+            overlay.cancelActiveGesture()
+        }
+    }
+
+    public func descriptor(for uuid: DisplayUUID) -> DisplayDescriptor? {
+        screenProvider.currentDisplays().first { $0.uuid == uuid }
     }
 
     private func updateOverlays() {
@@ -81,5 +93,6 @@ public final class DisplayCoordinator {
     private func sessionChanged(to updatedSession: PointerSession) {
         session = updatedSession
         updateOverlays()
+        onSessionUpdate?(session)
     }
 }
