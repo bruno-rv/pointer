@@ -89,6 +89,26 @@ final class PaletteLayoutTests: XCTestCase {
         XCTAssertEqual(Set(visibleTools).union(plan.overflowTools), Set(PointerTool.allCases))
     }
 
+    func testPaletteWindowStaysAboveInteractiveOverlayAfterBothAreShown() {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "display-a"),
+            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+            scaleFactor: 2
+        )
+        let overlay = OverlayPanel(descriptor: descriptor)
+        let palette = PalettePanel(router: makeRouter())
+        defer {
+            palette.close()
+            overlay.close()
+        }
+
+        overlay.show()
+        palette.show(on: descriptor)
+
+        XCTAssertGreaterThan(palette.level.rawValue, overlay.level.rawValue)
+    }
+
     private func makeRouter() -> CommandRouter {
         let uuid = DisplayUUID(rawValue: "display-a")
         let descriptor = DisplayDescriptor(

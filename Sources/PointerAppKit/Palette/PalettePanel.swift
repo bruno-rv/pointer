@@ -28,7 +28,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         backgroundColor = .clear
         hasShadow = true
         hidesOnDeactivate = false
-        level = .floating
+        level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
