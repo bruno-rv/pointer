@@ -40,6 +40,9 @@ IFS=. read -r xcode_major xcode_minor _ <<< "$xcode_version"
 
 [[ -f "$root_dir/Package.swift" ]] || fail "Package.swift is missing"
 [[ -f "$root_dir/Bundle/Info.plist" ]] || fail "Bundle/Info.plist is missing"
+[[ -x /usr/bin/git ]] || fail "git is unavailable"
+"/usr/bin/git" -C "$root_dir" ls-files --error-unmatch -- "Bundle/Info.plist" >/dev/null 2>&1 || \
+    fail "Bundle/Info.plist must be tracked"
 "$plutil_bin" -lint "$root_dir/Bundle/Info.plist" >/dev/null
 
 mkdir -p "$root_dir/build"

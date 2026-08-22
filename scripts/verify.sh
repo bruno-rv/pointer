@@ -44,6 +44,10 @@ smoke_json="$("$executable" --smoke --format json)"
     echo "verify.sh: smoke report did not plan one palette: $smoke_json" >&2
     exit 1
 }
+[[ "$smoke_json" == *'"overlayCount":1'* ]] || {
+    echo "verify.sh: smoke report did not plan one overlay: $smoke_json" >&2
+    exit 1
+}
 [[ "$smoke_json" == *'"mode":"standby"'* ]] || {
     echo "verify.sh: smoke report was not standby: $smoke_json" >&2
     exit 1
