@@ -11,6 +11,8 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public let shortcutController: HotKeyController?
 
     private var started = false
+    private let notificationCenter: NotificationCenter
+    private var screenParametersObserver: NSObjectProtocol?
 
     public init(
         screenProvider: any ScreenProviding,
@@ -18,7 +20,8 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         commandRouter: CommandRouter? = nil,
         palette: (any PalettePresenting)? = nil,
         menuBar: (any MenuBarPresenting)? = nil,
-        shortcutController: HotKeyController? = nil
+        shortcutController: HotKeyController? = nil,
+        notificationCenter: NotificationCenter = .default
     ) {
         self.screenProvider = screenProvider
         let coordinator = displayCoordinator ?? DisplayCoordinator(screenProvider: screenProvider)
@@ -32,6 +35,7 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         self.palette = palette ?? PalettePanel(router: router)
         self.menuBar = menuBar
         self.shortcutController = shortcutController
+        self.notificationCenter = notificationCenter
         super.init()
 
         router.onStateChange = { [weak self] session in
@@ -71,6 +75,17 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             self?.commandRouter.route(.toggleMode)
         }
         shortcutController?.start()
+        screenParametersObserver = notificationCenter.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.displayCoordinator.synchronize()
+                self.refresh(session: self.displayCoordinator.session)
+            }
+        }
         menuBar?.install()
         if let menuBar = menuBar as? MenuBarController {
             menuBar.onShowPalette = { [weak self] in
@@ -86,6 +101,10 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public func stop() {
         guard started else { return }
         started = false
+        if let screenParametersObserver {
+            notificationCenter.removeObserver(screenParametersObserver)
+            self.screenParametersObserver = nil
+        }
         shortcutController?.stop()
         palette.hide()
         menuBar?.remove()

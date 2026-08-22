@@ -83,6 +83,7 @@ public final class CanvasView: NSView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         MarkRenderer.draw(
             canvas: session.previewCanvas(for: display),
+            selectedID: session.selection,
             in: bounds,
             context: context
         )

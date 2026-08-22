@@ -45,9 +45,16 @@ public final class PalettePanel: NSPanel, PalettePresenting {
     }
 
     public func show(on display: DisplayDescriptor) {
+        paletteViewController.loadViewIfNeeded()
         let size = paletteViewController.preferredSize
         let width = max(1, min(size.width, CGFloat(display.visibleFrame.width - 32)))
+        paletteViewController.applyLayout(for: width)
+        contentMinSize = NSSize(width: 1, height: size.height)
         setContentSize(NSSize(width: width, height: size.height))
+        paletteViewController.view.layoutSubtreeIfNeeded()
+        if frame.width > width {
+            setContentSize(NSSize(width: width, height: size.height))
+        }
         let placement = PalettePlacement.nearTopCenter(
             paletteSize: DenormalizedSize(width: width, height: size.height),
             in: DenormalizedRect(

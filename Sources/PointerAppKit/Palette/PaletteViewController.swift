@@ -1,9 +1,16 @@
 import AppKit
 import PointerCore
 
+private final class PaletteStyleScrollView: NSScrollView {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 42)
+    }
+}
+
 @MainActor
 public final class PaletteViewController: NSViewController {
     public private(set) var controls: [NSControl] = []
+    public private(set) var layoutPlan = PaletteLayout.plan(availableWidth: 760)
 
     private let router: CommandRouter
     private var toolButtons: [PointerTool: NSButton] = [:]
@@ -17,7 +24,10 @@ public final class PaletteViewController: NSViewController {
     private var dimnessSlider: NSSlider!
     private var statusLabel: NSTextField!
     private var visualEffectView: NSVisualEffectView!
+    private var styleScrollView: NSScrollView!
     private var currentSession = PointerSession()
+    private var configuredButtonTypes: [String: NSButton.ButtonType] = [:]
+    private var pendingLayoutWidth: CGFloat?
 
     public init(router: CommandRouter) {
         self.router = router
@@ -79,6 +89,25 @@ public final class PaletteViewController: NSViewController {
 
     public var preferredSize: NSSize {
         NSSize(width: 760, height: 156)
+    }
+
+    public func applyLayout(for width: CGFloat) {
+        pendingLayoutWidth = width
+        updateLayout(for: width)
+    }
+
+    public func buttonType(for identifier: String) -> NSButton.ButtonType? {
+        configuredButtonTypes[identifier]
+    }
+
+    public override func viewDidLayout() {
+        super.viewDidLayout()
+        guard view.bounds.width > 0 else { return }
+        let width = pendingLayoutWidth ?? view.bounds.width
+        updateLayout(for: width)
+        if let pendingLayoutWidth, view.bounds.width <= pendingLayoutWidth + 1 {
+            self.pendingLayoutWidth = nil
+        }
     }
 
     private func buildControls() {
@@ -180,7 +209,8 @@ public final class PaletteViewController: NSViewController {
             title: "Undo",
             identifier: "palette.undo",
             label: "Undo last pointer-display change",
-            help: "Undo the last change on the pointer display"
+            help: "Undo the last change on the pointer display",
+            buttonType: .momentaryPushIn
         )
         undoButton.target = self
         undoButton.action = #selector(undo)
@@ -189,7 +219,8 @@ public final class PaletteViewController: NSViewController {
             title: "Clear",
             identifier: "palette.clear",
             label: "Clear pointer display",
-            help: "Clear every mark on the pointer display"
+            help: "Clear every mark on the pointer display",
+            buttonType: .momentaryPushIn
         )
         clearButton.target = self
         clearButton.action = #selector(clear)
@@ -211,6 +242,7 @@ public final class PaletteViewController: NSViewController {
         firstRow.orientation = .horizontal
         firstRow.spacing = 6
         firstRow.distribution = .fillEqually
+        firstRow.detachesHiddenViews = true
 
         let secondRow = NSStackView(views: [
             labeled("Color", colorWell),
@@ -225,8 +257,25 @@ public final class PaletteViewController: NSViewController {
         secondRow.orientation = .horizontal
         secondRow.spacing = 8
         secondRow.alignment = .centerY
+        secondRow.distribution = .fillEqually
+        for arrangedSubview in secondRow.arrangedSubviews {
+            arrangedSubview.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            arrangedSubview.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
 
-        let stack = NSStackView(views: [firstRow, secondRow, statusLabel])
+        styleScrollView = PaletteStyleScrollView()
+        styleScrollView.drawsBackground = false
+        styleScrollView.hasVerticalScroller = false
+        styleScrollView.hasHorizontalScroller = true
+        styleScrollView.horizontalScrollElasticity = .none
+        styleScrollView.documentView = secondRow
+        secondRow.translatesAutoresizingMaskIntoConstraints = true
+        secondRow.frame = NSRect(
+            origin: .zero,
+            size: NSSize(width: secondRow.fittingSize.width, height: 42)
+        )
+
+        let stack = NSStackView(views: [firstRow, styleScrollView, statusLabel])
         stack.orientation = .vertical
         stack.spacing = 8
         stack.alignment = .width
@@ -238,12 +287,14 @@ public final class PaletteViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
             firstRow.heightAnchor.constraint(equalToConstant: 34),
-            secondRow.heightAnchor.constraint(equalToConstant: 42),
+            styleScrollView.heightAnchor.constraint(equalToConstant: 42),
         ])
     }
 
     private func updateLayout(for width: CGFloat) {
         let plan = PaletteLayout.plan(availableWidth: Double(width))
+        guard plan != layoutPlan else { return }
+        layoutPlan = plan
         let hidden = Set(plan.overflowTools)
         for (tool, button) in toolButtons {
             button.isHidden = hidden.contains(tool)
@@ -319,11 +370,18 @@ public final class PaletteViewController: NSViewController {
         router.route(.clear)
     }
 
-    private func makeButton(title: String, identifier: String, label: String, help: String) -> NSButton {
+    private func makeButton(
+        title: String,
+        identifier: String,
+        label: String,
+        help: String,
+        buttonType: NSButton.ButtonType = .toggle
+    ) -> NSButton {
         let button = NSButton(title: title, target: nil, action: nil)
         configure(button, identifier: identifier, label: label, help: help)
         button.bezelStyle = .rounded
-        button.setButtonType(.toggle)
+        button.setButtonType(buttonType)
+        configuredButtonTypes[identifier] = buttonType
         return button
     }
 

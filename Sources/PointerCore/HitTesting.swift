@@ -97,8 +97,7 @@ public enum HitTesting {
         case let .rectangle(rect), let .emoji(_, rect):
             return segmentIntersectsRect(start, end, rect.insetBy(dx: -tolerance, dy: -tolerance))
         case let .ellipse(rect):
-            // Conservative: treat like the bounding rect expanded by tolerance.
-            return segmentIntersectsRect(start, end, rect.insetBy(dx: -tolerance, dy: -tolerance))
+            return segmentIntersectsEllipse(start, end, rect, tolerance: tolerance)
         case let .freehand(points):
             if points.count < 2 {
                 if let only = points.first {
@@ -227,6 +226,34 @@ public enum HitTesting {
         }
         return false
     }
+
+    private static func segmentIntersectsEllipse(
+        _ start: NormalizedPoint,
+        _ end: NormalizedPoint,
+        _ rect: NormalizedRect,
+        tolerance: Double
+    ) -> Bool {
+        let radiusX = rect.width / 2 + tolerance
+        let radiusY = rect.height / 2 + tolerance
+        guard radiusX > 0, radiusY > 0 else {
+            return distance(from: rect.center, toSegmentFrom: start, to: end) <= tolerance
+        }
+
+        let center = rect.center
+        let sx = (start.x - center.x) / radiusX
+        let sy = (start.y - center.y) / radiusY
+        let dx = (end.x - start.x) / radiusX
+        let dy = (end.y - start.y) / radiusY
+        let a = dx * dx + dy * dy
+        guard a > 0 else {
+            return sx * sx + sy * sy <= 1
+        }
+
+        let t = max(0, min(1, -(sx * dx + sy * dy) / a))
+        let x = sx + t * dx
+        let y = sy + t * dy
+        return x * x + y * y <= 1
+    }
 }
 
 extension NormalizedRect {
@@ -237,5 +264,9 @@ extension NormalizedRect {
             width: max(0, width - 2 * dx),
             height: max(0, height - 2 * dy)
         )
+    }
+
+    var center: NormalizedPoint {
+        NormalizedPoint(x: x + width / 2, y: y + height / 2)
     }
 }

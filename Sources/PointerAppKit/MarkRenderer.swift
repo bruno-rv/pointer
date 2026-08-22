@@ -27,10 +27,22 @@ public enum MarkRenderer {
 
     public static func draw(
         canvas: Canvas,
+        selectedID: Mark.ID? = nil,
         in bounds: CGRect,
         context: CGContext
     ) {
         draw(marks: canvas.marks, in: bounds, context: context)
+        guard let selectedID,
+              let selectedMark = canvas.marks.first(where: { $0.id == selectedID })
+        else {
+            return
+        }
+        drawSelectionHandles(for: selectedMark, in: bounds, context: context)
+    }
+
+    public static func visibleHandles(for mark: Mark, selectedID: Mark.ID?) -> [ResizeHandle] {
+        guard mark.id == selectedID else { return [] }
+        return ResizeGeometry.handles(for: mark.geometry)
     }
 
     private static func draw(mark: Mark, in bounds: CGRect, context: CGContext) {
@@ -171,6 +183,32 @@ public enum MarkRenderer {
         dimmedRegion.addEllipse(in: focusRect)
         context.addPath(dimmedRegion)
         context.fillPath(using: .evenOdd)
+        context.restoreGState()
+    }
+
+    private static func drawSelectionHandles(
+        for mark: Mark,
+        in bounds: CGRect,
+        context: CGContext
+    ) {
+        let handles = visibleHandles(for: mark, selectedID: mark.id)
+        context.saveGState()
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.setStrokeColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        context.setLineWidth(1.5)
+        for handle in handles {
+            guard let point = ResizeGeometry.point(for: handle, in: mark.geometry) else { continue }
+            let center = map(point, in: bounds)
+            let radius: CGFloat = 5
+            let rect = CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            context.fillEllipse(in: rect)
+            context.strokeEllipse(in: rect)
+        }
         context.restoreGState()
     }
 

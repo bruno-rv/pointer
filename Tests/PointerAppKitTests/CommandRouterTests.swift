@@ -63,6 +63,47 @@ final class CommandRouterTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.session.canvas(for: fixture.uuid).marks, [mark])
     }
 
+    func testCommandsCancelActiveGestureBeforeStaleMouseUpCanRepublishIt() throws {
+        let commands: [CommandRouter.Command] = [
+            .delete,
+            .undo,
+            .clear,
+            .setTool(.ellipse),
+            .setStyle(MarkStyle(color: MarkStyle.default.color, strokeWidth: 8, opacity: 0.5)),
+            .setMode(.standby),
+        ]
+
+        for command in commands {
+            let fixture = makeFixture()
+            fixture.coordinator.synchronize()
+            let overlay = try XCTUnwrap(fixture.coordinator.overlays[fixture.uuid] as? RouterTestOverlay)
+            overlay.beginDraft()
+
+            fixture.router.route(command)
+            overlay.finishDraft()
+
+            XCTAssertTrue(overlay.didCancelGesture, "Expected cancellation for \(command)")
+            XCTAssertFalse(
+                fixture.coordinator.session.canvas(for: fixture.uuid).marks.contains {
+                    if case .arrow = $0.geometry { return true }
+                    return false
+                },
+                "Stale draft survived \(command)"
+            )
+        }
+
+        let clearAllFixture = makeFixture()
+        clearAllFixture.coordinator.synchronize()
+        let clearAllOverlay = try XCTUnwrap(
+            clearAllFixture.coordinator.overlays[clearAllFixture.uuid] as? RouterTestOverlay
+        )
+        clearAllOverlay.beginDraft()
+        clearAllFixture.router.confirmClearAll()
+        clearAllOverlay.finishDraft()
+        XCTAssertTrue(clearAllOverlay.didCancelGesture)
+        XCTAssertTrue(clearAllFixture.coordinator.session.canvas(for: clearAllFixture.uuid).marks.isEmpty)
+    }
+
     private func makeFixture() -> RouterFixture {
         RouterFixture()
     }
@@ -107,6 +148,7 @@ private final class RouterTestScreenProvider: ScreenProviding {
 private final class RouterTestOverlay: OverlayPresenting {
     var display: DisplayDescriptor
     var didCancelGesture = false
+    private var hasActiveGesture = false
     private var session = PointerSession()
     private var onSessionUpdate: ((PointerSession) -> Void)?
 
@@ -123,7 +165,13 @@ private final class RouterTestOverlay: OverlayPresenting {
     ) {
         self.onSessionUpdate = onSessionUpdate
     }
-    func cancelActiveGesture() { didCancelGesture = true }
+    func cancelActiveGesture() {
+        guard hasActiveGesture else { return }
+        didCancelGesture = true
+        _ = session.cancelGesture()
+        hasActiveGesture = false
+        onSessionUpdate?(session)
+    }
     func close() {}
 
     func beginDraft() {
@@ -132,6 +180,14 @@ private final class RouterTestOverlay: OverlayPresenting {
             at: NormalizedPoint(x: 0.2, y: 0.2),
             on: display.uuid
         )
+        hasActiveGesture = true
+    }
+
+    func finishDraft() {
+        guard hasActiveGesture else { return }
+        _ = session.commitGesture()
+        hasActiveGesture = false
+        onSessionUpdate?(session)
     }
 
     func select(_ id: Mark.ID) {

@@ -32,10 +32,64 @@ final class PointerApplicationControllerTests: XCTestCase {
 
         XCTAssertEqual(palette.window.frame.origin, manualOrigin)
     }
+
+    func testScreenParameterChangesResynchronizeDisplaysUntilControllerStops() throws {
+        let fixture = ControllerFixture()
+        fixture.controller.start()
+        let uuid = fixture.provider.displays[0].uuid
+        let overlay = try XCTUnwrap(fixture.coordinator.overlays[uuid] as? ControllerTestOverlay)
+        let changed = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 40, y: 12, width: 640, height: 480),
+            visibleFrame: DisplayFrame(x: 40, y: 24, width: 640, height: 468),
+            scaleFactor: 1
+        )
+
+        fixture.provider.displays = [changed]
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
+        XCTAssertEqual(overlay.display, changed)
+
+        fixture.provider.displays = []
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        XCTAssertNil(fixture.coordinator.overlays[uuid])
+
+        fixture.provider.displays = [changed]
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        let reconnected = try XCTUnwrap(
+            fixture.coordinator.overlays[uuid] as? ControllerTestOverlay
+        )
+        XCTAssertEqual(reconnected.display, changed)
+
+        fixture.controller.stop()
+        let disconnected = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 200, y: 12, width: 320, height: 240),
+            visibleFrame: DisplayFrame(x: 200, y: 24, width: 320, height: 228),
+            scaleFactor: 1
+        )
+        fixture.provider.displays = [disconnected]
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
+        XCTAssertEqual(overlay.display, changed)
+    }
 }
 
 @MainActor
 private final class ControllerFixture {
+    let notificationCenter = NotificationCenter()
     let provider: ControllerTestScreenProvider
     let coordinator: DisplayCoordinator
     let router: CommandRouter
@@ -63,14 +117,15 @@ private final class ControllerFixture {
             commandRouter: router,
             palette: palette,
             menuBar: nil,
-            shortcutController: nil
+            shortcutController: nil,
+            notificationCenter: notificationCenter
         )
     }
 }
 
 @MainActor
 private final class ControllerTestScreenProvider: ScreenProviding {
-    let displays: [DisplayDescriptor]
+    var displays: [DisplayDescriptor]
 
     init(displays: [DisplayDescriptor]) {
         self.displays = displays

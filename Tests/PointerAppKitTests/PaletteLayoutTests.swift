@@ -50,6 +50,45 @@ final class PaletteLayoutTests: XCTestCase {
         }
     }
 
+    func testUndoAndClearAreMomentaryCommandButtons() {
+        let viewController = PaletteViewController(router: makeRouter())
+        viewController.loadViewIfNeeded()
+
+        for identifier in ["palette.undo", "palette.clear"] {
+            let button = viewController.controls
+                .compactMap { $0 as? NSButton }
+                .first { $0.identifier?.rawValue == identifier }
+            XCTAssertNotNil(button, identifier)
+            XCTAssertEqual(viewController.buttonType(for: identifier), .momentaryPushIn, identifier)
+            XCTAssertEqual(button?.accessibilityLabel(), identifier == "palette.undo"
+                ? "Undo last pointer-display change"
+                : "Clear pointer display", identifier)
+        }
+    }
+
+    @MainActor
+    func testPaletteRecomputesLayoutAfterNarrowContentWidth() {
+        let router = makeRouter()
+        let palette = PalettePanel(router: router)
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "display-a"),
+            frame: DisplayFrame(x: 0, y: 0, width: 220, height: 600),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 220, height: 576),
+            scaleFactor: 2
+        )
+
+        palette.show(on: descriptor)
+        palette.window.contentView?.layoutSubtreeIfNeeded()
+
+        let plan = palette.paletteViewController.layoutPlan
+        let visibleTools = plan.rows.flatMap { $0 }.compactMap { item -> PointerTool? in
+            guard case let .tool(tool) = item else { return nil }
+            return tool
+        }
+        XCTAssertTrue(plan.usesOverflow)
+        XCTAssertEqual(Set(visibleTools).union(plan.overflowTools), Set(PointerTool.allCases))
+    }
+
     private func makeRouter() -> CommandRouter {
         let uuid = DisplayUUID(rawValue: "display-a")
         let descriptor = DisplayDescriptor(

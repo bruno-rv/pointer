@@ -57,6 +57,7 @@ public final class DisplayCoordinator {
     }
 
     public func apply(_ command: SessionCommand) {
+        cancelActiveGestures()
         session.apply(command)
         updateOverlays()
         onSessionUpdate?(session)

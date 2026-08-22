@@ -67,4 +67,36 @@ final class HitTestingTests: XCTestCase {
             )
         )
     }
+
+    func testEllipseSegmentThroughBoundingCornerDoesNotCountAsHit() {
+        let mark = Mark(
+            geometry: .ellipse(NormalizedRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)),
+            style: .default
+        )
+
+        XCTAssertFalse(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.1, y: 0.1),
+                to: NormalizedPoint(x: 0.3, y: 0.3),
+                tolerance: 0.01
+            )
+        )
+    }
+
+    func testEllipseSegmentThroughInteriorCountsAsHit() {
+        let mark = Mark(
+            geometry: .ellipse(NormalizedRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)),
+            style: .default
+        )
+
+        XCTAssertTrue(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.1, y: 0.5),
+                to: NormalizedPoint(x: 0.9, y: 0.5),
+                tolerance: 0.01
+            )
+        )
+    }
 }
