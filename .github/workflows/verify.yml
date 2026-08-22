@@ -1,0 +1,31 @@
+name: Verify Pointer
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-macos-15:
+    name: Verify macOS 15 (durable arm64 lane)
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Assert Apple silicon
+        run: test "$(uname -m)" = arm64
+      - name: Run source verification
+        run: ./scripts/verify.sh
+
+  verify-macos-14:
+    name: Verify macOS 14 (temporary arm64 compatibility lane)
+    runs-on: macos-14
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Assert Apple silicon
+        run: test "$(uname -m)" = arm64
+      - name: Run source verification
+        run: ./scripts/verify.sh

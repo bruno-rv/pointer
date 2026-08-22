@@ -14,6 +14,10 @@ fi
     echo "verify.sh: no active Xcode developer directory" >&2
     exit 1
 }
+[[ "$(uname -m)" == "arm64" ]] || {
+    echo "verify.sh: Apple silicon (arm64) is required" >&2
+    exit 1
+}
 export DEVELOPER_DIR="$developer_dir"
 swift_bin="$(/usr/bin/xcrun --find swift 2>/dev/null || true)"
 [[ -x "$swift_bin" ]] || {

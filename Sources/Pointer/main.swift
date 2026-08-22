@@ -4,7 +4,23 @@ import PointerAppKit
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-if arguments.contains("--smoke") {
+if arguments.contains("--benchmark-gestures") {
+    guard arguments == ["--benchmark-gestures", "--format", "json"] else {
+        fputs("Pointer: usage: Pointer --benchmark-gestures --format json\n", stderr)
+        exit(EXIT_FAILURE)
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    do {
+        let data = try encoder.encode(GestureBenchmark.run())
+        FileHandle.standardOutput.write(data)
+        FileHandle.standardOutput.write(Data([0x0A]))
+    } catch {
+        fputs("Pointer: could not encode gesture benchmark report: \(error)\n", stderr)
+        exit(EXIT_FAILURE)
+    }
+} else if arguments.contains("--smoke") {
     let formatIndex = arguments.firstIndex(of: "--format")
     guard let formatIndex,
           formatIndex + 1 < arguments.count,
