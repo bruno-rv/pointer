@@ -4,7 +4,7 @@ import XCTest
 
 final class SmokeRunnerTests: XCTestCase {
     func testSmokeReportPlansOnePaletteAndOverlayPerDisplay() {
-        let report = SmokeRunner.report(displays: [.builtIn, .external])
+        let report = SmokeRunner.report(displays: SmokeFixtures.displays)
 
         XCTAssertEqual(report.paletteCount, 1)
         XCTAssertEqual(report.overlayCount, 2)
@@ -13,7 +13,7 @@ final class SmokeRunnerTests: XCTestCase {
     }
 
     func testSmokeReportIncludesStableDefaultToolAndStyle() throws {
-        let report = SmokeRunner.report(displays: [.builtIn, .external])
+        let report = SmokeRunner.report(displays: SmokeFixtures.displays)
         XCTAssertEqual(report.paletteCount, 1)
         XCTAssertEqual(report.overlayCount, 2)
         XCTAssertEqual(report.mode, .standby)
@@ -25,8 +25,8 @@ final class SmokeRunnerTests: XCTestCase {
     }
 
     func testSmokeJSONIsStableAndContainsNoWindowRequirement() throws {
-        let first = try SmokeRunner.json(displays: [.builtIn, .external])
-        let second = try SmokeRunner.json(displays: [.builtIn, .external])
+        let first = try SmokeRunner.json(displays: SmokeFixtures.displays)
+        let second = try SmokeRunner.json(displays: SmokeFixtures.displays)
         XCTAssertEqual(first, second)
         XCTAssertEqual(String(decoding: first, as: UTF8.self),
                        "{\"mode\":\"standby\",\"opacity\":1,\"overlayCount\":2,\"paletteCount\":1,\"selectedToolID\":\"arrow\",\"shortcutID\":\"control-option-command-p\",\"strokeWidth\":4,\"styleColorRGBA\":[1,0,0,1]}")
