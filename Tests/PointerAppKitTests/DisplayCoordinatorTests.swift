@@ -459,6 +459,56 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.session.canvas(for: uuid), Canvas())
     }
 
+    func testDisplayResizeChangesPixelsButNotDisplayLocalMeaning() throws {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let initial = descriptor(uuid: uuid, x: 0, width: 1_920)
+        let resized = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 40, y: 20, width: 2_560, height: 1_440),
+            visibleFrame: DisplayFrame(x: 40, y: 44, width: 2_560, height: 1_416),
+            scaleFactor: 1
+        )
+        let mark = Mark(
+            geometry: .rectangle(NormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)),
+            style: .default
+        )
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        session.apply(.append(mark, to: uuid))
+        let panel = OverlayPanel(descriptor: initial, session: session)
+
+        let beforePoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 480, y: 270))
+        guard case let .rectangle(beforeRect) = mark.geometry else {
+            return XCTFail("Expected rectangle fixture")
+        }
+        let beforePixels = beforeRect.denormalized(
+            width: initial.frame.width,
+            height: initial.frame.height
+        )
+
+        panel.update(display: resized)
+
+        let afterPoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 640, y: 360))
+        let afterPixels = beforeRect.denormalized(
+            width: resized.frame.width,
+            height: resized.frame.height
+        )
+        XCTAssertEqual(beforePoint.x, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(beforePoint.y, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(afterPoint.x, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(afterPoint.y, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.x, 480, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.y, 270, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.width, 960, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.height, 540, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.x, 640, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.y, 360, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.width, 1_280, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.height, 720, accuracy: 1e-12)
+        XCTAssertEqual(panel.canvasView.session.canvas(for: uuid).marks, [mark])
+    }
+
     func testNewlyConnectedOverlayIsPresentedExactlyOnce() {
         let uuid = DisplayUUID(rawValue: "display-a")
         let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])

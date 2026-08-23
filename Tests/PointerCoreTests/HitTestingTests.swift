@@ -22,6 +22,14 @@ final class HitTestingTests: XCTestCase {
         )
 
         XCTAssertEqual(target, .mark(top.id))
+        XCTAssertEqual(
+            HitTesting.hitTest(
+                at: NormalizedPoint(x: 0.05, y: 0.05),
+                in: [bottom, top],
+                selectedID: nil
+            ),
+            .none
+        )
     }
 
     /// Selected marks expose resize handles before body hits.

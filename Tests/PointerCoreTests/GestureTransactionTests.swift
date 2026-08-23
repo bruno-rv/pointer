@@ -4,6 +4,142 @@ import XCTest
 final class GestureTransactionTests: XCTestCase {
     private let display = DisplayUUID(rawValue: "gesture-display")
 
+    func testAllSupportedToolsHaveDocumentedCommitContracts() {
+        struct ToolFixture {
+            let name: String
+            let tool: PointerTool
+            let advanceTo: NormalizedPoint?
+            let commitsOnClick: Bool
+            let commitsAfterAdvance: Bool
+        }
+
+        let start = NormalizedPoint(x: 0.2, y: 0.3)
+        let end = NormalizedPoint(x: 0.7, y: 0.8)
+        let fixtures = [
+            ToolFixture(name: "arrow", tool: .arrow, advanceTo: end, commitsOnClick: false, commitsAfterAdvance: true),
+            ToolFixture(name: "rectangle", tool: .rectangle, advanceTo: end, commitsOnClick: false, commitsAfterAdvance: true),
+            ToolFixture(name: "ellipse", tool: .ellipse, advanceTo: end, commitsOnClick: false, commitsAfterAdvance: true),
+            ToolFixture(name: "pen", tool: .pen, advanceTo: end, commitsOnClick: false, commitsAfterAdvance: true),
+            ToolFixture(name: "emoji", tool: .emoji, advanceTo: nil, commitsOnClick: true, commitsAfterAdvance: true),
+            ToolFixture(name: "spotlight", tool: .spotlight, advanceTo: nil, commitsOnClick: true, commitsAfterAdvance: true),
+            ToolFixture(name: "select", tool: .select, advanceTo: nil, commitsOnClick: false, commitsAfterAdvance: false),
+            ToolFixture(name: "eraser", tool: .eraser, advanceTo: nil, commitsOnClick: false, commitsAfterAdvance: false),
+        ]
+
+        for fixture in fixtures {
+            var session = PointerSession()
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(fixture.tool))
+
+            let began = session.beginGesture(tool: fixture.tool, at: start, on: display)
+            XCTAssertEqual(began.boundaryEvent, .began, fixture.name)
+
+            if let advanceTo = fixture.advanceTo {
+                XCTAssertNil(session.advanceGesture(to: advanceTo).boundaryEvent, fixture.name)
+            }
+
+            let commit = session.commitGesture()
+            XCTAssertEqual(commit.boundaryEvent, .committed, fixture.name)
+            XCTAssertEqual(commit.didMutate, fixture.commitsAfterAdvance, fixture.name)
+            XCTAssertEqual(session.canvas(for: display).marks.count, fixture.commitsAfterAdvance ? 1 : 0, fixture.name)
+
+            if fixture.commitsAfterAdvance {
+                XCTAssertTrue(session.canUndo(on: display), fixture.name)
+            } else {
+                XCTAssertFalse(session.canUndo(on: display), fixture.name)
+            }
+        }
+
+        for fixture in fixtures where !fixture.commitsOnClick && fixture.tool != .select && fixture.tool != .eraser {
+            var session = PointerSession()
+            session.apply(.setMode(.annotation))
+            _ = session.beginGesture(tool: fixture.tool, at: start, on: display)
+            let commit = session.commitGesture()
+
+            XCTAssertFalse(commit.didMutate, "zero-length \(fixture.name) commit")
+            XCTAssertTrue(session.canvas(for: display).marks.isEmpty, fixture.name)
+            XCTAssertFalse(session.canUndo(on: display), fixture.name)
+        }
+    }
+
+    func testSelectionChoosesTopmostAndEmptyClickClearsSelection() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let bottom = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000110")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5)),
+            style: .default
+        )
+        let top = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000111")!,
+            geometry: .ellipse(NormalizedRect(x: 0.35, y: 0.35, width: 0.2, height: 0.2)),
+            style: .default
+        )
+        session.apply(.append(bottom, to: display))
+        session.apply(.append(top, to: display))
+        session.apply(.setTool(.select))
+
+        let selected = session.beginGesture(
+            tool: .select,
+            at: NormalizedPoint(x: 0.45, y: 0.45),
+            on: display
+        )
+        XCTAssertEqual(selected.selection, top.id)
+        XCTAssertFalse(session.commitGesture().didMutate)
+        XCTAssertEqual(session.selection, top.id)
+
+        let cleared = session.beginGesture(
+            tool: .select,
+            at: NormalizedPoint(x: 0.05, y: 0.05),
+            on: display
+        )
+        XCTAssertNil(cleared.selection)
+        XCTAssertFalse(session.commitGesture().didMutate)
+        XCTAssertNil(session.selection)
+        XCTAssertEqual(session.canvas(for: display).marks, [bottom, top])
+    }
+
+    func testSparseEraserSweepCreatesOneUndoSnapshot() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let first = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000120")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.4, width: 0.1, height: 0.1)),
+            style: .default
+        )
+        let second = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000121")!,
+            geometry: .rectangle(NormalizedRect(x: 0.55, y: 0.4, width: 0.1, height: 0.1)),
+            style: .default
+        )
+        let untouched = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000122")!,
+            geometry: .rectangle(NormalizedRect(x: 0.85, y: 0.1, width: 0.1, height: 0.1)),
+            style: .default
+        )
+        session.apply(.append(first, to: display))
+        session.apply(.append(second, to: display))
+        session.apply(.append(untouched, to: display))
+
+        _ = session.beginGesture(
+            tool: .eraser,
+            at: NormalizedPoint(x: 0.1, y: 0.45),
+            on: display
+        )
+        _ = session.advanceGesture(to: NormalizedPoint(x: 0.7, y: 0.45))
+        let commit = session.commitGesture()
+
+        XCTAssertTrue(commit.didMutate)
+        XCTAssertEqual(session.canvas(for: display).marks, [untouched])
+
+        session.apply(.undo(on: display))
+        XCTAssertEqual(session.canvas(for: display).marks, [first, second, untouched])
+        session.apply(.undo(on: display))
+        XCTAssertEqual(session.canvas(for: display).marks, [first, second])
+    }
+
     /// Cancel must restore the exact pre-gesture canvas and must not push undo.
     func testCancelledShapeRestoresCanvasWithoutUndoEntry() {
         var session = PointerSession()
