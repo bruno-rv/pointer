@@ -100,6 +100,54 @@ final class GestureTransactionTests: XCTestCase {
         XCTAssertEqual(session.canvas(for: display).marks, [bottom, top])
     }
 
+    func testSelectionBodyMoveCommitsOnceAndUndoRestoresExactMark() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let mark = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000130")!,
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.3, height: 0.2)),
+            style: .default
+        )
+        session.apply(.append(mark, to: display))
+
+        _ = session.beginGesture(
+            tool: .select,
+            at: NormalizedPoint(x: 0.35, y: 0.3),
+            on: display
+        )
+        XCTAssertFalse(session.commitGesture().didMutate)
+        XCTAssertEqual(session.selection, mark.id)
+
+        _ = session.beginGesture(
+            tool: .select,
+            at: NormalizedPoint(x: 0.35, y: 0.3),
+            on: display
+        )
+        _ = session.advanceGesture(to: NormalizedPoint(x: 0.45, y: 0.4))
+        let movedCommit = session.commitGesture()
+
+        XCTAssertTrue(movedCommit.didMutate)
+        XCTAssertEqual(session.selection, mark.id)
+        guard let moved = session.canvas(for: display).marks.first,
+              case let .rectangle(movedRect) = moved.geometry
+        else {
+            return XCTFail("Expected translated rectangle")
+        }
+        XCTAssertEqual(moved.id, mark.id)
+        XCTAssertEqual(movedRect.x, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(movedRect.y, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(movedRect.width, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(movedRect.height, 0.2, accuracy: 1e-9)
+        XCTAssertEqual(moved.style, mark.style)
+
+        session.apply(.undo(on: display))
+        XCTAssertEqual(session.canvas(for: display).marks, [mark])
+        XCTAssertEqual(session.selection, mark.id)
+        session.apply(.undo(on: display))
+        XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
+    }
+
     func testSparseEraserSweepCreatesOneUndoSnapshot() {
         var session = PointerSession()
         session.apply(.setMode(.annotation))
@@ -138,6 +186,39 @@ final class GestureTransactionTests: XCTestCase {
         XCTAssertEqual(session.canvas(for: display).marks, [first, second, untouched])
         session.apply(.undo(on: display))
         XCTAssertEqual(session.canvas(for: display).marks, [first, second])
+    }
+
+    func testEraserClickOverMarkCreatesOneUndoSnapshot() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let first = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000140")!,
+            geometry: .rectangle(NormalizedRect(x: 0.1, y: 0.1, width: 0.1, height: 0.1)),
+            style: .default
+        )
+        let second = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000141")!,
+            geometry: .rectangle(NormalizedRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2)),
+            style: .default
+        )
+        session.apply(.append(first, to: display))
+        session.apply(.append(second, to: display))
+
+        _ = session.beginGesture(
+            tool: .eraser,
+            at: NormalizedPoint(x: 0.5, y: 0.5),
+            on: display
+        )
+        let commit = session.commitGesture()
+
+        XCTAssertTrue(commit.didMutate)
+        XCTAssertEqual(session.canvas(for: display).marks, [first])
+
+        session.apply(.undo(on: display))
+        XCTAssertEqual(session.canvas(for: display).marks, [first, second])
+        session.apply(.undo(on: display))
+        XCTAssertEqual(session.canvas(for: display).marks, [first])
     }
 
     /// Cancel must restore the exact pre-gesture canvas and must not push undo.

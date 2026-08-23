@@ -478,34 +478,52 @@ final class DisplayCoordinatorTests: XCTestCase {
         session.apply(.append(mark, to: uuid))
         let panel = OverlayPanel(descriptor: initial, session: session)
 
+        let initialPixels = try renderCanvas(panel.canvasView)
         let beforePoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 480, y: 270))
         guard case let .rectangle(beforeRect) = mark.geometry else {
             return XCTFail("Expected rectangle fixture")
         }
-        let beforePixels = beforeRect.denormalized(
-            width: initial.frame.width,
-            height: initial.frame.height
-        )
+        let initialEdges = [
+            CGPoint(x: 480, y: 270),
+            CGPoint(x: 1_440, y: 270),
+            CGPoint(x: 480, y: 810),
+            CGPoint(x: 1_440, y: 810),
+        ]
+        for edge in initialEdges {
+            XCTAssertTrue(
+                containsOpaqueStroke(initialPixels, in: panel.canvasView, around: edge),
+                "Expected committed stroke near initial pixel \(edge)"
+            )
+        }
 
         panel.update(display: resized)
 
+        let resizedPixels = try renderCanvas(panel.canvasView)
         let afterPoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 640, y: 360))
-        let afterPixels = beforeRect.denormalized(
-            width: resized.frame.width,
-            height: resized.frame.height
+        let resizedEdges = [
+            CGPoint(x: 640, y: 360),
+            CGPoint(x: 1_920, y: 360),
+            CGPoint(x: 640, y: 1_080),
+            CGPoint(x: 1_920, y: 1_080),
+        ]
+        for edge in resizedEdges {
+            XCTAssertTrue(
+                containsOpaqueStroke(resizedPixels, in: panel.canvasView, around: edge),
+                "Expected committed stroke near resized pixel \(edge)"
+            )
+        }
+        XCTAssertFalse(
+            containsOpaqueStroke(resizedPixels, in: panel.canvasView, around: CGPoint(x: 480, y: 270)),
+            "The old pixel location must not retain the resized stroke"
         )
         XCTAssertEqual(beforePoint.x, 0.25, accuracy: 1e-12)
         XCTAssertEqual(beforePoint.y, 0.25, accuracy: 1e-12)
         XCTAssertEqual(afterPoint.x, 0.25, accuracy: 1e-12)
         XCTAssertEqual(afterPoint.y, 0.25, accuracy: 1e-12)
-        XCTAssertEqual(beforePixels.x, 480, accuracy: 1e-12)
-        XCTAssertEqual(beforePixels.y, 270, accuracy: 1e-12)
-        XCTAssertEqual(beforePixels.width, 960, accuracy: 1e-12)
-        XCTAssertEqual(beforePixels.height, 540, accuracy: 1e-12)
-        XCTAssertEqual(afterPixels.x, 640, accuracy: 1e-12)
-        XCTAssertEqual(afterPixels.y, 360, accuracy: 1e-12)
-        XCTAssertEqual(afterPixels.width, 1_280, accuracy: 1e-12)
-        XCTAssertEqual(afterPixels.height, 720, accuracy: 1e-12)
+        XCTAssertEqual(panel.canvasView.bounds.width, resized.frame.width, accuracy: 1e-12)
+        XCTAssertEqual(panel.canvasView.bounds.height, resized.frame.height, accuracy: 1e-12)
+        XCTAssertEqual(beforeRect.denormalized(width: 1_920, height: 1_080).x, 480, accuracy: 1e-12)
+        XCTAssertEqual(beforeRect.denormalized(width: 2_560, height: 1_440).x, 640, accuracy: 1e-12)
         XCTAssertEqual(panel.canvasView.session.canvas(for: uuid).marks, [mark])
     }
 
@@ -831,6 +849,63 @@ final class DisplayCoordinatorTests: XCTestCase {
             geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.3)),
             style: .default
         )
+    }
+
+    private func renderCanvas(_ view: CanvasView) throws -> [UInt8] {
+        let width = Int(view.bounds.width.rounded())
+        let height = Int(view.bounds.height.rounded())
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        try pixels.withUnsafeMutableBytes { rawBuffer in
+            guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(
+                      data: rawBuffer.baseAddress,
+                      width: width,
+                      height: height,
+                      bitsPerComponent: 8,
+                      bytesPerRow: width * 4,
+                      space: colorSpace,
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  )
+            else {
+                throw BitmapError.cannotCreateContext
+            }
+
+            let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphicsContext
+            view.draw(view.bounds)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        return pixels
+    }
+
+    private func containsOpaqueStroke(
+        _ pixels: [UInt8],
+        in view: CanvasView,
+        around point: CGPoint,
+        radius: Int = 6
+    ) -> Bool {
+        let width = Int(view.bounds.width.rounded())
+        let height = Int(view.bounds.height.rounded())
+        let centerX = Int(point.x.rounded())
+        let centerY = Int(point.y.rounded())
+        for y in max(0, centerY - radius)...min(height - 1, centerY + radius) {
+            for x in max(0, centerX - radius)...min(width - 1, centerX + radius) {
+                let offset = (y * width + x) * 4
+                let red = pixels[offset]
+                let green = pixels[offset + 1]
+                let blue = pixels[offset + 2]
+                let alpha = pixels[offset + 3]
+                if alpha >= 200, red >= 180, green <= 100, blue <= 100 {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private enum BitmapError: Error {
+        case cannotCreateContext
     }
 }
 

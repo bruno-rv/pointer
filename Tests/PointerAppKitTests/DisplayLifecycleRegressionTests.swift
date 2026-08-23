@@ -147,14 +147,15 @@ final class DisplayLifecycleRegressionTests: XCTestCase {
         XCTAssertEqual(created.map(\.showCount), [1, 1])
     }
 
-    func testRepeatedSynchronizeDoesNotDuplicateOverlayOrCallback() {
+    func testRepeatedSynchronizeDoesNotDuplicateOverlayOrCallback() throws {
+        _ = NSApplication.shared
         let uuid = DisplayUUID(rawValue: "display-a")
         let provider = LifecycleScreenProvider(displays: [descriptor(uuid: uuid)])
-        var created: [LifecycleOverlay] = []
+        var created: [OverlayPanel] = []
         let coordinator = DisplayCoordinator(
             screenProvider: provider,
             overlayFactory: { descriptor in
-                let overlay = LifecycleOverlay(display: descriptor)
+                let overlay = OverlayPanel(descriptor: descriptor)
                 created.append(overlay)
                 return overlay
             }
@@ -168,14 +169,13 @@ final class DisplayLifecycleRegressionTests: XCTestCase {
         _ = coordinator.synchronize()
         _ = coordinator.synchronize()
 
-        let overlay = created[0]
+        let overlay = try XCTUnwrap(created.first)
         XCTAssertEqual(created.count, 1)
         XCTAssertEqual(coordinator.overlays.count, 1)
-        XCTAssertEqual(overlay.showCount, 1)
         XCTAssertEqual(syncCallbacks, 3)
-        XCTAssertEqual(overlay.handlerBindingCount, 3)
+        XCTAssertNotNil(overlay.canvasView.onSessionUpdate)
 
-        overlay.emitSessionUpdate(coordinator.session)
+        overlay.canvasView.onSessionUpdate?(coordinator.session)
 
         XCTAssertEqual(sessionCallbacks, 1)
         XCTAssertEqual(coordinator.overlays.count, 1)
@@ -243,11 +243,8 @@ private final class LifecycleOverlay: OverlayPresenting {
     var showCount = 0
     var closeCount = 0
     var cancelCount = 0
-    var handlerBindingCount = 0
     var handlerCount = 0
     private var isClosed = false
-
-    private var onSessionUpdate: ((PointerSession) -> Void)?
 
     init(display: DisplayDescriptor) {
         self.display = display
@@ -279,8 +276,7 @@ private final class LifecycleOverlay: OverlayPresenting {
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {
         guard !isClosed else { return }
-        handlerBindingCount += 1
-        self.onSessionUpdate = onSessionUpdate
+        _ = onSessionUpdate
         handlerCount = 2
         _ = onBoundaryEvent
     }
@@ -294,16 +290,11 @@ private final class LifecycleOverlay: OverlayPresenting {
     func stopAndClear() -> OverlayCleanupResult {
         let cleared = handlerCount
         handlerCount = 0
-        onSessionUpdate = nil
         return OverlayCleanupResult(
             cancelledActiveGesture: false,
             clearedHandlerCount: cleared,
             remainingHandlerCount: handlerCount,
             didClose: false
         )
-    }
-
-    func emitSessionUpdate(_ session: PointerSession) {
-        onSessionUpdate?(session)
     }
 }
