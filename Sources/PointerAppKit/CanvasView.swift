@@ -73,6 +73,7 @@ public final class CanvasView: NSView {
     }
 
     public func continueGesture(to point: NSPoint) {
+        guard hasActiveGesture else { return }
         let update = session.advanceGesture(to: normalizedPoint(for: point))
         apply(update: update)
     }

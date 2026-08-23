@@ -91,8 +91,12 @@ final class CanvasViewTests: XCTestCase {
         )
         var boundariesA: [GestureBoundaryEvent] = []
         var boundariesB: [GestureBoundaryEvent] = []
+        var redrawsA = 0
+        var redrawsB = 0
         viewA.onBoundaryEvent = { boundariesA.append($0) }
         viewB.onBoundaryEvent = { boundariesB.append($0) }
+        viewA.onRedrawRequested = { redrawsA += 1 }
+        viewB.onRedrawRequested = { redrawsB += 1 }
         let updateViews: (PointerSession) -> Void = { updatedSession in
             viewA.update(session: updatedSession)
             viewB.update(session: updatedSession)
@@ -102,7 +106,22 @@ final class CanvasViewTests: XCTestCase {
 
         viewA.beginGesture(at: NSPoint(x: 100, y: 100))
         viewB.beginGesture(at: NSPoint(x: 100, y: 100))
+        let sessionABeforeStaleContinue = viewA.session
+        let sessionBBeforeStaleContinue = viewB.session
+        redrawsA = 0
+        redrawsB = 0
+
+        viewA.continueGesture(to: NSPoint(x: 400, y: 400))
+
+        XCTAssertEqual(viewA.session, sessionABeforeStaleContinue)
+        XCTAssertEqual(viewB.session, sessionBBeforeStaleContinue)
+        XCTAssertEqual(redrawsA, 0)
+        XCTAssertEqual(redrawsB, 0)
+        XCTAssertEqual(boundariesA, [.began])
+        XCTAssertEqual(boundariesB, [.began])
+
         viewB.continueGesture(to: NSPoint(x: 300, y: 300))
+        XCTAssertEqual(redrawsB, 1)
 
         viewA.endGesture()
         viewB.endGesture()
