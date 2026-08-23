@@ -3,9 +3,15 @@ import PointerCore
 
 @MainActor
 public final class OverlayPanel: NSPanel, OverlayPresenting {
+    private enum LifecycleState {
+        case open
+        case stopping
+        case closed
+    }
+
     public private(set) var display: DisplayDescriptor
     public let canvasView: CanvasView
-    private var didClose = false
+    private var lifecycleState: LifecycleState = .open
 
     public init(
         descriptor: DisplayDescriptor,
@@ -66,6 +72,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
     }
 
     public func cancelActiveGesture() {
+        guard lifecycleState == .open else { return }
         canvasView.cancelGesture()
     }
 
@@ -73,18 +80,18 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {
-        guard !didClose else { return }
+        guard lifecycleState == .open else { return }
         canvasView.onSessionUpdate = onSessionUpdate
         canvasView.onBoundaryEvent = onBoundaryEvent
     }
 
     public func show() {
-        guard !didClose else { return }
+        guard lifecycleState == .open else { return }
         orderFrontRegardless()
     }
 
     public func stopAndClear() -> OverlayCleanupResult {
-        guard !didClose else {
+        guard lifecycleState == .open else {
             return OverlayCleanupResult(
                 cancelledActiveGesture: false,
                 clearedHandlerCount: 0,
@@ -93,6 +100,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
             )
         }
 
+        lifecycleState = .stopping
         let clearedHandlerCount =
             (canvasView.onSessionUpdate == nil ? 0 : 1)
             + (canvasView.onBoundaryEvent == nil ? 0 : 1)
@@ -118,8 +126,8 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
     }
 
     private func closeIfNeeded() -> Bool {
-        guard !didClose else { return false }
-        didClose = true
+        guard lifecycleState == .stopping else { return false }
+        lifecycleState = .closed
         orderOut(nil)
         super.close()
         return true
