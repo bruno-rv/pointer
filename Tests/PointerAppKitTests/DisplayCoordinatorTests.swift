@@ -5,6 +5,140 @@ import XCTest
 
 @MainActor
 final class DisplayCoordinatorTests: XCTestCase {
+    func testSynchronizeReportsAddedRemovedPointerZeroAndReconnectFlags() {
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        let coordinator = makeCoordinator(provider: provider)
+        var results: [DisplaySyncResult] = []
+        coordinator.onDisplaySync = { results.append($0) }
+
+        let first = coordinator.synchronize()
+
+        XCTAssertEqual(first.connectedUUIDs, Set([uuid]))
+        XCTAssertEqual(first.addedUUIDs, Set([uuid]))
+        XCTAssertTrue(first.hasConnectedDisplays)
+        XCTAssertFalse(first.enteredZeroDisplayState)
+        XCTAssertFalse(first.reconnected)
+
+        provider.displays = []
+        let zero = coordinator.synchronize()
+
+        XCTAssertEqual(zero.removedUUIDs, Set([uuid]))
+        XCTAssertFalse(zero.hasConnectedDisplays)
+        XCTAssertTrue(zero.enteredZeroDisplayState)
+
+        provider.displays = [descriptor(uuid: uuid, x: 40, width: 1_600)]
+        let reconnect = coordinator.synchronize()
+
+        XCTAssertTrue(reconnect.reconnected)
+        XCTAssertEqual(reconnect.pointerDisplay, uuid)
+        XCTAssertEqual(results, [first, zero, reconnect])
+        XCTAssertEqual(results.count, 3)
+    }
+
+    func testSynchronizeIgnoresDescriptorsWithInvalidStableUUIDs() {
+        let invalidUUID = DisplayUUID(rawValue: "")
+        let validUUID = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [
+            descriptor(uuid: invalidUUID),
+            descriptor(uuid: validUUID, x: 1_920),
+        ])
+        let coordinator = makeCoordinator(provider: provider)
+
+        let result = coordinator.synchronize()
+
+        XCTAssertEqual(result.connectedUUIDs, Set([validUUID]))
+        XCTAssertEqual(result.addedUUIDs, Set([validUUID]))
+        XCTAssertFalse(result.connectedUUIDs.contains(invalidUUID))
+        XCTAssertNil(coordinator.overlays[invalidUUID])
+        XCTAssertNil(result.pointerDisplay)
+    }
+
+    func testOneToZeroSynchronizeCancelsRealOverlayOnceThenAppliesStandbyBeforeCallback() {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            OverlayPanel(descriptor: descriptor)
+        }
+        _ = coordinator.synchronize()
+        coordinator.apply(.setMode(.annotation))
+        let panel = try! XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+
+        provider.displays = []
+        var callbackMode: PointerMode?
+        var boundaryEvents: [GestureBoundaryEvent] = []
+        coordinator.onBoundaryEvent = { _, event in boundaryEvents.append(event) }
+        coordinator.onDisplaySync = { _ in
+            callbackMode = coordinator.session.mode
+            XCTAssertTrue(coordinator.overlays.isEmpty)
+        }
+
+        let result = coordinator.synchronize()
+
+        XCTAssertTrue(result.enteredZeroDisplayState)
+        XCTAssertEqual(coordinator.session.mode, .standby)
+        XCTAssertEqual(callbackMode, .standby)
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+    }
+
+    func testApplyCanSkipCancellationAfterCallerCancels() {
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        let coordinator = makeCoordinator(provider: provider)
+        _ = coordinator.synchronize()
+        let overlay = try! XCTUnwrap(coordinator.overlays[uuid] as? FakeOverlay)
+        overlay.cancelCount = 0
+
+        coordinator.cancelActiveGestures()
+        coordinator.apply(.setMode(.standby), cancellingActiveGestures: false)
+
+        XCTAssertEqual(overlay.cancelCount, 1)
+    }
+
+    func testStopClosesEveryOverlayOnceClearsHandlersAndCreatesFreshOverlayAfterRestart() {
+        let uuidA = DisplayUUID(rawValue: "a")
+        let uuidB = DisplayUUID(rawValue: "b")
+        let provider = FakeScreenProvider(displays: [
+            descriptor(uuid: uuidA),
+            descriptor(uuid: uuidB, x: 1_920),
+        ])
+        var created: [FakeOverlay] = []
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            let overlay = FakeOverlay(display: descriptor)
+            created.append(overlay)
+            return overlay
+        }
+        _ = coordinator.synchronize()
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.2, y: 0.2),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        coordinator.apply(.append(mark, to: uuidA))
+
+        let firstStop = coordinator.stop()
+
+        XCTAssertEqual(firstStop.closedOverlayCount, 2)
+        XCTAssertEqual(firstStop.remainingOverlayCount, 0)
+        XCTAssertEqual(firstStop.activeGestureCount, 0)
+        XCTAssertEqual(firstStop.clearedHandlerCount, 6)
+        XCTAssertEqual(firstStop.boundHandlerCount, 0)
+        XCTAssertTrue(created.allSatisfy { $0.closeCount == 1 })
+        XCTAssertEqual(coordinator.session.canvas(for: uuidA).marks, [mark])
+
+        _ = coordinator.synchronize()
+
+        XCTAssertEqual(created.count, 4)
+        XCTAssertTrue(created[2] !== created[0])
+        XCTAssertTrue(created[3] !== created[1])
+        XCTAssertEqual(coordinator.session.canvas(for: uuidA).marks, [mark])
+    }
+
     func testReconnectWithSameUUIDReusesCanvasAcrossChangedFrame() {
         let uuid = DisplayUUID(rawValue: "display-a")
         let first = descriptor(uuid: uuid, x: 0, width: 1_920)
@@ -335,6 +469,13 @@ final class DisplayCoordinatorTests: XCTestCase {
         ))
     }
 
+    private func makeCoordinator(
+        provider: FakeScreenProvider,
+        overlayFactory: @escaping DisplayCoordinator.OverlayFactory = { FakeOverlay(display: $0) }
+    ) -> DisplayCoordinator {
+        DisplayCoordinator(screenProvider: provider, overlayFactory: overlayFactory)
+    }
+
     private func descriptor(uuid: DisplayUUID, x: Double = 0, width: Double = 1_920) -> DisplayDescriptor {
         DisplayDescriptor(
             uuid: uuid,
@@ -369,6 +510,9 @@ private final class FakeOverlay: OverlayPresenting {
     var display: DisplayDescriptor
     var didClose = false
     var presentationCount = 0
+    var closeCount = 0
+    var cancelCount = 0
+    private var didClear = false
 
     init(display: DisplayDescriptor) {
         self.display = display
@@ -385,7 +529,29 @@ private final class FakeOverlay: OverlayPresenting {
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {}
     func show() { presentationCount += 1 }
-    func close() { didClose = true }
+    func cancelActiveGesture() { cancelCount += 1 }
+    func close() {
+        guard !didClose else { return }
+        didClose = true
+        closeCount += 1
+    }
+    func stopAndClear() -> OverlayCleanupResult {
+        guard !didClear else {
+            return OverlayCleanupResult(
+                cancelledActiveGesture: false,
+                clearedHandlerCount: 0,
+                remainingHandlerCount: 0,
+                didClose: false
+            )
+        }
+        didClear = true
+        return OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 3,
+            remainingHandlerCount: 0,
+            didClose: false
+        )
+    }
 }
 
 @MainActor

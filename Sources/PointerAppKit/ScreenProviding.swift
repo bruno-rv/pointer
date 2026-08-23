@@ -1,6 +1,56 @@
 import AppKit
 import PointerCore
 
+public struct DisplaySyncResult: Equatable, Sendable {
+    public let connectedUUIDs: Set<DisplayUUID>
+    public let addedUUIDs: Set<DisplayUUID>
+    public let removedUUIDs: Set<DisplayUUID>
+    public let pointerDisplay: DisplayUUID?
+    public let hasConnectedDisplays: Bool
+    public let enteredZeroDisplayState: Bool
+    public let reconnected: Bool
+
+    public init(
+        connectedUUIDs: Set<DisplayUUID>,
+        addedUUIDs: Set<DisplayUUID>,
+        removedUUIDs: Set<DisplayUUID>,
+        pointerDisplay: DisplayUUID?,
+        hasConnectedDisplays: Bool,
+        enteredZeroDisplayState: Bool,
+        reconnected: Bool
+    ) {
+        self.connectedUUIDs = connectedUUIDs
+        self.addedUUIDs = addedUUIDs
+        self.removedUUIDs = removedUUIDs
+        self.pointerDisplay = pointerDisplay
+        self.hasConnectedDisplays = hasConnectedDisplays
+        self.enteredZeroDisplayState = enteredZeroDisplayState
+        self.reconnected = reconnected
+    }
+}
+
+public struct DisplayStopResult: Equatable, Sendable {
+    public let closedOverlayCount: Int
+    public let remainingOverlayCount: Int
+    public let activeGestureCount: Int
+    public let clearedHandlerCount: Int
+    public let boundHandlerCount: Int
+
+    public init(
+        closedOverlayCount: Int,
+        remainingOverlayCount: Int,
+        activeGestureCount: Int,
+        clearedHandlerCount: Int,
+        boundHandlerCount: Int
+    ) {
+        self.closedOverlayCount = closedOverlayCount
+        self.remainingOverlayCount = remainingOverlayCount
+        self.activeGestureCount = activeGestureCount
+        self.clearedHandlerCount = clearedHandlerCount
+        self.boundHandlerCount = boundHandlerCount
+    }
+}
+
 public struct DisplayFrame: Equatable, Sendable {
     public let x: Double
     public let y: Double
