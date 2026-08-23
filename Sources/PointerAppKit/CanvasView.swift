@@ -3,9 +3,23 @@ import PointerCore
 
 @MainActor
 public final class CanvasView: NSView {
+    public enum CursorPlan: Equatable, Sendable {
+        case clickThrough
+        case select
+        case draw
+        case erase
+        case emoji
+        case spotlight
+    }
+
     public let display: DisplayUUID
-    public var tool: PointerTool
+    public var tool: PointerTool {
+        didSet {
+            updateCursorPlan()
+        }
+    }
     public private(set) var session: PointerSession
+    public private(set) var cursorPlan: CursorPlan
     public var onBoundaryEvent: ((GestureBoundaryEvent) -> Void)?
     public var onSessionUpdate: ((PointerSession) -> Void)?
     public var onRedrawRequested: (() -> Void)?
@@ -20,6 +34,7 @@ public final class CanvasView: NSView {
         self.display = display
         self.session = session
         self.tool = tool
+        self.cursorPlan = Self.cursorPlan(for: tool, mode: session.mode)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -31,7 +46,11 @@ public final class CanvasView: NSView {
     }
 
     public func update(session: PointerSession) {
+        if session.mode == .standby {
+            hasActiveGesture = false
+        }
         self.session = session
+        updateCursorPlan()
         needsDisplay = true
     }
 
@@ -77,6 +96,7 @@ public final class CanvasView: NSView {
         onRedrawRequested?()
         onSessionUpdate?(session)
         onBoundaryEvent?(cancellation.boundaryEvent)
+        setCursorPlan(.clickThrough)
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -87,6 +107,10 @@ public final class CanvasView: NSView {
             in: bounds,
             context: context
         )
+    }
+
+    public override func resetCursorRects() {
+        addCursorRect(bounds, cursor: cursor)
     }
 
     public override func mouseDown(with event: NSEvent) {
@@ -111,6 +135,47 @@ public final class CanvasView: NSView {
         }
         if let boundaryEvent = update.boundaryEvent {
             onBoundaryEvent?(boundaryEvent)
+        }
+    }
+
+    private var cursor: NSCursor {
+        switch cursorPlan {
+        case .clickThrough, .select:
+            return .arrow
+        case .draw:
+            return .crosshair
+        case .erase:
+            return .operationNotAllowed
+        case .emoji:
+            return .pointingHand
+        case .spotlight:
+            return .openHand
+        }
+    }
+
+    private func updateCursorPlan() {
+        setCursorPlan(Self.cursorPlan(for: tool, mode: session.mode))
+    }
+
+    private func setCursorPlan(_ plan: CursorPlan) {
+        guard cursorPlan != plan else { return }
+        cursorPlan = plan
+        discardCursorRects()
+    }
+
+    private static func cursorPlan(for tool: PointerTool, mode: PointerMode) -> CursorPlan {
+        guard mode == .annotation else { return .clickThrough }
+        switch tool {
+        case .select:
+            return .select
+        case .arrow, .rectangle, .ellipse, .pen:
+            return .draw
+        case .eraser:
+            return .erase
+        case .emoji:
+            return .emoji
+        case .spotlight:
+            return .spotlight
         }
     }
 }
