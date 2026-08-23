@@ -143,6 +143,42 @@ final class DisplayCoordinatorTests: XCTestCase {
         ))
     }
 
+    func testFreshOverlayStopAndClearReportsZeroInstalledHandlers() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+
+        let first = panel.stopAndClear()
+        let second = panel.stopAndClear()
+
+        XCTAssertEqual(first, OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: true
+        ))
+        XCTAssertEqual(second, OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: false
+        ))
+    }
+
+    func testPartialOverlayStopAndClearReportsInstalledHandlerCount() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        panel.canvasView.onBoundaryEvent = { _ in }
+
+        let result = panel.stopAndClear()
+
+        XCTAssertEqual(result.clearedHandlerCount, 1)
+        XCTAssertEqual(result.remainingHandlerCount, 0)
+        XCTAssertTrue(result.didClose)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertNil(panel.canvasView.onRedrawRequested)
+    }
+
     func testRealOverlayStopAndClearCancelsGestureAndClearsHandlers() {
         _ = NSApplication.shared
         let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))

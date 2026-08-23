@@ -93,6 +93,10 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
             )
         }
 
+        let clearedHandlerCount =
+            (canvasView.onSessionUpdate == nil ? 0 : 1)
+            + (canvasView.onBoundaryEvent == nil ? 0 : 1)
+            + (canvasView.onRedrawRequested == nil ? 0 : 1)
         let cancelledActiveGesture = canvasView.hasActiveGesture
         if cancelledActiveGesture {
             canvasView.cancelGesture()
@@ -103,7 +107,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
 
         return OverlayCleanupResult(
             cancelledActiveGesture: cancelledActiveGesture,
-            clearedHandlerCount: 3,
+            clearedHandlerCount: clearedHandlerCount,
             remainingHandlerCount: 0,
             didClose: closeIfNeeded()
         )
