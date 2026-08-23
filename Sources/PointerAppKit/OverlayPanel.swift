@@ -5,6 +5,7 @@ import PointerCore
 public final class OverlayPanel: NSPanel, OverlayPresenting {
     public private(set) var display: DisplayDescriptor
     public let canvasView: CanvasView
+    private var didClose = false
 
     public init(
         descriptor: DisplayDescriptor,
@@ -51,11 +52,17 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
     public func update(session: PointerSession) {
         canvasView.update(session: session)
         canvasView.tool = session.toolState.tool
-        setMode(session.mode)
+        ignoresMouseEvents = session.mode == .standby
     }
 
     public func setMode(_ mode: PointerMode) {
         ignoresMouseEvents = mode == .standby
+
+        var updatedSession = canvasView.session
+        if updatedSession.mode != mode {
+            updatedSession.apply(.setMode(mode))
+        }
+        canvasView.update(session: updatedSession)
     }
 
     public func cancelActiveGesture() {
@@ -66,6 +73,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
         onSessionUpdate: @escaping (PointerSession) -> Void,
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {
+        guard !didClose else { return }
         canvasView.onSessionUpdate = onSessionUpdate
         canvasView.onBoundaryEvent = onBoundaryEvent
     }
@@ -74,8 +82,41 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
         orderFrontRegardless()
     }
 
+    public func stopAndClear() -> OverlayCleanupResult {
+        guard !didClose else {
+            return OverlayCleanupResult(
+                cancelledActiveGesture: false,
+                clearedHandlerCount: 0,
+                remainingHandlerCount: 0,
+                didClose: false
+            )
+        }
+
+        let cancelledActiveGesture = canvasView.hasActiveGesture
+        if cancelledActiveGesture {
+            canvasView.cancelGesture()
+        }
+        canvasView.onSessionUpdate = nil
+        canvasView.onBoundaryEvent = nil
+        canvasView.onRedrawRequested = nil
+
+        return OverlayCleanupResult(
+            cancelledActiveGesture: cancelledActiveGesture,
+            clearedHandlerCount: 3,
+            remainingHandlerCount: 0,
+            didClose: closeIfNeeded()
+        )
+    }
+
     public override func close() {
+        _ = closeIfNeeded()
+    }
+
+    private func closeIfNeeded() -> Bool {
+        guard !didClose else { return false }
+        didClose = true
         orderOut(nil)
         super.close()
+        return true
     }
 }

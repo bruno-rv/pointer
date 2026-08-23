@@ -99,12 +99,98 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertTrue(panel.ignoresMouseEvents)
     }
 
+    func testStandbyOverlayKeepsMarksVisibleButRemovesHandlesAndMouseEvents() throws {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        let mark = fixtureRectangle()
+        session.apply(.append(mark, to: panel.display.uuid))
+        session.apply(.setTool(.select))
+
+        panel.update(session: session)
+        panel.setMode(.standby)
+
+        XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertEqual(panel.canvasView.cursorPlan, .clickThrough)
+        XCTAssertEqual(panel.canvasView.session.canvas(for: panel.display.uuid).marks, [mark])
+    }
+
+    func testOverlayStopAndClearReturnsObservableCleanupCounts() {
+        _ = NSApplication.shared
+        let overlay = RecordingOverlay(display: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        let first = overlay.stopAndClear()
+        let second = overlay.stopAndClear()
+
+        XCTAssertEqual(first.clearedHandlerCount, 3)
+        XCTAssertEqual(first.remainingHandlerCount, 0)
+        XCTAssertTrue(first.didClose)
+        XCTAssertEqual(second.clearedHandlerCount, 0)
+        XCTAssertFalse(second.didClose)
+        XCTAssertEqual(overlay.closeCount, 1)
+    }
+
+    func testDefaultOverlayStopAndClearIsObservableNoOp() {
+        let fake = ExistingOverlayConformingFake(display: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+
+        let result = fake.stopAndClear()
+
+        XCTAssertEqual(result, OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: false
+        ))
+    }
+
+    func testRealOverlayStopAndClearCancelsGestureAndClearsHandlers() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        panel.update(session: session)
+
+        var sessionUpdates = 0
+        var boundaryEvents = 0
+        var redrawRequests = 0
+        panel.setEventHandlers(
+            onSessionUpdate: { _ in sessionUpdates += 1 },
+            onBoundaryEvent: { _ in boundaryEvents += 1 }
+        )
+        panel.canvasView.onRedrawRequested = { redrawRequests += 1 }
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        sessionUpdates = 0
+        boundaryEvents = 0
+        redrawRequests = 0
+
+        let result = panel.stopAndClear()
+
+        XCTAssertTrue(result.cancelledActiveGesture)
+        XCTAssertEqual(result.clearedHandlerCount, 3)
+        XCTAssertEqual(result.remainingHandlerCount, 0)
+        XCTAssertTrue(result.didClose)
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertNil(panel.canvasView.onRedrawRequested)
+        XCTAssertEqual(sessionUpdates, 1)
+        XCTAssertEqual(boundaryEvents, 1)
+        XCTAssertEqual(redrawRequests, 1)
+    }
+
     private func descriptor(uuid: DisplayUUID, x: Double = 0, width: Double = 1_920) -> DisplayDescriptor {
         DisplayDescriptor(
             uuid: uuid,
             frame: DisplayFrame(x: x, y: 0, width: width, height: 1_080),
             visibleFrame: DisplayFrame(x: x, y: 24, width: width, height: 1_056),
             scaleFactor: 2
+        )
+    }
+
+    private func fixtureRectangle() -> Mark {
+        Mark(
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.3)),
+            style: .default
         )
     }
 }
@@ -143,4 +229,74 @@ private final class FakeOverlay: OverlayPresenting {
     ) {}
     func show() { presentationCount += 1 }
     func close() { didClose = true }
+}
+
+@MainActor
+private final class RecordingOverlay: OverlayPresenting {
+    private let panel: OverlayPanel
+    var closeCount = 0
+
+    var display: DisplayDescriptor { panel.display }
+
+    init(display: DisplayDescriptor) {
+        panel = OverlayPanel(descriptor: display)
+        panel.setEventHandlers(onSessionUpdate: { _ in }, onBoundaryEvent: { _ in })
+        panel.canvasView.onRedrawRequested = {}
+    }
+
+    func update(display: DisplayDescriptor) {
+        panel.update(display: display)
+    }
+
+    func update(session: PointerSession) {
+        panel.update(session: session)
+    }
+
+    func setMode(_ mode: PointerMode) {
+        panel.setMode(mode)
+    }
+
+    func cancelActiveGesture() {
+        panel.cancelActiveGesture()
+    }
+
+    func setEventHandlers(
+        onSessionUpdate: @escaping (PointerSession) -> Void,
+        onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
+    ) {
+        panel.setEventHandlers(onSessionUpdate: onSessionUpdate, onBoundaryEvent: onBoundaryEvent)
+    }
+
+    func show() {
+        panel.show()
+    }
+
+    func close() {
+        panel.close()
+    }
+
+    func stopAndClear() -> OverlayCleanupResult {
+        let result = panel.stopAndClear()
+        if result.didClose {
+            closeCount += 1
+        }
+        return result
+    }
+}
+
+@MainActor
+private final class ExistingOverlayConformingFake: OverlayPresenting {
+    var display: DisplayDescriptor
+
+    init(display: DisplayDescriptor) {
+        self.display = display
+    }
+
+    func update(display: DisplayDescriptor) {
+        self.display = display
+    }
+
+    func update(session: PointerSession) {}
+    func setMode(_ mode: PointerMode) {}
+    func close() {}
 }
