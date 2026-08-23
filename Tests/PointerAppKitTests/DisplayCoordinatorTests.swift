@@ -278,15 +278,15 @@ final class DisplayCoordinatorTests: XCTestCase {
             boundHandlerCount: 0
         )])
         XCTAssertEqual(nestedSyncResults, [DisplaySyncResult(
-            connectedUUIDs: [],
+            connectedUUIDs: Set([uuidA, uuidB]),
             addedUUIDs: [],
             removedUUIDs: [],
-            pointerDisplay: nil,
-            hasConnectedDisplays: false,
+            pointerDisplay: uuidA,
+            hasConnectedDisplays: true,
             enteredZeroDisplayState: false,
             reconnected: false
         )])
-        XCTAssertEqual(displaySyncCallbackCount, 0)
+        XCTAssertEqual(displaySyncCallbackCount, 1)
         XCTAssertEqual(outer, DisplayStopResult(
             closedOverlayCount: 2,
             remainingOverlayCount: 0,
@@ -307,7 +307,7 @@ final class DisplayCoordinatorTests: XCTestCase {
 
         _ = coordinator.synchronize()
 
-        XCTAssertEqual(displaySyncCallbackCount, 1)
+        XCTAssertEqual(displaySyncCallbackCount, 2)
         XCTAssertEqual(created.count, 4)
         XCTAssertTrue(created[2] !== activePanel)
         XCTAssertTrue(created[3] !== idlePanel)

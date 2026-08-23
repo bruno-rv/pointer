@@ -41,7 +41,7 @@ public final class DisplayCoordinator {
     @discardableResult
     public func synchronize() -> DisplaySyncResult {
         guard lifecycleState != .stopping else {
-            return emptySyncResult()
+            return synchronizeWhileStopping()
         }
         lifecycleState = .running
         let previousConnectedUUIDs = connectedUUIDs
@@ -128,8 +128,6 @@ public final class DisplayCoordinator {
         lifecycleState = .stopping
         let pendingOverlays = overlays
         overlays.removeAll()
-        connectedUUIDs.removeAll()
-        hasSynchronized = false
 
         var closedOverlayCount = 0
         var activeGestureCount = 0
@@ -149,6 +147,8 @@ public final class DisplayCoordinator {
         }
 
         session.apply(.setMode(.standby))
+        connectedUUIDs.removeAll()
+        hasSynchronized = false
         lifecycleState = .stopped
 
         return DisplayStopResult(
@@ -194,16 +194,29 @@ public final class DisplayCoordinator {
         onSessionUpdate?(session)
     }
 
-    private func emptySyncResult() -> DisplaySyncResult {
-        DisplaySyncResult(
-            connectedUUIDs: [],
-            addedUUIDs: [],
-            removedUUIDs: [],
-            pointerDisplay: nil,
-            hasConnectedDisplays: false,
-            enteredZeroDisplayState: false,
-            reconnected: false
+    private func synchronizeWhileStopping() -> DisplaySyncResult {
+        let connected = Set(
+            screenProvider
+                .currentDisplays()
+                .map(\.uuid)
+                .filter { !$0.rawValue.isEmpty }
         )
+        let result = DisplaySyncResult(
+            connectedUUIDs: connected,
+            addedUUIDs: connected.subtracting(connectedUUIDs),
+            removedUUIDs: connectedUUIDs.subtracting(connected),
+            pointerDisplay: screenProvider.pointerDisplay().flatMap { pointer in
+                connected.contains(pointer) ? pointer : nil
+            },
+            hasConnectedDisplays: !connected.isEmpty,
+            enteredZeroDisplayState: !connectedUUIDs.isEmpty && connected.isEmpty,
+            reconnected: hasSynchronized
+                && connectedUUIDs.isEmpty
+                && !connected.isEmpty
+                && connected.contains { retainedUUIDs.contains($0) }
+        )
+        onDisplaySync?(result)
+        return result
     }
 
     private func emptyStopResult() -> DisplayStopResult {
