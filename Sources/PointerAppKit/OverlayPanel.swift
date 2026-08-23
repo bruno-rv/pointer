@@ -79,6 +79,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
     }
 
     public func show() {
+        guard !didClose else { return }
         orderFrontRegardless()
     }
 
@@ -109,7 +110,7 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
     }
 
     public override func close() {
-        _ = closeIfNeeded()
+        _ = stopAndClear()
     }
 
     private func closeIfNeeded() -> Bool {

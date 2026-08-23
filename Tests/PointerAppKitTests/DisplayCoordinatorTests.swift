@@ -178,6 +178,69 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertEqual(redrawRequests, 1)
     }
 
+    func testDirectCloseCancelsActiveGestureAndClearsHandlersExactlyOnce() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        panel.update(session: session)
+
+        var sessionUpdates = 0
+        var boundaryEvents = 0
+        var redrawRequests = 0
+        panel.setEventHandlers(
+            onSessionUpdate: { _ in sessionUpdates += 1 },
+            onBoundaryEvent: { _ in boundaryEvents += 1 }
+        )
+        panel.canvasView.onRedrawRequested = { redrawRequests += 1 }
+        panel.show()
+        XCTAssertTrue(panel.isVisible)
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        sessionUpdates = 0
+        boundaryEvents = 0
+        redrawRequests = 0
+
+        panel.close()
+        panel.close()
+
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertNil(panel.canvasView.onRedrawRequested)
+        XCTAssertEqual(sessionUpdates, 1)
+        XCTAssertEqual(boundaryEvents, 1)
+        XCTAssertEqual(redrawRequests, 1)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertEqual(panel.stopAndClear(), OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: false
+        ))
+    }
+
+    func testClosedOverlayCannotShowOrRebindHandlers() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        panel.show()
+        XCTAssertTrue(panel.isVisible)
+
+        let first = panel.stopAndClear()
+        panel.show()
+        panel.setEventHandlers(onSessionUpdate: { _ in }, onBoundaryEvent: { _ in })
+
+        XCTAssertTrue(first.didClose)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertEqual(panel.stopAndClear(), OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: false
+        ))
+    }
+
     private func descriptor(uuid: DisplayUUID, x: Double = 0, width: Double = 1_920) -> DisplayDescriptor {
         DisplayDescriptor(
             uuid: uuid,
