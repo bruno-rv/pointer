@@ -12,9 +12,9 @@ public enum SessionCommand: Equatable, Sendable {
     case setEmoji(String)
     case setSpotlight(radius: Double, dimness: Double)
 
-    /// Standby transitions cancel any open gesture before the mode change.
+    /// Mode transitions cancel any open gesture before the mode change.
     public var cancelsActiveGesture: Bool {
-        if case .setMode(.standby) = self {
+        if case .setMode = self {
             return true
         }
         return false

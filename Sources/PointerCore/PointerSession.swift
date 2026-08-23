@@ -9,6 +9,10 @@ public struct PointerSession: Equatable, Sendable {
         clearAllSnapshot != nil
     }
 
+    public func canUndo(on display: DisplayUUID) -> Bool {
+        (undoHistories[display]?.count ?? 0) > 0
+    }
+
     private var canvases: [DisplayUUID: Canvas]
     private var undoHistories: [DisplayUUID: UndoHistory]
     private var connectedDisplays: Set<DisplayUUID>
@@ -191,6 +195,10 @@ public struct PointerSession: Equatable, Sendable {
             deleteSelected()
         case let .setMode(mode):
             self.mode = mode
+            if mode == .standby {
+                selection = nil
+                selectionDisplay = nil
+            }
         case let .setTool(tool):
             toolState.setTool(tool)
         case let .setStyle(style):

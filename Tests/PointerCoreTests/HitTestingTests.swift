@@ -99,4 +99,90 @@ final class HitTestingTests: XCTestCase {
             )
         )
     }
+
+    func testCollinearOverlapOnRectangleEdgeCountsAsHit() {
+        let mark = Mark(
+            geometry: .rectangle(NormalizedRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2)),
+            style: .default
+        )
+
+        XCTAssertTrue(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.2, y: 0.38),
+                to: NormalizedPoint(x: 0.8, y: 0.38),
+                tolerance: 0.02
+            )
+        )
+        XCTAssertFalse(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.2, y: 0.379),
+                to: NormalizedPoint(x: 0.8, y: 0.379),
+                tolerance: 0.02
+            )
+        )
+    }
+
+    func testTangentEllipseBoundaryCountsAsHit() {
+        let mark = Mark(
+            geometry: .ellipse(NormalizedRect(x: 0.3, y: 0.3, width: 0.4, height: 0.2)),
+            style: .default
+        )
+
+        XCTAssertTrue(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.72, y: 0.2),
+                to: NormalizedPoint(x: 0.72, y: 0.6),
+                tolerance: 0.02
+            )
+        )
+        XCTAssertFalse(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.721, y: 0.2),
+                to: NormalizedPoint(x: 0.721, y: 0.6),
+                tolerance: 0.02
+            )
+        )
+    }
+
+    func testArrowEndpointContactWithinEpsilonCountsAsHit() {
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.4, y: 0.4),
+                end: NormalizedPoint(x: 0.6, y: 0.6)
+            ),
+            style: .default
+        )
+
+        XCTAssertTrue(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.8, y: 0.8),
+                to: NormalizedPoint(x: 0.6, y: 0.6195),
+                tolerance: 0.02
+            )
+        )
+    }
+
+    func testSegmentOutsideEpsilonMisses() {
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.4, y: 0.4),
+                end: NormalizedPoint(x: 0.6, y: 0.6)
+            ),
+            style: .default
+        )
+
+        XCTAssertFalse(
+            HitTesting.intersects(
+                mark: mark,
+                segmentFrom: NormalizedPoint(x: 0.8, y: 0.8),
+                to: NormalizedPoint(x: 0.6, y: 0.6205),
+                tolerance: 0.02
+            )
+        )
+    }
 }

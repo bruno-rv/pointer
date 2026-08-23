@@ -189,18 +189,41 @@ public enum HitTesting {
             (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
         }
 
-        let d1 = cross(p1, p2, q1)
-        let d2 = cross(p1, p2, q2)
-        let d3 = cross(q1, q2, p1)
-        let d4 = cross(q1, q2, p2)
+        func orientation(
+            _ a: NormalizedPoint,
+            _ b: NormalizedPoint,
+            _ c: NormalizedPoint
+        ) -> Int {
+            let value = cross(a, b, c)
+            if value > 0 { return 1 }
+            if value < 0 { return -1 }
+            return 0
+        }
 
-        if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0))
-            && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
-        {
+        func contains(
+            _ a: NormalizedPoint,
+            _ b: NormalizedPoint,
+            _ point: NormalizedPoint
+        ) -> Bool {
+            point.x >= min(a.x, b.x)
+                && point.x <= max(a.x, b.x)
+                && point.y >= min(a.y, b.y)
+                && point.y <= max(a.y, b.y)
+        }
+
+        let o1 = orientation(p1, p2, q1)
+        let o2 = orientation(p1, p2, q2)
+        let o3 = orientation(q1, q2, p1)
+        let o4 = orientation(q1, q2, p2)
+
+        if o1 != o2, o3 != o4 {
             return true
         }
 
-        return false
+        return (o1 == 0 && contains(p1, p2, q1))
+            || (o2 == 0 && contains(p1, p2, q2))
+            || (o3 == 0 && contains(q1, q2, p1))
+            || (o4 == 0 && contains(q1, q2, p2))
     }
 
     private static func segmentIntersectsRect(
