@@ -4,6 +4,12 @@ import PointerCore
 public final class DisplayCoordinator {
     public typealias OverlayFactory = @MainActor (DisplayDescriptor) -> any OverlayPresenting
 
+    private enum LifecycleState {
+        case stopped
+        case running
+        case stopping
+    }
+
     private let screenProvider: any ScreenProviding
     private let overlayFactory: OverlayFactory
     public private(set) var session: PointerSession
@@ -11,6 +17,7 @@ public final class DisplayCoordinator {
     private var connectedUUIDs: Set<DisplayUUID> = []
     private var retainedUUIDs: Set<DisplayUUID> = []
     private var hasSynchronized = false
+    private var lifecycleState: LifecycleState = .stopped
     public var onBoundaryEvent: ((DisplayUUID, GestureBoundaryEvent) -> Void)?
     public var onSessionUpdate: ((PointerSession) -> Void)?
     public var onDisplaySync: ((DisplaySyncResult) -> Void)?
@@ -33,6 +40,10 @@ public final class DisplayCoordinator {
 
     @discardableResult
     public func synchronize() -> DisplaySyncResult {
+        guard lifecycleState != .stopping else {
+            return emptySyncResult()
+        }
+        lifecycleState = .running
         let previousConnectedUUIDs = connectedUUIDs
         let displays = screenProvider.currentDisplays()
         let connected = Set(
@@ -110,12 +121,22 @@ public final class DisplayCoordinator {
     }
 
     public func stop() -> DisplayStopResult {
+        guard lifecycleState == .running else {
+            return emptyStopResult()
+        }
+
+        lifecycleState = .stopping
+        let pendingOverlays = overlays
+        overlays.removeAll()
+        connectedUUIDs.removeAll()
+        hasSynchronized = false
+
         var closedOverlayCount = 0
         var activeGestureCount = 0
         var clearedHandlerCount = 0
         var boundHandlerCount = 0
 
-        for (uuid, overlay) in Array(overlays) {
+        for (_, overlay) in pendingOverlays {
             let cleanup = overlay.stopAndClear()
             activeGestureCount += cleanup.cancelledActiveGesture ? 1 : 0
             clearedHandlerCount += cleanup.clearedHandlerCount
@@ -125,11 +146,10 @@ public final class DisplayCoordinator {
                 overlay.close()
             }
             closedOverlayCount += 1
-            overlays.removeValue(forKey: uuid)
         }
 
-        connectedUUIDs.removeAll()
-        hasSynchronized = false
+        session.apply(.setMode(.standby))
+        lifecycleState = .stopped
 
         return DisplayStopResult(
             closedOverlayCount: closedOverlayCount,
@@ -172,5 +192,27 @@ public final class DisplayCoordinator {
         session = updatedSession
         updateOverlays()
         onSessionUpdate?(session)
+    }
+
+    private func emptySyncResult() -> DisplaySyncResult {
+        DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: false,
+            reconnected: false
+        )
+    }
+
+    private func emptyStopResult() -> DisplayStopResult {
+        DisplayStopResult(
+            closedOverlayCount: 0,
+            remainingOverlayCount: overlays.count,
+            activeGestureCount: 0,
+            clearedHandlerCount: 0,
+            boundHandlerCount: 0
+        )
     }
 }

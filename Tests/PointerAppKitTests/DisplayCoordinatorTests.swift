@@ -182,6 +182,139 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertTrue(reconnect.reconnected)
     }
 
+    func testStopForcesStandbyAndPreservesSelectedSessionStateAcrossRestart() {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        var created: [OverlayPanel] = []
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            let panel = OverlayPanel(descriptor: descriptor)
+            created.append(panel)
+            return panel
+        }
+        _ = coordinator.synchronize()
+        let mark = fixtureRectangle()
+        let style = MarkStyle(
+            color: RGBAColor(red: 0.1, green: 0.2, blue: 0.3),
+            strokeWidth: 7,
+            opacity: 0.4
+        )
+        coordinator.apply(.append(mark, to: uuid))
+        coordinator.apply(.setTool(.select))
+        coordinator.apply(.setStyle(style))
+        coordinator.apply(.setMode(.annotation))
+        created[0].canvasView.beginGesture(at: NSPoint(x: 768, y: 378))
+        created[0].canvasView.endGesture()
+
+        XCTAssertEqual(coordinator.session.selection, mark.id)
+        XCTAssertTrue(coordinator.session.canUndo(on: uuid))
+
+        _ = coordinator.stop()
+
+        XCTAssertEqual(coordinator.session.mode, .standby)
+        XCTAssertNil(coordinator.session.selection)
+        XCTAssertEqual(coordinator.session.toolState.tool, .select)
+        XCTAssertEqual(coordinator.session.toolState.style, style)
+        XCTAssertEqual(coordinator.session.canvas(for: uuid).marks, [mark])
+        XCTAssertTrue(coordinator.session.canUndo(on: uuid))
+
+        _ = coordinator.synchronize()
+
+        XCTAssertEqual(created.count, 2)
+        XCTAssertTrue(created[1] !== created[0])
+        XCTAssertTrue(created[1].ignoresMouseEvents)
+        XCTAssertEqual(created[1].canvasView.session.canvas(for: uuid).marks, [mark])
+        XCTAssertEqual(created[1].canvasView.session.mode, .standby)
+    }
+
+    func testStopDetachesRegistryBeforeReentrantCleanupCallbacks() {
+        _ = NSApplication.shared
+        let uuidA = DisplayUUID(rawValue: "a")
+        let uuidB = DisplayUUID(rawValue: "b")
+        let provider = FakeScreenProvider(displays: [
+            descriptor(uuid: uuidA),
+            descriptor(uuid: uuidB, x: 1_920),
+        ])
+        var created: [OverlayPanel] = []
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            let panel = OverlayPanel(descriptor: descriptor)
+            created.append(panel)
+            return panel
+        }
+        _ = coordinator.synchronize()
+        coordinator.apply(.setMode(.annotation))
+        let activePanel = created[0]
+        let idlePanel = created[1]
+        activePanel.canvasView.onRedrawRequested = {}
+        idlePanel.canvasView.onRedrawRequested = {}
+        activePanel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+
+        var nestedStopResults: [DisplayStopResult] = []
+        var nestedSyncResults: [DisplaySyncResult] = []
+        var displaySyncCallbackCount = 0
+        var didReenter = false
+        coordinator.onDisplaySync = { _ in displaySyncCallbackCount += 1 }
+        let reenter = {
+            guard !didReenter else { return }
+            didReenter = true
+            nestedStopResults.append(coordinator.stop())
+            nestedSyncResults.append(coordinator.synchronize())
+        }
+        coordinator.onSessionUpdate = { _ in reenter() }
+        coordinator.onBoundaryEvent = { _, event in
+            if event == .cancelled {
+                reenter()
+            }
+        }
+
+        let outer = coordinator.stop()
+
+        XCTAssertTrue(didReenter)
+        XCTAssertEqual(nestedStopResults, [DisplayStopResult(
+            closedOverlayCount: 0,
+            remainingOverlayCount: 0,
+            activeGestureCount: 0,
+            clearedHandlerCount: 0,
+            boundHandlerCount: 0
+        )])
+        XCTAssertEqual(nestedSyncResults, [DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: false,
+            reconnected: false
+        )])
+        XCTAssertEqual(displaySyncCallbackCount, 0)
+        XCTAssertEqual(outer, DisplayStopResult(
+            closedOverlayCount: 2,
+            remainingOverlayCount: 0,
+            activeGestureCount: 1,
+            clearedHandlerCount: 6,
+            boundHandlerCount: 0
+        ))
+        XCTAssertTrue(coordinator.overlays.isEmpty)
+        XCTAssertFalse(activePanel.isVisible)
+        XCTAssertFalse(idlePanel.isVisible)
+        XCTAssertFalse(activePanel.canvasView.hasActiveGesture)
+        XCTAssertNil(activePanel.canvasView.onSessionUpdate)
+        XCTAssertNil(activePanel.canvasView.onBoundaryEvent)
+        XCTAssertNil(activePanel.canvasView.onRedrawRequested)
+        XCTAssertNil(idlePanel.canvasView.onSessionUpdate)
+        XCTAssertNil(idlePanel.canvasView.onBoundaryEvent)
+        XCTAssertNil(idlePanel.canvasView.onRedrawRequested)
+
+        _ = coordinator.synchronize()
+
+        XCTAssertEqual(displaySyncCallbackCount, 1)
+        XCTAssertEqual(created.count, 4)
+        XCTAssertTrue(created[2] !== activePanel)
+        XCTAssertTrue(created[3] !== idlePanel)
+        XCTAssertTrue(created[2].ignoresMouseEvents)
+        XCTAssertTrue(created[3].ignoresMouseEvents)
+    }
+
     func testDuplicateValidDescriptorsCreateOneOverlay() {
         let uuid = DisplayUUID(rawValue: "display-a")
         let display = descriptor(uuid: uuid)
