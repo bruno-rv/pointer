@@ -61,6 +61,21 @@ final class GestureTransactionTests: XCTestCase {
         XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
     }
 
+    func testSamePointPenAdvanceIsDiscardedWithoutUndoEntry() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        let start = NormalizedPoint(x: 0.4, y: 0.4)
+        _ = session.beginGesture(tool: .pen, at: start, on: display)
+        _ = session.advanceGesture(to: start)
+
+        let commit = session.commitGesture()
+
+        XCTAssertFalse(commit.didMutate)
+        XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
+        XCTAssertFalse(session.canUndo(on: display))
+    }
+
     /// Freehand points accumulate on the gesture-local draft only until commit.
     func testFreehandAdvanceAppendsToGestureLocalDraft() {
         var session = PointerSession()

@@ -174,6 +174,14 @@ public struct PointerSession: Equatable, Sendable {
     }
 
     public mutating func apply(_ command: SessionCommand) {
+        var selectionForDelete: (id: Mark.ID, display: DisplayUUID)?
+        if case .deleteSelected = command,
+           let activeGesture,
+           let selection = activeGesture.selection
+        {
+            selectionForDelete = (id: selection, display: activeGesture.display)
+        }
+
         if command.cancelsActiveGesture, activeGesture != nil {
             _ = cancelGesture()
         }
@@ -192,7 +200,7 @@ public struct PointerSession: Equatable, Sendable {
         case .undoClearAll:
             undoClearAll()
         case .deleteSelected:
-            deleteSelected()
+            deleteSelected(selection: selectionForDelete)
         case let .setMode(mode):
             self.mode = mode
             if mode == .standby {
@@ -380,11 +388,15 @@ public struct PointerSession: Equatable, Sendable {
         self.clearAllSnapshot = nil
     }
 
-    private mutating func deleteSelected() {
-        guard let selection, let selectionDisplay else {
+    private mutating func deleteSelected(
+        selection pendingSelection: (id: Mark.ID, display: DisplayUUID)? = nil
+    ) {
+        let selectedID = pendingSelection?.id ?? selection
+        let selectedDisplay = pendingSelection?.display ?? selectionDisplay
+        guard let selectedID, let selectedDisplay else {
             return
         }
-        remove(selection, from: selectionDisplay)
+        remove(selectedID, from: selectedDisplay)
     }
 
     private mutating func updateSelectedStyle(_ transform: (Mark) -> Mark) {

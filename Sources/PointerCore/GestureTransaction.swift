@@ -118,7 +118,7 @@ public struct GestureTransaction: Equatable, Sendable {
         case let .rectangle(rect), let .ellipse(rect):
             return rect.width == 0 && rect.height == 0
         case let .freehand(points):
-            return points.count < 2
+            return !zip(points, points.dropFirst()).contains { $0.0 != $0.1 }
         case .emoji, .spotlight:
             return false
         }

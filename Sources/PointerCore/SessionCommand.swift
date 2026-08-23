@@ -12,11 +12,8 @@ public enum SessionCommand: Equatable, Sendable {
     case setEmoji(String)
     case setSpotlight(radius: Double, dimness: Double)
 
-    /// Mode transitions cancel any open gesture before the mode change.
+    /// Commands cancel any open gesture before applying the mutation.
     public var cancelsActiveGesture: Bool {
-        if case .setMode = self {
-            return true
-        }
-        return false
+        true
     }
 }
