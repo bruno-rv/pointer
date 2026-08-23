@@ -5,6 +5,45 @@ import XCTest
 
 @MainActor
 final class CanvasViewTests: XCTestCase {
+    func testInitializerAdoptsActiveGestureOwnershipByDisplay() {
+        let displayA = DisplayUUID(rawValue: "display-a")
+        let displayB = DisplayUUID(rawValue: "display-b")
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        _ = session.beginGesture(
+            tool: .arrow,
+            at: .init(x: 0.2, y: 0.2),
+            on: displayA
+        )
+        _ = session.advanceGesture(to: .init(x: 0.8, y: 0.8))
+
+        let sourceView = CanvasView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            display: displayA,
+            session: session,
+            tool: .arrow
+        )
+        var sourceBoundaries: [GestureBoundaryEvent] = []
+        sourceView.onBoundaryEvent = { sourceBoundaries.append($0) }
+
+        XCTAssertTrue(sourceView.hasActiveGesture)
+        sourceView.endGesture()
+        XCTAssertEqual(sourceBoundaries, [.committed])
+
+        let otherView = CanvasView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            display: displayB,
+            session: session,
+            tool: .arrow
+        )
+        var otherBoundaries: [GestureBoundaryEvent] = []
+        otherView.onBoundaryEvent = { otherBoundaries.append($0) }
+
+        XCTAssertFalse(otherView.hasActiveGesture)
+        otherView.endGesture()
+        XCTAssertTrue(otherBoundaries.isEmpty)
+    }
+
     func testSessionEchoRetainsGestureOwnershipOnlyOnSourceView() {
         var session = PointerSession()
         session.apply(.setMode(.annotation))

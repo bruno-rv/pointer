@@ -35,6 +35,7 @@ public final class CanvasView: NSView {
         self.session = session
         self.tool = tool
         self.cursorPlan = Self.cursorPlan(for: tool, mode: session.mode)
+        self.hasActiveGesture = session.hasActiveGesture(on: display)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
