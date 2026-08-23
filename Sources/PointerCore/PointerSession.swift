@@ -13,6 +13,10 @@ public struct PointerSession: Equatable, Sendable {
         (undoHistories[display]?.count ?? 0) > 0
     }
 
+    public func hasActiveGesture(on display: DisplayUUID) -> Bool {
+        activeGesture?.display == display
+    }
+
     private var canvases: [DisplayUUID: Canvas]
     private var undoHistories: [DisplayUUID: UndoHistory]
     private var connectedDisplays: Set<DisplayUUID>

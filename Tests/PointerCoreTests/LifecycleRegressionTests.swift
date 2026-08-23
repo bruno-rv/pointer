@@ -2,6 +2,28 @@ import XCTest
 @testable import PointerCore
 
 final class LifecycleRegressionTests: XCTestCase {
+    func testHasActiveGestureReportsOnlyTheOwningDisplay() {
+        let firstDisplay = DisplayUUID(rawValue: "display-a")
+        let secondDisplay = DisplayUUID(rawValue: "display-b")
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+
+        XCTAssertFalse(session.hasActiveGesture(on: firstDisplay))
+        XCTAssertFalse(session.hasActiveGesture(on: secondDisplay))
+
+        _ = session.beginGesture(
+            tool: .arrow,
+            at: .init(x: 0.2, y: 0.2),
+            on: firstDisplay
+        )
+
+        XCTAssertTrue(session.hasActiveGesture(on: firstDisplay))
+        XCTAssertFalse(session.hasActiveGesture(on: secondDisplay))
+
+        _ = session.commitGesture()
+        XCTAssertFalse(session.hasActiveGesture(on: firstDisplay))
+    }
+
     func testStandbyClearsSelectionButRetainsMarksAndUndoAvailability() {
         let display = DisplayUUID(rawValue: "display-a")
         var session = PointerSession()

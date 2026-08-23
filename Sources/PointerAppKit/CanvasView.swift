@@ -46,9 +46,7 @@ public final class CanvasView: NSView {
     }
 
     public func update(session: PointerSession) {
-        if session.mode == .standby {
-            hasActiveGesture = false
-        }
+        hasActiveGesture = session.hasActiveGesture(on: display)
         self.session = session
         updateCursorPlan()
         needsDisplay = true
@@ -160,7 +158,11 @@ public final class CanvasView: NSView {
     private func setCursorPlan(_ plan: CursorPlan) {
         guard cursorPlan != plan else { return }
         cursorPlan = plan
-        discardCursorRects()
+        if let window {
+            window.invalidateCursorRects(for: self)
+        } else {
+            discardCursorRects()
+        }
     }
 
     private static func cursorPlan(for tool: PointerTool, mode: PointerMode) -> CursorPlan {
