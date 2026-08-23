@@ -139,6 +139,164 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.session.canvas(for: uuidA).marks, [mark])
     }
 
+    func testStopResetsSynchronizationBookkeepingForDirectRestart() {
+        let uuidA = DisplayUUID(rawValue: "a")
+        let uuidB = DisplayUUID(rawValue: "b")
+        let provider = FakeScreenProvider(displays: [
+            descriptor(uuid: uuidA),
+            descriptor(uuid: uuidB, x: 1_920),
+        ])
+        let coordinator = makeCoordinator(provider: provider)
+        _ = coordinator.synchronize()
+
+        _ = coordinator.stop()
+        let restarted = coordinator.synchronize()
+
+        XCTAssertEqual(restarted.connectedUUIDs, Set([uuidA, uuidB]))
+        XCTAssertEqual(restarted.addedUUIDs, Set([uuidA, uuidB]))
+        XCTAssertTrue(restarted.removedUUIDs.isEmpty)
+        XCTAssertFalse(restarted.enteredZeroDisplayState)
+        XCTAssertFalse(restarted.reconnected)
+    }
+
+    func testStopThenZeroSyncDoesNotLoseRetainedReconnectHistory() {
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        let coordinator = makeCoordinator(provider: provider)
+        _ = coordinator.synchronize()
+
+        _ = coordinator.stop()
+        provider.displays = []
+        let empty = coordinator.synchronize()
+
+        XCTAssertTrue(empty.connectedUUIDs.isEmpty)
+        XCTAssertTrue(empty.addedUUIDs.isEmpty)
+        XCTAssertTrue(empty.removedUUIDs.isEmpty)
+        XCTAssertFalse(empty.enteredZeroDisplayState)
+        XCTAssertFalse(empty.reconnected)
+
+        provider.displays = [descriptor(uuid: uuid)]
+        let reconnect = coordinator.synchronize()
+
+        XCTAssertEqual(reconnect.addedUUIDs, Set([uuid]))
+        XCTAssertTrue(reconnect.reconnected)
+    }
+
+    func testDuplicateValidDescriptorsCreateOneOverlay() {
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let display = descriptor(uuid: uuid)
+        let provider = FakeScreenProvider(displays: [display, display])
+        var created: [FakeOverlay] = []
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            let overlay = FakeOverlay(display: descriptor)
+            created.append(overlay)
+            return overlay
+        }
+
+        let result = coordinator.synchronize()
+
+        XCTAssertEqual(result.connectedUUIDs, Set([uuid]))
+        XCTAssertEqual(created.count, 1)
+        XCTAssertEqual(coordinator.overlays.count, 1)
+        XCTAssertEqual(created[0].presentationCount, 1)
+    }
+
+    func testPartialDisplayRemovalUsesRealCleanupAndLeavesOtherDisplay() {
+        _ = NSApplication.shared
+        let removedUUID = DisplayUUID(rawValue: "removed")
+        let retainedUUID = DisplayUUID(rawValue: "retained")
+        let provider = FakeScreenProvider(displays: [
+            descriptor(uuid: removedUUID),
+            descriptor(uuid: retainedUUID, x: 1_920),
+        ])
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            OverlayPanel(descriptor: descriptor)
+        }
+        _ = coordinator.synchronize()
+        let removedPanel = try! XCTUnwrap(coordinator.overlays[removedUUID] as? OverlayPanel)
+        let retainedPanel = try! XCTUnwrap(coordinator.overlays[retainedUUID] as? OverlayPanel)
+        let mark = fixtureRectangle()
+        coordinator.apply(.append(mark, to: removedUUID))
+        coordinator.apply(.setMode(.annotation))
+        removedPanel.canvasView.onRedrawRequested = {}
+
+        var sessionUpdates = 0
+        var boundaryEvents: [GestureBoundaryEvent] = []
+        coordinator.onSessionUpdate = { _ in sessionUpdates += 1 }
+        coordinator.onBoundaryEvent = { _, event in boundaryEvents.append(event) }
+        removedPanel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        sessionUpdates = 0
+        boundaryEvents.removeAll()
+        XCTAssertTrue(removedPanel.canvasView.hasActiveGesture)
+
+        provider.displays = [descriptor(uuid: retainedUUID, x: 1_920)]
+        coordinator.synchronize()
+
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertEqual(sessionUpdates, 1)
+        XCTAssertFalse(removedPanel.canvasView.hasActiveGesture)
+        XCTAssertNil(removedPanel.canvasView.onSessionUpdate)
+        XCTAssertNil(removedPanel.canvasView.onBoundaryEvent)
+        XCTAssertNil(removedPanel.canvasView.onRedrawRequested)
+        XCTAssertNil(coordinator.overlays[removedUUID])
+        XCTAssertTrue(coordinator.overlays[retainedUUID] as AnyObject? === retainedPanel)
+        XCTAssertEqual(coordinator.session.canvas(for: removedUUID).marks, [mark])
+
+        removedPanel.canvasView.endGesture()
+
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertEqual(coordinator.session.canvas(for: removedUUID).marks, [mark])
+    }
+
+    func testStopWhileActiveAggregatesCleanupAndForwardsCancellation() {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let provider = FakeScreenProvider(displays: [descriptor(uuid: uuid)])
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            OverlayPanel(descriptor: descriptor)
+        }
+        _ = coordinator.synchronize()
+        coordinator.apply(.setMode(.annotation))
+        let panel = try! XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        panel.canvasView.onRedrawRequested = {}
+        var sessionUpdates = 0
+        var boundaryEvents: [GestureBoundaryEvent] = []
+        coordinator.onSessionUpdate = { _ in sessionUpdates += 1 }
+        coordinator.onBoundaryEvent = { _, event in boundaryEvents.append(event) }
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        sessionUpdates = 0
+        boundaryEvents.removeAll()
+
+        let result = coordinator.stop()
+
+        XCTAssertEqual(result, DisplayStopResult(
+            closedOverlayCount: 1,
+            remainingOverlayCount: 0,
+            activeGestureCount: 1,
+            clearedHandlerCount: 3,
+            boundHandlerCount: 0
+        ))
+        XCTAssertEqual(sessionUpdates, 1)
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+        XCTAssertTrue(coordinator.overlays.isEmpty)
+    }
+
+    func testStopWithZeroDisplaysReturnsAllZeroCounts() {
+        let provider = FakeScreenProvider(displays: [])
+        let coordinator = makeCoordinator(provider: provider)
+
+        let result = coordinator.stop()
+
+        XCTAssertEqual(result, DisplayStopResult(
+            closedOverlayCount: 0,
+            remainingOverlayCount: 0,
+            activeGestureCount: 0,
+            clearedHandlerCount: 0,
+            boundHandlerCount: 0
+        ))
+    }
+
     func testReconnectWithSameUUIDReusesCanvasAcrossChangedFrame() {
         let uuid = DisplayUUID(rawValue: "display-a")
         let first = descriptor(uuid: uuid, x: 0, width: 1_920)

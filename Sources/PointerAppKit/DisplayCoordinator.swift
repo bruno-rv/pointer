@@ -71,7 +71,10 @@ public final class DisplayCoordinator {
 
         let disconnected = overlays.filter { !connected.contains($0.key) }
         for (uuid, overlay) in disconnected {
-            overlay.close()
+            let cleanup = overlay.stopAndClear()
+            if !cleanup.didClose {
+                overlay.close()
+            }
             overlays.removeValue(forKey: uuid)
             session.disconnect(uuid)
         }
@@ -124,6 +127,9 @@ public final class DisplayCoordinator {
             closedOverlayCount += 1
             overlays.removeValue(forKey: uuid)
         }
+
+        connectedUUIDs.removeAll()
+        hasSynchronized = false
 
         return DisplayStopResult(
             closedOverlayCount: closedOverlayCount,
