@@ -6,6 +6,7 @@ final class DeterministicClock {
     }
 
     func advance(by nanoseconds: UInt64) {
-        nowNanoseconds += nanoseconds
+        let result = nowNanoseconds.addingReportingOverflow(nanoseconds)
+        nowNanoseconds = result.overflow ? UInt64.max : result.partialValue
     }
 }
