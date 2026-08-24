@@ -179,6 +179,8 @@ private final class ControllerFixture {
             eventLog: GuideTestEventLog()
         )
         guideStateStore = GuideTestStateStore()
+        let stateStore = guideStateStore
+        guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
         let registrar = GuideTestHotKeyRegistrar()
         shortcutController = HotKeyController(
             registrar: registrar,
@@ -280,6 +282,8 @@ private final class SelectionControllerFixture {
             placementProvider: placementProvider,
             eventLog: GuideTestEventLog()
         )
+        let stateStore = guideStateStore
+        guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
         let registrar = GuideTestHotKeyRegistrar()
         shortcutController = HotKeyController(
             registrar: registrar,

@@ -155,9 +155,13 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         refresh()
 
         guard result.hasConnectedDisplays else {
-            if result.enteredZeroDisplayState,
-               (guide.isVisible || pendingFirstUseAttempt),
-               !guideStateStore.hasDismissedFirstUseGuide {
+            if result.enteredZeroDisplayState, guide.isVisible {
+                pendingDisplayLossRestore = true
+                pendingFirstUseAttempt = false
+                guide.hideForDisplayLoss()
+            } else if result.enteredZeroDisplayState,
+                      pendingFirstUseAttempt,
+                      !guideStateStore.hasDismissedFirstUseGuide {
                 pendingDisplayLossRestore = true
                 pendingFirstUseAttempt = false
                 guide.hideForDisplayLoss()

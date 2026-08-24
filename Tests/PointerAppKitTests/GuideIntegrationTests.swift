@@ -245,6 +245,7 @@ final class GuideIntegrationTests: XCTestCase {
     func testDisplayLossHidesGuideAndReconnectRestoresOnlyAfterPaletteShown() {
         let fixture = GuideControllerFixture()
         fixture.controller.start()
+        XCTAssertTrue(fixture.guideStateStore.hasDismissedFirstUseGuide)
         fixture.events.removeAll()
 
         fixture.provider.displays = []
@@ -257,6 +258,24 @@ final class GuideIntegrationTests: XCTestCase {
             fixture.events,
             ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
         )
+    }
+
+    func testSeenVisibleGuideStillRestoresAfterDisplayLoss() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        XCTAssertTrue(fixture.guideStateStore.hasDismissedFirstUseGuide)
+        fixture.events.removeAll()
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
+        )
+        XCTAssertTrue(fixture.guide.isVisible)
     }
 
     func testDismissedRestoredGuideDoesNotRestoreOnASecondDisplayLoss() {
@@ -307,7 +326,7 @@ final class GuideIntegrationTests: XCTestCase {
         XCTAssertTrue(fixture.guide.isVisible)
     }
 
-    func testStopClearsDisplayLossIntentWithoutChangingGuideStateAndRestartUsesUnseenRule() {
+    func testStopClearsDisplayLossIntentWithoutChangingGuideStateAndRestartUsesSeenRule() {
         let fixture = GuideControllerFixture()
         fixture.controller.start()
         fixture.events.removeAll()
@@ -334,7 +353,6 @@ final class GuideIntegrationTests: XCTestCase {
                 "guide.hideForDisplayLoss",
                 "guide.hideForApplicationStop",
                 "palette.show",
-                "guide.showIfNeeded",
             ]
         )
     }
@@ -414,6 +432,8 @@ final class GuideControllerFixture {
             guidePlacementProvider: placementProvider
         )
         guide = GuideTestSpyGuide(placementProvider: placementProvider, eventLog: eventLog)
+        let stateStore = guideStateStore
+        guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
         shortcutController = HotKeyController(
             registrar: registrar,
             store: GuideTestShortcutStore(),
@@ -461,6 +481,7 @@ final class GuideControllerFixture {
 final class GuideTestSpyGuide: FirstUseGuidePresenting {
     let placementProvider: any GuidePlacementProviding
     let eventLog: GuideTestEventLog?
+    var onVisible: (() -> Void)?
     var isVisible: Bool
     var consumeEscapeCount = 0
     var dismissCount = 0
@@ -488,6 +509,7 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
         eventLog?.values.append("guide.showIfNeeded")
         lastContext = context
         isVisible = true
+        onVisible?()
     }
 
     func show(in context: GuidePlacementContext) {
