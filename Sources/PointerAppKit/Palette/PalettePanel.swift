@@ -1,21 +1,91 @@
 import AppKit
 import PointerCore
 
+public struct GuidePlacementContext: Equatable, Sendable {
+    public let display: DisplayDescriptor
+    public let visibleFrame: DisplayFrame
+    public let paletteFrame: DisplayFrame
+    public let avoidanceFrames: [DisplayFrame]
+
+    public init(
+        display: DisplayDescriptor,
+        visibleFrame: DisplayFrame,
+        paletteFrame: DisplayFrame,
+        avoidanceFrames: [DisplayFrame]
+    ) {
+        self.display = display
+        self.visibleFrame = visibleFrame
+        self.paletteFrame = paletteFrame
+        self.avoidanceFrames = avoidanceFrames
+    }
+}
+
+@MainActor
+public protocol GuidePlacementProviding: AnyObject {
+    func context(
+        for display: DisplayDescriptor,
+        paletteFrame: DisplayFrame
+    ) -> GuidePlacementContext?
+}
+
+@MainActor
+public final class GuidePlacementProvider: GuidePlacementProviding {
+    public init() {}
+
+    public func context(
+        for display: DisplayDescriptor,
+        paletteFrame: DisplayFrame
+    ) -> GuidePlacementContext? {
+        guard isValid(display.visibleFrame),
+              !display.uuid.rawValue.isEmpty,
+              isValid(paletteFrame)
+        else {
+            return nil
+        }
+
+        return GuidePlacementContext(
+            display: display,
+            visibleFrame: display.visibleFrame,
+            paletteFrame: paletteFrame,
+            avoidanceFrames: [paletteFrame]
+        )
+    }
+
+    private func isValid(_ frame: DisplayFrame) -> Bool {
+        frame.x.isFinite && frame.y.isFinite
+            && frame.width.isFinite && frame.width > 0
+            && frame.height.isFinite && frame.height > 0
+    }
+}
+
+public enum PaletteShowResult: Equatable, Sendable {
+    case noDisplay
+    case failed(String)
+    case shown(GuidePlacementContext)
+}
+
 @MainActor
 public protocol PalettePresenting: AnyObject {
     var window: NSWindow { get }
+    var guidePlacementProvider: any GuidePlacementProviding { get }
     func refresh(session: PointerSession)
-    func show(on display: DisplayDescriptor)
+    @discardableResult
+    func show(on display: DisplayDescriptor) -> PaletteShowResult
     func hide()
 }
 
 @MainActor
 public final class PalettePanel: NSPanel, PalettePresenting {
     public let paletteViewController: PaletteViewController
+    public let guidePlacementProvider: any GuidePlacementProviding
 
     public var window: NSWindow { self }
 
-    public init(router: CommandRouter) {
+    public init(
+        router: CommandRouter,
+        guidePlacementProvider: any GuidePlacementProviding
+    ) {
+        self.guidePlacementProvider = guidePlacementProvider
         paletteViewController = PaletteViewController(router: router)
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 156),
@@ -40,14 +110,27 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         identifier = NSUserInterfaceItemIdentifier("pointer.palette")
     }
 
+    @available(*, deprecated, message: "Inject one GuidePlacementProviding instance; remove this seam in C Task 3.")
+    internal convenience init(router: CommandRouter) {
+        self.init(router: router, guidePlacementProvider: GuidePlacementProvider())
+    }
+
     public func refresh(session: PointerSession) {
         paletteViewController.refresh(session: session)
     }
 
-    public func show(on display: DisplayDescriptor) {
+    @discardableResult
+    public func show(on display: DisplayDescriptor) -> PaletteShowResult {
+        guard isValid(display.visibleFrame) else {
+            return .noDisplay
+        }
+
         paletteViewController.loadViewIfNeeded()
         let size = paletteViewController.preferredSize
         let width = max(1, min(size.width, CGFloat(display.visibleFrame.width - 32)))
+        guard width.isFinite, width > 0, size.height.isFinite, size.height > 0 else {
+            return .failed("Palette layout produced an invalid size")
+        }
         paletteViewController.applyLayout(for: width)
         contentMinSize = NSSize(width: 1, height: size.height)
         setContentSize(NSSize(width: width, height: size.height))
@@ -66,6 +149,23 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         )
         setFrameOrigin(NSPoint(x: placement.x, y: placement.y))
         orderFrontRegardless()
+
+        guard isVisible else {
+            return .failed("Palette window did not become visible")
+        }
+        let paletteFrame = DisplayFrame(
+            x: frame.minX,
+            y: frame.minY,
+            width: frame.width,
+            height: frame.height
+        )
+        guard let context = guidePlacementProvider.context(
+            for: display,
+            paletteFrame: paletteFrame
+        ) else {
+            return .failed("Palette placement produced an invalid frame")
+        }
+        return .shown(context)
     }
 
     public func hide() {
@@ -75,5 +175,11 @@ public final class PalettePanel: NSPanel, PalettePresenting {
     public override func close() {
         orderOut(nil)
         super.close()
+    }
+
+    private func isValid(_ frame: DisplayFrame) -> Bool {
+        frame.x.isFinite && frame.y.isFinite
+            && frame.width.isFinite && frame.width > 0
+            && frame.height.isFinite && frame.height > 0
     }
 }

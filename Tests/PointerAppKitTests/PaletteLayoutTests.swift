@@ -69,7 +69,12 @@ final class PaletteLayoutTests: XCTestCase {
     @MainActor
     func testPaletteRecomputesLayoutAfterNarrowContentWidth() {
         let router = makeRouter()
-        let palette = PalettePanel(router: router)
+        let placementProvider = GuidePlacementProvider()
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: placementProvider
+        )
+        XCTAssertTrue(palette.guidePlacementProvider === placementProvider)
         let descriptor = DisplayDescriptor(
             uuid: DisplayUUID(rawValue: "display-a"),
             frame: DisplayFrame(x: 0, y: 0, width: 220, height: 600),
@@ -97,7 +102,12 @@ final class PaletteLayoutTests: XCTestCase {
             scaleFactor: 2
         )
         let overlay = OverlayPanel(descriptor: descriptor)
-        let palette = PalettePanel(router: makeRouter())
+        let placementProvider = GuidePlacementProvider()
+        let palette = PalettePanel(
+            router: makeRouter(),
+            guidePlacementProvider: placementProvider
+        )
+        XCTAssertTrue(palette.guidePlacementProvider === placementProvider)
         defer {
             palette.close()
             overlay.close()

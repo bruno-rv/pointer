@@ -5,6 +5,65 @@ import XCTest
 
 @MainActor
 final class CommandRouterTests: XCTestCase {
+    func testNoDisplayRejectsAnnotationEntryWithoutMutatingModeOrTool() {
+        let provider = RouterTestScreenProvider(displays: [])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { RouterTestOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+
+        router.route(.setTool(.spotlight))
+
+        XCTAssertEqual(router.session.mode, .standby)
+        XCTAssertEqual(router.session.toolState.tool, .arrow)
+        XCTAssertEqual(router.feedbackMessage, "No presentation display connected")
+    }
+
+    func testInvalidPointerUUIDIsRejectedAgainstAcceptedDisplaySyncSet() {
+        let valid = RouterTestScreenProvider.descriptor(uuid: DisplayUUID(rawValue: "valid"))
+        let provider = RouterTestScreenProvider(
+            displays: [valid],
+            pointerUUID: DisplayUUID(rawValue: "missing")
+        )
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { RouterTestOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+
+        router.updateDisplayState(coordinator.synchronize())
+        router.route(.setMode(.annotation))
+
+        XCTAssertEqual(router.session.mode, .standby)
+        XCTAssertEqual(router.feedbackMessage, "No presentation display connected")
+    }
+
+    func testEscapeCancelsRealOverlayOnceAndStaleMouseUpDoesNotDuplicateBoundary() throws {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let descriptor = RouterTestScreenProvider.descriptor(uuid: uuid)
+        let provider = RouterTestScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        var boundaries: [GestureBoundaryEvent] = []
+        coordinator.onBoundaryEvent = { _, event in boundaries.append(event) }
+
+        _ = coordinator.synchronize()
+        router.route(.setMode(.annotation))
+        let overlay = try XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        overlay.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        router.route(.escape)
+        overlay.canvasView.mouseUp(with: NSEvent())
+
+        XCTAssertEqual(boundaries, [.began, .cancelled])
+        XCTAssertEqual(router.session.mode, .standby)
+        XCTAssertTrue(router.session.canvas(for: uuid).marks.isEmpty)
+    }
+
     func testEscapeCancelsDraftThenEntersStandbyFromPaletteFocus() throws {
         let fixture = makeFixture()
         fixture.coordinator.synchronize()
@@ -104,6 +163,36 @@ final class CommandRouterTests: XCTestCase {
         XCTAssertTrue(clearAllFixture.coordinator.session.canvas(for: clearAllFixture.uuid).marks.isEmpty)
     }
 
+    func testCallbackBindingReplacesCallbacksAndKeepsAcceptedDisplayState() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        var stateChangeCount = 0
+        var entryCount = 0
+
+        XCTAssertEqual(
+            fixture.router.bindCallbacks(
+                onStateChange: { _ in stateChangeCount += 1 },
+                onClearAllRequested: nil,
+                onAnnotationEntry: { entryCount += 1 }
+            ),
+            2
+        )
+        fixture.router.clearCallbacks()
+        XCTAssertEqual(
+            fixture.router.bindCallbacks(
+                onStateChange: { _ in stateChangeCount += 1 },
+                onClearAllRequested: nil,
+                onAnnotationEntry: { entryCount += 1 }
+            ),
+            2
+        )
+
+        fixture.router.route(.setMode(.annotation))
+
+        XCTAssertEqual(entryCount, 1)
+        XCTAssertGreaterThan(stateChangeCount, 0)
+    }
+
     private func makeFixture() -> RouterFixture {
         RouterFixture()
     }
@@ -135,13 +224,24 @@ private final class RouterFixture {
 @MainActor
 private final class RouterTestScreenProvider: ScreenProviding {
     let displays: [DisplayDescriptor]
+    let pointerUUID: DisplayUUID?
 
-    init(displays: [DisplayDescriptor]) {
+    init(displays: [DisplayDescriptor], pointerUUID: DisplayUUID? = nil) {
         self.displays = displays
+        self.pointerUUID = pointerUUID
     }
 
     func currentDisplays() -> [DisplayDescriptor] { displays }
-    func pointerDisplay() -> DisplayUUID? { displays.first?.uuid }
+    func pointerDisplay() -> DisplayUUID? { pointerUUID ?? displays.first?.uuid }
+
+    static func descriptor(uuid: DisplayUUID) -> DisplayDescriptor {
+        DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+            scaleFactor: 2
+        )
+    }
 }
 
 @MainActor

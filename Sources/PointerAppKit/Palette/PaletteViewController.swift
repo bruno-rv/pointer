@@ -11,6 +11,7 @@ private final class PaletteStyleScrollView: NSScrollView {
 public final class PaletteViewController: NSViewController {
     public private(set) var controls: [NSControl] = []
     public private(set) var layoutPlan = PaletteLayout.plan(availableWidth: 760)
+    public private(set) var deleteButton: NSButton!
 
     private let router: CommandRouter
     private var toolButtons: [PointerTool: NSButton] = [:]
@@ -23,6 +24,8 @@ public final class PaletteViewController: NSViewController {
     private var radiusSlider: NSSlider!
     private var dimnessSlider: NSSlider!
     private var statusLabel: NSTextField!
+    private var undoButton: NSButton!
+    private var clearButton: NSButton!
     private var visualEffectView: NSVisualEffectView!
     private var styleScrollView: NSScrollView!
     private var currentSession = PointerSession()
@@ -77,8 +80,16 @@ public final class PaletteViewController: NSViewController {
         radiusSlider.doubleValue = session.toolState.spotlightRadius
         dimnessSlider.doubleValue = session.toolState.spotlightDimness
         emojiPicker.selectItem(withTitle: session.toolState.emoji)
+        let pointerDisplay = router.pointerDisplay
+        deleteButton.isEnabled = session.mode == .annotation && session.selection != nil
+        undoButton.isEnabled = pointerDisplay.map(session.canUndo(on:)) ?? false
+        clearButton.isEnabled = pointerDisplay.map {
+            !session.canvas(for: $0).marks.isEmpty
+        } ?? false
         if let error = router.shortcutError {
             statusLabel.stringValue = "Shortcut unavailable: \(error)"
+        } else if let feedback = router.feedbackMessage {
+            statusLabel.stringValue = feedback
         } else {
             statusLabel.stringValue = session.mode == .annotation
                 ? "Annotation enabled"
@@ -205,7 +216,7 @@ public final class PaletteViewController: NSViewController {
         dimnessSlider.target = self
         dimnessSlider.action = #selector(changeSpotlight(_:))
 
-        let undoButton = makeButton(
+        undoButton = makeButton(
             title: "Undo",
             identifier: "palette.undo",
             label: "Undo last pointer-display change",
@@ -215,7 +226,7 @@ public final class PaletteViewController: NSViewController {
         undoButton.target = self
         undoButton.action = #selector(undo)
 
-        let clearButton = makeButton(
+        clearButton = makeButton(
             title: "Clear",
             identifier: "palette.clear",
             label: "Clear pointer display",
@@ -224,6 +235,16 @@ public final class PaletteViewController: NSViewController {
         )
         clearButton.target = self
         clearButton.action = #selector(clear)
+
+        deleteButton = makeButton(
+            title: "Delete",
+            identifier: "palette.delete",
+            label: "Delete selected mark",
+            help: "Delete the selected mark",
+            buttonType: .momentaryPushIn
+        )
+        deleteButton.target = self
+        deleteButton.action = #selector(delete)
 
         statusLabel = NSTextField(labelWithString: "Standby — overlays are click-through")
         statusLabel.setAccessibilityElement(true)
@@ -234,7 +255,7 @@ public final class PaletteViewController: NSViewController {
         controls += [modeButton]
         controls += PointerTool.allCases.compactMap { toolButtons[$0] }
         controls += [overflowButton, emojiPicker, colorWell, strokeSlider, opacitySlider, radiusSlider, dimnessSlider]
-        controls += [undoButton, clearButton]
+        controls += [undoButton, clearButton, deleteButton]
     }
 
     private func layoutControls() {
@@ -253,6 +274,7 @@ public final class PaletteViewController: NSViewController {
             labeled("Dimness", dimnessSlider),
             controls.first { $0.identifier?.rawValue == "palette.undo" }!,
             controls.first { $0.identifier?.rawValue == "palette.clear" }!,
+            deleteButton,
         ])
         secondRow.orientation = .horizontal
         secondRow.spacing = 8
@@ -368,6 +390,10 @@ public final class PaletteViewController: NSViewController {
 
     @objc private func clear() {
         router.route(.clear)
+    }
+
+    @objc private func delete() {
+        router.route(.delete)
     }
 
     private func makeButton(

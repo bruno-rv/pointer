@@ -21,12 +21,17 @@ public final class CommandRouter {
 
     public var onStateChange: ((PointerSession) -> Void)?
     public var onClearAllRequested: (() -> Void)?
+    public var onAnnotationEntry: (() -> Void)?
+    public var onFeedback: ((String) -> Void)?
+
+    public private(set) var feedbackMessage: String?
 
     public private(set) var lastHandledCommand: Command?
 
     private let coordinator: DisplayCoordinator
     private let screenProvider: any ScreenProviding
     private weak var shortcutController: HotKeyController?
+    private var acceptedDisplayState: DisplaySyncResult?
 
     public init(
         coordinator: DisplayCoordinator,
@@ -36,8 +41,13 @@ public final class CommandRouter {
         self.coordinator = coordinator
         self.screenProvider = screenProvider
         self.shortcutController = shortcutController
+        let existingDisplaySync = coordinator.onDisplaySync
         coordinator.onSessionUpdate = { [weak self] session in
             self?.onStateChange?(session)
+        }
+        coordinator.onDisplaySync = { [weak self] result in
+            self?.updateDisplayState(result)
+            existingDisplaySync?(result)
         }
         shortcutController?.onStateChange = { [weak self] in
             guard let self else { return }
@@ -57,8 +67,36 @@ public final class CommandRouter {
         screenProvider.pointerDisplay()
     }
 
+    public var activeShortcutID: String? {
+        shortcutController?.activePreset?.rawValue
+    }
+
     public var shortcutError: String? {
         shortcutController?.registrationError
+    }
+
+    @discardableResult
+    public func bindCallbacks(
+        onStateChange: ((PointerSession) -> Void)?,
+        onClearAllRequested: (() -> Void)?,
+        onAnnotationEntry: (() -> Void)?
+    ) -> Int {
+        self.onStateChange = onStateChange
+        self.onClearAllRequested = onClearAllRequested
+        self.onAnnotationEntry = onAnnotationEntry
+        return (onStateChange == nil ? 0 : 1)
+            + (onClearAllRequested == nil ? 0 : 1)
+            + (onAnnotationEntry == nil ? 0 : 1)
+    }
+
+    public func clearCallbacks() {
+        onStateChange = nil
+        onClearAllRequested = nil
+        onAnnotationEntry = nil
+    }
+
+    public func updateDisplayState(_ result: DisplaySyncResult) {
+        acceptedDisplayState = result
     }
 
     public func route(_ command: Command) {
@@ -66,39 +104,69 @@ public final class CommandRouter {
 
         switch command {
         case .escape:
+            clearFeedback()
             coordinator.cancelActiveGestures()
-            coordinator.apply(.setMode(.standby))
+            coordinator.apply(.setMode(.standby), cancellingActiveGestures: false)
         case .delete:
+            clearFeedback()
             coordinator.apply(.deleteSelected)
         case .undo:
             applyToPointerDisplay { .undo(on: $0) }
         case .clear:
             applyToPointerDisplay { .clear($0) }
         case .clearAll:
+            clearFeedback()
             onClearAllRequested?()
         case .undoClearAll:
             guard coordinator.session.canUndoClearAll else { return }
+            clearFeedback()
             coordinator.apply(.undoClearAll)
         case let .setTool(tool):
+            guard requirePointerDisplayForAnnotation() else { return }
+            clearFeedback()
             coordinator.apply(.setTool(tool))
-            coordinator.apply(.setMode(.annotation))
+            if session.mode != .annotation {
+                coordinator.apply(.setMode(.annotation))
+            }
+            onAnnotationEntry?()
         case let .setStyle(style):
+            clearFeedback()
             coordinator.apply(.setStyle(style))
         case let .setEmoji(emoji):
+            clearFeedback()
             coordinator.apply(.setEmoji(emoji))
         case let .setSpotlight(radius, dimness):
+            clearFeedback()
             coordinator.apply(.setSpotlight(radius: radius, dimness: dimness))
         case let .setMode(mode):
-            coordinator.apply(.setMode(mode))
+            if mode == .annotation {
+                guard requirePointerDisplayForAnnotation() else { return }
+                clearFeedback()
+                coordinator.apply(.setMode(mode))
+                onAnnotationEntry?()
+            } else {
+                clearFeedback()
+                coordinator.apply(.setMode(mode))
+            }
         case .toggleMode:
             let nextMode: PointerMode = session.mode == .annotation ? .standby : .annotation
-            coordinator.apply(.setMode(nextMode))
+            if nextMode == .annotation {
+                guard requirePointerDisplayForAnnotation() else { return }
+                clearFeedback()
+                coordinator.apply(.setMode(nextMode))
+                onAnnotationEntry?()
+            } else {
+                clearFeedback()
+                coordinator.apply(.setMode(nextMode))
+            }
         case let .setShortcut(preset):
+            clearFeedback()
             shortcutController?.setShortcut(preset)
         }
     }
 
     public func confirmClearAll() {
+        clearFeedback()
         coordinator.apply(.clearAll)
     }
 
@@ -131,7 +199,36 @@ public final class CommandRouter {
     private func applyToPointerDisplay(
         _ command: (DisplayUUID) -> SessionCommand
     ) {
-        guard let display = screenProvider.pointerDisplay() else { return }
+        guard let display = screenProvider.pointerDisplay() else {
+            rejectAnnotationEntry()
+            return
+        }
+        clearFeedback()
         coordinator.apply(command(display))
+    }
+
+    private func requirePointerDisplayForAnnotation() -> Bool {
+        guard let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              let pointerDisplay = acceptedDisplayState.pointerDisplay,
+              !pointerDisplay.rawValue.isEmpty,
+              acceptedDisplayState.connectedUUIDs.contains(pointerDisplay),
+              !acceptedDisplayState.connectedUUIDs.isEmpty,
+              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        else {
+            rejectAnnotationEntry()
+            return false
+        }
+        return true
+    }
+
+    private func rejectAnnotationEntry() {
+        let message = "No presentation display connected"
+        feedbackMessage = message
+        onFeedback?(message)
+    }
+
+    private func clearFeedback() {
+        feedbackMessage = nil
     }
 }
