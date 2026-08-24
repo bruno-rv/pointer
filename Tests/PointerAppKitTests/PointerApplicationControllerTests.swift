@@ -101,6 +101,46 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertNotNil(fixture.coordinator.onDisplaySync)
         XCTAssertNotNil(fixture.router.onStateChange)
     }
+
+    func testClearAllCallbackRunsOnceBeforeAndAfterRestartAndNotWhileStopped() throws {
+        let fixture = ControllerFixture { router in
+            ControllerTestMenuBar(router: router)
+        }
+        let menuBar = try XCTUnwrap(fixture.menuBar as? ControllerTestMenuBar)
+
+        fixture.controller.start()
+        menuBar.requestClearAll()
+        XCTAssertEqual(menuBar.confirmationCount, 1)
+        XCTAssertEqual(menuBar.commandCount, 1)
+
+        fixture.controller.stop()
+        menuBar.requestClearAll()
+        XCTAssertEqual(menuBar.confirmationCount, 1)
+        XCTAssertEqual(menuBar.commandCount, 1)
+
+        fixture.controller.start()
+        menuBar.requestClearAll()
+        XCTAssertEqual(menuBar.confirmationCount, 2)
+        XCTAssertEqual(menuBar.commandCount, 2)
+    }
+
+    func testSelectionFeedbackCallbackSurvivesControllerStopAndRestart() throws {
+        let fixture = SelectionControllerFixture()
+        var feedback: [String] = []
+        let existingFeedback = fixture.router.onFeedback
+        fixture.router.onFeedback = { message in
+            feedback.append(message)
+            existingFeedback?(message)
+        }
+
+        fixture.controller.start()
+        try fixture.selectAndClear()
+        fixture.controller.stop()
+        fixture.controller.start()
+        try fixture.selectAndClear()
+
+        XCTAssertEqual(feedback, ["Selection cleared", "Selection cleared"])
+    }
 }
 
 @MainActor
@@ -109,6 +149,7 @@ private final class ControllerFixture {
     let provider: ControllerTestScreenProvider
     let coordinator: DisplayCoordinator
     let router: CommandRouter
+    let menuBar: (any MenuBarPresenting)?
     let palette: PalettePanel
     let placementProvider: GuideTestPlacementProvider
     let guide: GuideTestSpyGuide
@@ -116,7 +157,7 @@ private final class ControllerFixture {
     let shortcutController: HotKeyController
     let controller: PointerApplicationController
 
-    init() {
+    init(_ menuBarFactory: ((CommandRouter) -> any MenuBarPresenting)? = nil) {
         let uuid = DisplayUUID(rawValue: "display-a")
         let descriptor = DisplayDescriptor(
             uuid: uuid,
@@ -130,6 +171,7 @@ private final class ControllerFixture {
             overlayFactory: { ControllerTestOverlay(display: $0) }
         )
         router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        menuBar = menuBarFactory?(router)
         placementProvider = GuideTestPlacementProvider(eventLog: GuideTestEventLog())
         palette = PalettePanel(router: router, guidePlacementProvider: placementProvider)
         guide = GuideTestSpyGuide(
@@ -148,7 +190,7 @@ private final class ControllerFixture {
             displayCoordinator: coordinator,
             commandRouter: router,
             palette: palette,
-            menuBar: nil,
+            menuBar: menuBar,
             shortcutController: shortcutController,
             guide: guide,
             guideStateStore: guideStateStore,
@@ -156,6 +198,125 @@ private final class ControllerFixture {
             guidePlacementProvider: placementProvider,
             notificationCenter: notificationCenter
         )
+    }
+}
+
+@MainActor
+private final class ControllerTestMenuBar: MenuBarPresenting {
+    private let router: CommandRouter
+    private var callbacksBound = false
+    private var onShowPalette: (() -> Void)?
+    private var onLearnPointer: (() -> Void)?
+    private(set) var confirmationCount = 0
+    private(set) var commandCount = 0
+
+    init(router: CommandRouter) {
+        self.router = router
+    }
+
+    func install() {}
+    func refresh(session: PointerSession) {}
+    func remove() {}
+
+    @discardableResult
+    func bindCallbacks(
+        onShowPalette: (() -> Void)?,
+        onLearnPointer: (() -> Void)?
+    ) -> Int {
+        self.onShowPalette = onShowPalette
+        self.onLearnPointer = onLearnPointer
+        callbacksBound = true
+        router.onClearAllRequested = { [weak self] in
+            guard let self, self.callbacksBound else { return }
+            self.confirmationCount += 1
+            self.commandCount += 1
+            self.router.confirmClearAll()
+        }
+        return (onShowPalette == nil ? 0 : 1)
+            + (onLearnPointer == nil ? 0 : 1)
+    }
+
+    func clearCallbacks() {
+        callbacksBound = false
+        onShowPalette = nil
+        onLearnPointer = nil
+        router.onClearAllRequested = nil
+    }
+
+    func requestClearAll() {
+        router.route(.clearAll)
+    }
+}
+
+@MainActor
+private final class SelectionControllerFixture {
+    let uuid = DisplayUUID(rawValue: "selection-controller-display")
+    let provider: ControllerTestScreenProvider
+    let coordinator: DisplayCoordinator
+    let router: CommandRouter
+    let palette: PalettePanel
+    let placementProvider: GuideTestPlacementProvider
+    let guide: GuideTestSpyGuide
+    let guideStateStore = GuideTestStateStore()
+    let shortcutController: HotKeyController
+    let controller: PointerApplicationController
+
+    init() {
+        let descriptor = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+            scaleFactor: 2
+        )
+        provider = ControllerTestScreenProvider(displays: [descriptor])
+        coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        placementProvider = GuideTestPlacementProvider(eventLog: GuideTestEventLog())
+        palette = PalettePanel(router: router, guidePlacementProvider: placementProvider)
+        guide = GuideTestSpyGuide(
+            placementProvider: placementProvider,
+            eventLog: GuideTestEventLog()
+        )
+        let registrar = GuideTestHotKeyRegistrar()
+        shortcutController = HotKeyController(
+            registrar: registrar,
+            store: GuideTestShortcutStore(),
+            scheduler: GuideTestShortcutScheduler()
+        )
+        controller = PointerApplicationController(
+            screenProvider: provider,
+            displayCoordinator: coordinator,
+            commandRouter: router,
+            palette: palette,
+            menuBar: nil,
+            shortcutController: shortcutController,
+            guide: guide,
+            guideStateStore: guideStateStore,
+            controlMetadataProvider: ControlMetadataInventory(palette: palette, menuBar: nil),
+            guidePlacementProvider: placementProvider,
+            notificationCenter: NotificationCenter()
+        )
+    }
+
+    func selectAndClear() throws {
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        router.route(.setMode(.annotation))
+        coordinator.apply(.append(mark, to: uuid))
+        router.route(.setTool(.select))
+        let overlay = try XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        overlay.canvasView.beginGesture(at: NSPoint(x: 960, y: 540))
+        overlay.canvasView.endGesture()
+        overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
+        overlay.canvasView.endGesture()
     }
 }
 

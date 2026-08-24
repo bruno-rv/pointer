@@ -44,12 +44,22 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         self.controlMetadataProvider = controlMetadataProvider
         self.guidePlacementProvider = guidePlacementProvider
         self.notificationCenter = notificationCenter
+        precondition(
+            palette.guidePlacementProvider === guidePlacementProvider,
+            "Palette and controller must share the injected guide placement provider"
+        )
+        precondition(
+            guide.placementProvider === guidePlacementProvider,
+            "Guide and controller must share the injected guide placement provider"
+        )
         super.init()
     }
 
     public func start() {
         guard !started else { return }
         started = true
+        pendingFirstUseAttempt = !guideStateStore.hasDismissedFirstUseGuide
+        pendingDisplayLossRestore = false
 
         commandRouter.bindCallbacks(
             onStateChange: { [weak self] session in
@@ -145,14 +155,19 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         refresh()
 
         guard result.hasConnectedDisplays else {
-            if result.enteredZeroDisplayState,
-               guide.isVisible || pendingFirstUseAttempt {
+            if result.enteredZeroDisplayState, guide.isVisible {
                 pendingDisplayLossRestore = true
+                pendingFirstUseAttempt = false
                 guide.hideForDisplayLoss()
+            } else if guideStateStore.hasDismissedFirstUseGuide {
+                pendingFirstUseAttempt = false
             }
             palette.hide()
-            pendingFirstUseAttempt = true
             return
+        }
+
+        if guideStateStore.hasDismissedFirstUseGuide {
+            pendingFirstUseAttempt = false
         }
 
         guard let display = display(for: result.pointerDisplay) else {
@@ -165,6 +180,7 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             switch palette.show(on: display) {
             case let .shown(context):
                 guide.restoreAfterDisplayLoss(in: context)
+                pendingFirstUseAttempt = false
                 pendingDisplayLossRestore = false
             case .noDisplay, .failed:
                 break
@@ -174,10 +190,13 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
 
         switch palette.show(on: display) {
         case let .shown(context):
-            guide.showIfNeeded(in: context)
-            pendingFirstUseAttempt = false
+            if pendingFirstUseAttempt {
+                guide.showIfNeeded(in: context)
+                pendingFirstUseAttempt = false
+            }
         case .noDisplay, .failed:
-            pendingFirstUseAttempt = true
+            pendingFirstUseAttempt = !guideStateStore.hasDismissedFirstUseGuide
+                && !guide.isVisible
         }
     }
 

@@ -28,7 +28,9 @@ public final class PointerApplication: NSApplication {
         localRouter: (any LocalKeyRouting)?,
         commandRouter: CommandRouter?
     ) -> Bool {
-        if guide?.consumeEscape() == true {
+        if event.type == .keyDown,
+           event.keyCode == 53,
+           guide?.consumeEscape() == true {
             return true
         }
         if localRouter?.routeLocalKeyEvent(event) == true {

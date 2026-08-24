@@ -26,6 +26,19 @@ final class GuideIntegrationTests: XCTestCase {
         XCTAssertEqual(fixture.events, ["palette.show", "guide.showIfNeeded"])
     }
 
+    func testDismissedFirstUseAtZeroDisplayDoesNotRetryAfterReconnect() {
+        let fixture = GuideControllerFixture(displays: [])
+        fixture.guideStateStore.markFirstUseGuideDismissed()
+
+        fixture.controller.start()
+        XCTAssertEqual(fixture.events, [])
+
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["palette.show"])
+    }
+
     func testVisibleGuideConsumesEscapeBeforeCommandRouter() {
         let guide = GuideTestSpyGuide(placementProvider: GuidePlacementProvider(), visible: true)
         let provider = GuideTestScreenProvider(displays: [])
@@ -43,6 +56,53 @@ final class GuideIntegrationTests: XCTestCase {
         XCTAssertEqual(guide.consumeEscapeCount, 1)
         XCTAssertNil(router.lastHandledCommand)
         XCTAssertFalse(guide.isVisible)
+    }
+
+    func testVisibleGuideDoesNotConsumeReturnBeforeLocalRouter() {
+        let guide = GuideTestSpyGuide(placementProvider: GuidePlacementProvider(), visible: true)
+        let localRouter = GuideTestLocalRouter(result: true)
+
+        let consumed = PointerApplication.routeLocalEvent(
+            keyDown(keyCode: 36),
+            guide: guide,
+            localRouter: localRouter,
+            commandRouter: nil
+        )
+
+        XCTAssertTrue(consumed)
+        XCTAssertEqual(guide.consumeEscapeCount, 0)
+        XCTAssertEqual(localRouter.callCount, 1)
+        XCTAssertTrue(guide.isVisible)
+    }
+
+    func testVisibleGuideDoesNotConsumeMouseEventAndLocalRouterControlsConsumption() {
+        let guide = GuideTestSpyGuide(placementProvider: GuidePlacementProvider(), visible: true)
+        let unhandledLocalRouter = GuideTestLocalRouter(result: false)
+
+        let unconsumed = PointerApplication.routeLocalEvent(
+            mouseDown(),
+            guide: guide,
+            localRouter: unhandledLocalRouter,
+            commandRouter: nil
+        )
+
+        XCTAssertFalse(unconsumed)
+        XCTAssertEqual(guide.consumeEscapeCount, 0)
+        XCTAssertEqual(unhandledLocalRouter.callCount, 1)
+        XCTAssertTrue(guide.isVisible)
+
+        let handledLocalRouter = GuideTestLocalRouter(result: true)
+        let consumed = PointerApplication.routeLocalEvent(
+            mouseDown(),
+            guide: guide,
+            localRouter: handledLocalRouter,
+            commandRouter: nil
+        )
+
+        XCTAssertTrue(consumed)
+        XCTAssertEqual(guide.consumeEscapeCount, 0)
+        XCTAssertEqual(handledLocalRouter.callCount, 1)
+        XCTAssertTrue(guide.isVisible)
     }
 
     func testHiddenGuideLetsInjectedLocalRouterHandleBeforeCommandFallback() {
@@ -173,6 +233,71 @@ final class GuideIntegrationTests: XCTestCase {
             fixture.events,
             ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
         )
+    }
+
+    func testDismissedRestoredGuideDoesNotRestoreOnASecondDisplayLoss() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
+        )
+
+        fixture.guide.dismiss()
+        fixture.guideStateStore.markFirstUseGuideDismissed()
+        fixture.events.removeAll()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["palette.show"])
+    }
+
+    func testStopClearsDisplayLossIntentWithoutChangingGuideStateAndRestartUsesUnseenRule() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+        let markCount = fixture.guideStateStore.markCount
+        let hasDismissed = fixture.guideStateStore.hasDismissedFirstUseGuide
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.controller.stop()
+
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "guide.hideForApplicationStop"]
+        )
+        XCTAssertEqual(fixture.guideStateStore.markCount, markCount)
+        XCTAssertEqual(fixture.guideStateStore.hasDismissedFirstUseGuide, hasDismissed)
+
+        fixture.provider.displays = [fixture.display]
+        fixture.controller.start()
+
+        XCTAssertEqual(
+            fixture.events,
+            [
+                "guide.hideForDisplayLoss",
+                "guide.hideForApplicationStop",
+                "palette.show",
+                "guide.showIfNeeded",
+            ]
+        )
+    }
+
+    func testControllerPaletteAndGuideShareTheInjectedPlacementProvider() {
+        let fixture = GuideControllerFixture()
+
+        XCTAssertTrue(fixture.controller.guidePlacementProvider === fixture.placementProvider)
+        XCTAssertTrue(fixture.palette.guidePlacementProvider === fixture.placementProvider)
+        XCTAssertTrue(fixture.guide.placementProvider === fixture.placementProvider)
     }
 
     func testMenuLearnPointerAndCallbacksCanBeClearedAndRebound() throws {
@@ -340,6 +465,7 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
     }
 
     func hideForApplicationStop() {
+        eventLog?.values.append("guide.hideForApplicationStop")
         isVisible = false
     }
 
@@ -500,5 +626,19 @@ private func keyDown(keyCode: UInt16) -> NSEvent {
         charactersIgnoringModifiers: "",
         isARepeat: false,
         keyCode: keyCode
+    )!
+}
+
+private func mouseDown() -> NSEvent {
+    NSEvent.mouseEvent(
+        with: .leftMouseDown,
+        location: NSPoint(x: 10, y: 10),
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        eventNumber: 1,
+        clickCount: 1,
+        pressure: 1
     )!
 }
