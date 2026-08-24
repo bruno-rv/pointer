@@ -906,6 +906,7 @@ final class DisplayCoordinatorTests: XCTestCase {
 
         var innerResult: OverlayCleanupResult?
         var reentrantHandlerWasBound = false
+        var reentrantMode: PointerMode?
         var visibleAfterReentrantCalls = false
         panel.setEventHandlers(
             onSessionUpdate: { _ in },
@@ -917,6 +918,8 @@ final class DisplayCoordinatorTests: XCTestCase {
                     onBoundaryEvent: { _ in }
                 )
                 reentrantHandlerWasBound = panel.canvasView.onSessionUpdate != nil
+                panel.setMode(.standby)
+                reentrantMode = panel.canvasView.session.mode
                 innerResult = panel.stopAndClear()
                 panel.close()
                 panel.show()
@@ -936,6 +939,7 @@ final class DisplayCoordinatorTests: XCTestCase {
             didClose: false
         ))
         XCTAssertFalse(reentrantHandlerWasBound)
+        XCTAssertEqual(reentrantMode, .annotation)
         XCTAssertTrue(visibleAfterReentrantCalls)
         XCTAssertTrue(outerResult.cancelledActiveGesture)
         XCTAssertEqual(outerResult.clearedHandlerCount, 3)
@@ -953,6 +957,62 @@ final class DisplayCoordinatorTests: XCTestCase {
             remainingHandlerCount: 0,
             didClose: false
         ))
+    }
+
+    func testActiveOverlaySetModeCancelsOncePublishesFinalStandbyAndStaysClickThrough() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        let mark = fixtureRectangle()
+        session.apply(.append(mark, to: panel.display.uuid))
+        session.apply(.setTool(.select))
+        panel.update(session: session)
+
+        var updates: [PointerSession] = []
+        var boundaries: [GestureBoundaryEvent] = []
+        panel.setEventHandlers(
+            onSessionUpdate: { updates.append($0) },
+            onBoundaryEvent: { boundaries.append($0) }
+        )
+        panel.canvasView.beginGesture(at: NSPoint(x: 576, y: 324))
+        XCTAssertTrue(panel.canvasView.hasActiveGesture)
+        XCTAssertEqual(panel.canvasView.session.selection, mark.id)
+        updates.removeAll()
+        boundaries.removeAll()
+
+        panel.setMode(.standby)
+
+        XCTAssertEqual(boundaries, [.cancelled])
+        XCTAssertEqual(updates.count, 2)
+        guard updates.count == 2 else { return }
+        XCTAssertEqual(updates[0].mode, .annotation)
+        XCTAssertFalse(updates[0].hasActiveGesture(on: panel.display.uuid))
+        XCTAssertNil(updates[0].selection)
+        XCTAssertEqual(updates[1].mode, .standby)
+        XCTAssertFalse(updates[1].hasActiveGesture(on: panel.display.uuid))
+        XCTAssertNil(updates[1].selection)
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+        XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertEqual(panel.canvasView.cursorPlan, .clickThrough)
+
+        panel.canvasView.endGesture()
+        XCTAssertEqual(boundaries, [.cancelled])
+        XCTAssertEqual(panel.canvasView.session.canvas(for: panel.display.uuid).marks, [mark])
+    }
+
+    func testClosedOverlaySetModeIsNoOp() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        let before = panel.canvasView.session
+        XCTAssertTrue(panel.ignoresMouseEvents)
+
+        _ = panel.stopAndClear()
+        panel.setMode(.annotation)
+
+        XCTAssertEqual(panel.canvasView.session, before)
+        XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertEqual(panel.canvasView.cursorPlan, .clickThrough)
     }
 
     private func makeCoordinator(
