@@ -63,19 +63,21 @@ public final class OverlayPanel: NSPanel, OverlayPresenting {
 
     public func setMode(_ mode: PointerMode) {
         guard lifecycleState == .open else { return }
-        ignoresMouseEvents = mode == .standby
 
         let modeChanged = canvasView.session.mode != mode
         if modeChanged, canvasView.hasActiveGesture {
             canvasView.cancelGesture()
+            guard lifecycleState == .open else { return }
         }
 
         var updatedSession = canvasView.session
-        if modeChanged {
+        let currentModeChanged = updatedSession.mode != mode
+        if currentModeChanged {
             updatedSession.apply(.setMode(mode))
         }
         canvasView.update(session: updatedSession)
-        if modeChanged {
+        ignoresMouseEvents = mode == .standby
+        if currentModeChanged {
             canvasView.onSessionUpdate?(updatedSession)
         }
     }

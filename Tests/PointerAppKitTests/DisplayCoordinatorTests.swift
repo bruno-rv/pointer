@@ -1015,6 +1015,87 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertEqual(panel.canvasView.cursorPlan, .clickThrough)
     }
 
+    func testSetModeCancellationCallbackClosingPanelStopsOuterMutation() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        panel.update(session: session)
+
+        var updates: [PointerSession] = []
+        var boundaries: [GestureBoundaryEvent] = []
+        panel.setEventHandlers(
+            onSessionUpdate: { updates.append($0) },
+            onBoundaryEvent: { [weak panel] event in
+                boundaries.append(event)
+                if event == .cancelled {
+                    panel?.close()
+                }
+            }
+        )
+        panel.show()
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        updates.removeAll()
+        boundaries.removeAll()
+
+        panel.setMode(.standby)
+
+        XCTAssertEqual(boundaries, [.cancelled])
+        XCTAssertEqual(updates.count, 1)
+        XCTAssertEqual(panel.canvasView.session.mode, .annotation)
+        XCTAssertFalse(panel.ignoresMouseEvents)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertNil(panel.canvasView.onRedrawRequested)
+        XCTAssertEqual(panel.stopAndClear(), OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 0,
+            didClose: false
+        ))
+    }
+
+    func testSetModeCancellationCallbackReentryPublishesFinalStandbyOnce() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        panel.update(session: session)
+
+        var updates: [PointerSession] = []
+        var boundaries: [GestureBoundaryEvent] = []
+        var reentering = false
+        var cancellationArmed = false
+        panel.setEventHandlers(
+            onSessionUpdate: { [weak panel] updated in
+                updates.append(updated)
+                guard cancellationArmed,
+                      !reentering,
+                      updated.mode == .annotation,
+                      !updated.hasActiveGesture(on: panel?.display.uuid ?? DisplayUUID(rawValue: ""))
+                else { return }
+                reentering = true
+                panel?.setMode(.standby)
+            },
+            onBoundaryEvent: { event in boundaries.append(event) }
+        )
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        updates.removeAll()
+        boundaries.removeAll()
+        cancellationArmed = true
+
+        panel.setMode(.standby)
+
+        XCTAssertTrue(reentering)
+        XCTAssertEqual(boundaries, [.cancelled])
+        XCTAssertEqual(updates.count, 2)
+        XCTAssertEqual(updates.filter { $0.mode == .standby }.count, 1)
+        XCTAssertEqual(panel.canvasView.session.mode, .standby)
+        XCTAssertTrue(panel.ignoresMouseEvents)
+        XCTAssertEqual(panel.canvasView.cursorPlan, .clickThrough)
+    }
+
     private func makeCoordinator(
         provider: FakeScreenProvider,
         overlayFactory: @escaping DisplayCoordinator.OverlayFactory = { FakeOverlay(display: $0) }
