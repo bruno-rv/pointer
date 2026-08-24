@@ -17,6 +17,26 @@ private final class PaletteActionStack: NSStackView {
     }
 }
 
+private final class PaletteFocusableButton: NSButton {
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+}
+
+private final class PaletteFocusablePopup: NSPopUpButton {
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+}
+
+private final class PaletteFocusableColorWell: NSColorWell {
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+}
+
+private final class PaletteFocusableSlider: NSSlider {
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { true }
+}
+
 @MainActor
 public final class PaletteViewController: NSViewController {
     public private(set) var controls: [NSControl] = []
@@ -104,25 +124,28 @@ public final class PaletteViewController: NSViewController {
             button.isEnabled = true
             button.setAccessibilityValue(session.toolState.tool == tool ? "Selected" : "Not selected")
         }
-        let style = session.toolState.style
+        let selectedMark = selectedMark(in: session)
+        let style = compatibleStyle(for: selectedMark) ?? session.toolState.style
         colorWell.color = nsColor(from: style.color)
         colorWell.setAccessibilityValue(
             "RGBA \(style.color.red), \(style.color.green), \(style.color.blue)"
         )
         strokeSlider.doubleValue = style.strokeWidth
         opacitySlider.doubleValue = style.opacity
-        radiusSlider.doubleValue = session.toolState.spotlightRadius
-        dimnessSlider.doubleValue = session.toolState.spotlightDimness
-        emojiPicker.selectItem(withTitle: session.toolState.emoji)
-        emojiPicker.setAccessibilityValue(session.toolState.emoji)
+        let spotlight = spotlightValues(for: selectedMark)
+        radiusSlider.doubleValue = spotlight?.radius ?? session.toolState.spotlightRadius
+        dimnessSlider.doubleValue = spotlight?.dimness ?? session.toolState.spotlightDimness
+        let emoji = emojiValue(for: selectedMark) ?? session.toolState.emoji
+        emojiPicker.selectItem(withTitle: emoji)
+        emojiPicker.setAccessibilityValue(emoji)
         strokeSlider.setAccessibilityValue(formattedStroke(style.strokeWidth))
         opacitySlider.setAccessibilityValue(formattedPercent(style.opacity))
-        radiusSlider.setAccessibilityValue(formattedPercent(session.toolState.spotlightRadius))
-        dimnessSlider.setAccessibilityValue(formattedPercent(session.toolState.spotlightDimness))
+        radiusSlider.setAccessibilityValue(formattedPercent(spotlight?.radius ?? session.toolState.spotlightRadius))
+        dimnessSlider.setAccessibilityValue(formattedPercent(spotlight?.dimness ?? session.toolState.spotlightDimness))
         strokeValueLabel?.stringValue = formattedStroke(style.strokeWidth)
         opacityValueLabel?.stringValue = formattedPercent(style.opacity)
-        radiusValueLabel?.stringValue = formattedPercent(session.toolState.spotlightRadius)
-        dimnessValueLabel?.stringValue = formattedPercent(session.toolState.spotlightDimness)
+        radiusValueLabel?.stringValue = formattedPercent(spotlight?.radius ?? session.toolState.spotlightRadius)
+        dimnessValueLabel?.stringValue = formattedPercent(spotlight?.dimness ?? session.toolState.spotlightDimness)
         updateContextualState(
             session: session,
             selectionGeometry: selectedGeometry(in: session)
@@ -446,14 +469,54 @@ public final class PaletteViewController: NSViewController {
         overflowButton.isHidden = !plan.usesOverflow
         overflowButton.menu?.removeAllItems()
         for tool in plan.overflowTools {
-            overflowButton.menu?.addItem(withTitle: tool.displayName, action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: tool.displayName, action: nil, keyEquivalent: "")
+            item.state = currentSession.toolState.tool == tool ? .on : .off
+            item.setAccessibilityElement(true)
+            item.setAccessibilityLabel(tool.displayName)
+            item.setAccessibilityHelp("Select the \(tool.displayName) annotation tool")
+            overflowButton.menu?.addItem(item)
         }
         overflowButton.title = "More Tools"
+        overflowButton.image = nil
+        overflowButton.setAccessibilityLabel("More annotation tools")
+        if plan.overflowTools.contains(currentSession.toolState.tool) {
+            overflowButton.title = "More · \(overflowActiveTitle(for: currentSession.toolState.tool))"
+            overflowButton.setAccessibilityLabel(
+                "More annotation tools; active tool \(currentSession.toolState.tool.displayName)"
+            )
+        }
         overflowButton.setAccessibilityValue(
             plan.overflowTools.isEmpty
                 ? "No hidden tools"
-                : plan.overflowTools.map(\.displayName).joined(separator: ", ")
+                : "Active tool: \(currentSession.toolState.tool.displayName). Hidden tools: "
+                    + plan.overflowTools.map(\.displayName).joined(separator: ", ")
         )
+        updateKeyViewLoop()
+    }
+
+    private func overflowActiveTitle(for tool: PointerTool) -> String {
+        switch tool {
+        case .spotlight: return "Spot"
+        case .eraser: return "Erase"
+        default: return tool.displayName
+        }
+    }
+
+    private func updateKeyViewLoop() {
+        for control in controls {
+            control.nextKeyView = nil
+        }
+        let reachable = controls.filter { control in
+            control.identifier?.rawValue != "palette.status"
+                && control.isEnabled
+                && !control.isHidden
+                && control.acceptsFirstResponder
+                && !(control.identifier?.rawValue.isEmpty ?? true)
+        }
+        guard reachable.count > 1 else { return }
+        for (index, control) in reachable.enumerated() {
+            control.nextKeyView = reachable[(index + 1) % reachable.count]
+        }
     }
 
     private func updateContextualState(
@@ -541,13 +604,53 @@ public final class PaletteViewController: NSViewController {
         deleteButton.setFrameSize(.zero)
     }
 
-    private func selectedGeometry(in session: PointerSession) -> MarkGeometry? {
+    private func selectedMark(in session: PointerSession) -> Mark? {
         guard let selection = session.selection,
               let display = session.selectedDisplay
         else {
             return nil
         }
-        return session.canvas(for: display).marks.first { $0.id == selection }?.geometry
+        return session.canvas(for: display).marks.first { $0.id == selection }
+    }
+
+    private func selectedGeometry(in session: PointerSession) -> MarkGeometry? {
+        selectedMark(in: session)?.geometry
+    }
+
+    private func compatibleStyle(for mark: Mark?) -> MarkStyle? {
+        guard let mark else { return nil }
+        switch mark.geometry {
+        case .arrow, .rectangle, .ellipse, .freehand:
+            return mark.style
+        case .emoji, .spotlight:
+            return nil
+        }
+    }
+
+    private func emojiValue(for mark: Mark?) -> String? {
+        guard let mark else { return nil }
+        if case let .emoji(text, _) = mark.geometry { return text }
+        return nil
+    }
+
+    private func spotlightValues(for mark: Mark?) -> (radius: Double, dimness: Double)? {
+        guard let mark else { return nil }
+        if case let .spotlight(_, radius, dimness) = mark.geometry {
+            return (radius, dimness)
+        }
+        return nil
+    }
+
+    private func styleBaseline() -> MarkStyle {
+        compatibleStyle(for: selectedMark(in: currentSession)) ?? currentSession.toolState.style
+    }
+
+    private func spotlightBaseline() -> (radius: Double, dimness: Double) {
+        spotlightValues(for: selectedMark(in: currentSession))
+            ?? (
+                currentSession.toolState.spotlightRadius,
+                currentSession.toolState.spotlightDimness
+            )
     }
 
     private func styleApplies(
@@ -604,57 +707,63 @@ public final class PaletteViewController: NSViewController {
     }
 
     @objc private func toggleMode() {
-        router.route(.toggleMode)
+        route(.toggleMode)
     }
 
     @objc private func selectTool(_ sender: NSButton) {
         guard sender.tag < PointerTool.allCases.count else { return }
-        router.route(.setTool(PointerTool.allCases[sender.tag]))
+        route(.setTool(PointerTool.allCases[sender.tag]))
     }
 
     @objc private func selectOverflowTool(_ sender: NSPopUpButton) {
         let title = sender.titleOfSelectedItem ?? ""
         guard let tool = PointerTool.allCases.first(where: { $0.displayName == title }) else { return }
-        router.route(.setTool(tool))
+        route(.setTool(tool))
     }
 
     @objc private func selectEmoji(_ sender: NSPopUpButton) {
         guard let emoji = sender.titleOfSelectedItem else { return }
-        router.route(.setEmoji(emoji))
+        route(.setEmoji(emoji))
     }
 
     @objc private func changeColor(_ sender: NSColorWell) {
         guard let color = rgbaColor(from: sender.color) else { return }
-        let old = currentSession.toolState.style
-        router.route(.setStyle(MarkStyle(color: color, strokeWidth: old.strokeWidth, opacity: old.opacity)))
+        let old = styleBaseline()
+        route(.setStyle(MarkStyle(color: color, strokeWidth: old.strokeWidth, opacity: old.opacity)))
     }
 
     @objc private func changeStroke(_ sender: NSSlider) {
-        let old = currentSession.toolState.style
-        router.route(.setStyle(MarkStyle(color: old.color, strokeWidth: sender.doubleValue, opacity: old.opacity)))
+        let old = styleBaseline()
+        route(.setStyle(MarkStyle(color: old.color, strokeWidth: sender.doubleValue, opacity: old.opacity)))
     }
 
     @objc private func changeOpacity(_ sender: NSSlider) {
-        let old = currentSession.toolState.style
-        router.route(.setStyle(MarkStyle(color: old.color, strokeWidth: old.strokeWidth, opacity: sender.doubleValue)))
+        let old = styleBaseline()
+        route(.setStyle(MarkStyle(color: old.color, strokeWidth: old.strokeWidth, opacity: sender.doubleValue)))
     }
 
     @objc private func changeSpotlight(_ sender: NSSlider) {
-        let radius = sender === radiusSlider ? sender.doubleValue : currentSession.toolState.spotlightRadius
-        let dimness = sender === dimnessSlider ? sender.doubleValue : currentSession.toolState.spotlightDimness
-        router.route(.setSpotlight(radius: radius, dimness: dimness))
+        let old = spotlightBaseline()
+        let radius = sender === radiusSlider ? sender.doubleValue : old.radius
+        let dimness = sender === dimnessSlider ? sender.doubleValue : old.dimness
+        route(.setSpotlight(radius: radius, dimness: dimness))
     }
 
     @objc private func undo() {
-        router.route(.undo)
+        route(.undo)
     }
 
     @objc private func clear() {
-        router.route(.clear)
+        route(.clear)
     }
 
     @objc private func delete() {
-        router.route(.delete)
+        route(.delete)
+    }
+
+    private func route(_ command: CommandRouter.Command) {
+        router.route(command)
+        currentSession = router.session
     }
 
     private func makeButton(
@@ -664,7 +773,7 @@ public final class PaletteViewController: NSViewController {
         help: String,
         buttonType: NSButton.ButtonType = .toggle
     ) -> NSButton {
-        let button = NSButton(title: title, target: nil, action: nil)
+        let button = PaletteFocusableButton(title: title, target: nil, action: nil)
         configure(button, identifier: identifier, label: label, help: help)
         button.bezelStyle = .rounded
         button.setButtonType(buttonType)
@@ -673,13 +782,13 @@ public final class PaletteViewController: NSViewController {
     }
 
     private func makePopup(title: String, identifier: String, label: String, help: String) -> NSPopUpButton {
-        let popup = NSPopUpButton(title: title, target: nil, action: nil)
+        let popup = PaletteFocusablePopup(title: title, target: nil, action: nil)
         configure(popup, identifier: identifier, label: label, help: help)
         return popup
     }
 
     private func makeColorWell(identifier: String, label: String, help: String) -> NSColorWell {
-        let well = NSColorWell(frame: .zero)
+        let well = PaletteFocusableColorWell(frame: .zero)
         configure(well, identifier: identifier, label: label, help: help)
         return well
     }
@@ -692,7 +801,7 @@ public final class PaletteViewController: NSViewController {
         max: Double,
         value: Double
     ) -> NSSlider {
-        let slider = NSSlider(value: value, minValue: min, maxValue: max, target: nil, action: nil)
+        let slider = PaletteFocusableSlider(value: value, minValue: min, maxValue: max, target: nil, action: nil)
         configure(slider, identifier: identifier, label: label, help: help)
         slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         slider.isContinuous = true

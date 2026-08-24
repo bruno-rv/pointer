@@ -475,6 +475,183 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertTrue(controller.deleteButton.isEnabled)
     }
 
+    func testSelectedCompatibleMarkValuesAndActionsPreserveCompositeStyle() throws {
+        let selectedStyle = MarkStyle(
+            color: RGBAColor(red: 0.1, green: 0.2, blue: 0.9),
+            strokeWidth: 13,
+            opacity: 0.42
+        )
+        for geometry in [
+            MarkGeometry.rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)),
+            MarkGeometry.freehand([
+                NormalizedPoint(x: 0.2, y: 0.2),
+                NormalizedPoint(x: 0.4, y: 0.4),
+            ]),
+        ] {
+            let fixture = selectedMarkFixture(
+                geometry: geometry,
+                style: selectedStyle,
+                hitPoint: geometryHitPoint(for: geometry)
+            )
+            let controller = PaletteViewController(router: fixture.router)
+            controller.loadViewIfNeeded()
+            controller.refresh(session: fixture.router.session)
+            let stroke = try XCTUnwrap(controller.control(identifier: "palette.style.stroke-width") as? NSSlider)
+            let opacity = try XCTUnwrap(controller.control(identifier: "palette.style.opacity") as? NSSlider)
+            let colorWell = try XCTUnwrap(controller.control(identifier: "palette.style.color") as? NSColorWell)
+            XCTAssertEqual(stroke.doubleValue, selectedStyle.strokeWidth)
+            XCTAssertEqual(opacity.doubleValue, selectedStyle.opacity)
+            XCTAssertEqual(
+                colorWell.accessibilityValue() as? String,
+                "RGBA 0.1, 0.2, 0.9"
+            )
+
+            stroke.doubleValue = 17
+            sendAction(stroke)
+            opacity.doubleValue = 0.63
+            sendAction(opacity)
+
+            let updated = try XCTUnwrap(
+                fixture.router.session.canvas(for: fixture.display.uuid).marks.first {
+                    $0.id == fixture.markID
+                }
+            )
+            XCTAssertEqual(updated.style.color, selectedStyle.color)
+            XCTAssertEqual(updated.style.strokeWidth, 17)
+            XCTAssertEqual(updated.style.opacity, 0.63)
+            XCTAssertEqual(fixture.router.session.toolState.style, updated.style)
+        }
+    }
+
+    func testSelectedEmojiAndSpotlightValuesDriveActionsWithoutOverwritingOtherProperties() throws {
+        let emojiFixture = selectedMarkFixture(
+            geometry: .emoji(
+                text: "✅",
+                rect: NormalizedRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)
+            ),
+            style: .default,
+            hitPoint: NormalizedPoint(x: 0.3, y: 0.3),
+            futureEmoji: "👉"
+        )
+        let emojiController = PaletteViewController(router: emojiFixture.router)
+        emojiController.loadViewIfNeeded()
+        emojiController.refresh(session: emojiFixture.router.session)
+        let emoji = try XCTUnwrap(emojiController.control(identifier: "palette.emoji") as? NSPopUpButton)
+        XCTAssertEqual(emoji.titleOfSelectedItem, "✅")
+        emoji.selectItem(withTitle: "⭐️")
+        sendAction(emoji)
+        let updatedEmoji = try XCTUnwrap(
+            emojiFixture.router.session.canvas(for: emojiFixture.display.uuid).marks.first {
+                $0.id == emojiFixture.markID
+            }
+        )
+        guard case let .emoji(text, _) = updatedEmoji.geometry else {
+            return XCTFail("Expected selected emoji mark")
+        }
+        XCTAssertEqual(text, "⭐️")
+        XCTAssertEqual(emojiFixture.router.session.toolState.emoji, "⭐️")
+
+        let spotlightFixture = selectedMarkFixture(
+            geometry: .spotlight(
+                center: NormalizedPoint(x: 0.4, y: 0.4),
+                radius: 0.4,
+                dimness: 0.8
+            ),
+            style: .default,
+            hitPoint: NormalizedPoint(x: 0.4, y: 0.4),
+            futureSpotlight: (radius: 0.15, dimness: 0.25)
+        )
+        let spotlightController = PaletteViewController(router: spotlightFixture.router)
+        spotlightController.loadViewIfNeeded()
+        spotlightController.refresh(session: spotlightFixture.router.session)
+        let radius = try XCTUnwrap(spotlightController.control(identifier: "palette.spotlight.radius") as? NSSlider)
+        let dimness = try XCTUnwrap(spotlightController.control(identifier: "palette.spotlight.dimness") as? NSSlider)
+        XCTAssertEqual(radius.doubleValue, 0.4)
+        XCTAssertEqual(dimness.doubleValue, 0.8)
+        radius.doubleValue = 0.6
+        sendAction(radius)
+        let updatedSpotlight = try XCTUnwrap(
+            spotlightFixture.router.session.canvas(for: spotlightFixture.display.uuid).marks.first {
+                $0.id == spotlightFixture.markID
+            }
+        )
+        guard case let .spotlight(_, updatedRadius, updatedDimness) = updatedSpotlight.geometry else {
+            return XCTFail("Expected selected spotlight mark")
+        }
+        XCTAssertEqual(updatedRadius, 0.6)
+        XCTAssertEqual(updatedDimness, 0.8)
+        XCTAssertEqual(spotlightFixture.router.session.toolState.spotlightRadius, 0.6)
+        XCTAssertEqual(spotlightFixture.router.session.toolState.spotlightDimness, 0.8)
+    }
+
+    func testOverflowCommunicatesActivePenAndSpotlightWithCheckmarks() throws {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+        for tool in [PointerTool.pen, .spotlight] {
+            var session = fixture.router.session
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(tool))
+            controller.refresh(session: session)
+            controller.applyLayout(for: 420)
+            controller.view.layoutSubtreeIfNeeded()
+
+            let overflow = try XCTUnwrap(controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton)
+            XCTAssertFalse(overflow.isHidden)
+            XCTAssertTrue(overflow.title.contains("More"))
+            XCTAssertTrue(
+                overflow.title.contains(toolDisplayName(tool))
+                    || overflow.title.contains(tool == .spotlight ? "Spot" : "Pen")
+            )
+            XCTAssertGreaterThanOrEqual(overflow.frame.width, overflow.intrinsicContentSize.width)
+            XCTAssertTrue((overflow.accessibilityValue() as? String)?.contains("\(toolDisplayName(tool))") == true)
+            let item = try XCTUnwrap(overflow.menu?.items.first { $0.title == toolDisplayName(tool) })
+            XCTAssertEqual(item.state, .on)
+            XCTAssertTrue(controller.control(identifier: "palette.tool.\(toolIdentifier(tool))").isHidden)
+        }
+    }
+
+    func testNativeKeyViewTraversalMatchesReachableMetadataAtWideAndOverflowWidths() throws {
+        for width in [420.0, PaletteLayout.minimumAllToolsWidth] {
+            let fixture = acceptedFixture()
+            let display = DisplayDescriptor(
+                uuid: DisplayUUID(rawValue: "key-\(Int(width))"),
+                frame: DisplayFrame(x: 0, y: 0, width: width + 32, height: 1_080),
+                visibleFrame: DisplayFrame(x: 0, y: 24, width: width + 32, height: 1_056),
+                scaleFactor: 2
+            )
+            let palette = PalettePanel(
+                router: fixture.router,
+                guidePlacementProvider: GuidePlacementProvider()
+            )
+            defer { palette.close() }
+            guard case .shown = palette.show(on: display) else {
+                return XCTFail("Expected palette at \(width)")
+            }
+            var session = fixture.router.session
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(.spotlight))
+            palette.refresh(session: session)
+            palette.window.contentView?.layoutSubtreeIfNeeded()
+
+            let expected = ControlMetadataInventory(
+                palette: palette,
+                menuBar: nil
+            ).metadata()
+            .filter(\.isKeyboardReachable)
+            .map(\.identifier)
+            let start = palette.paletteViewController.control(identifier: "palette.mode")
+            XCTAssertTrue(palette.makeFirstResponder(start))
+            var actual = [start.identifier!.rawValue]
+            for _ in 1..<expected.count {
+                palette.selectNextKeyView(nil)
+                let responder = try XCTUnwrap(palette.firstResponder as? NSView)
+                actual.append(try XCTUnwrap(responder.identifier?.rawValue))
+            }
+            XCTAssertEqual(actual, expected)
+        }
+    }
+
     func testSelectWithoutSelectionDisablesSpecializedControlsAndDeleteIsHidden() {
         let fixture = acceptedFixture()
         let controller = PaletteViewController(router: fixture.router)
@@ -622,6 +799,85 @@ final class PaletteInteractionTests: XCTestCase {
         _ = session.beginGesture(tool: .select, at: hitPoint, on: display.uuid)
         _ = session.commitGesture()
         return session
+    }
+
+    private func sendAction(_ control: NSControl) {
+        XCTAssertNotNil(control.action)
+        XCTAssertTrue(NSApp.sendAction(control.action!, to: control.target, from: control))
+    }
+
+    private func selectedMarkFixture(
+        geometry: MarkGeometry,
+        style: MarkStyle,
+        hitPoint: NormalizedPoint,
+        futureEmoji: String = "👉",
+        futureSpotlight: (radius: Double, dimness: Double) = (0.15, 0.5)
+    ) -> (
+        router: CommandRouter,
+        coordinator: DisplayCoordinator,
+        display: DisplayDescriptor,
+        markID: Mark.ID
+    ) {
+        let display = PaletteInteractionScreenProvider.descriptor()
+        var session = PointerSession()
+        session.ensureCanvas(for: display.uuid)
+        session.apply(.setEmoji(futureEmoji))
+        session.apply(.setSpotlight(
+            radius: futureSpotlight.radius,
+            dimness: futureSpotlight.dimness
+        ))
+        let mark = Mark(geometry: geometry, style: style)
+        session.apply(.append(mark, to: display.uuid))
+        session.apply(.setMode(.annotation))
+        session.apply(.setTool(.select))
+        _ = session.beginGesture(tool: .select, at: hitPoint, on: display.uuid)
+        _ = session.commitGesture()
+        let provider = PaletteInteractionScreenProvider(displays: [display])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            session: session,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+        return (router, coordinator, display, mark.id)
+    }
+
+    private func geometryHitPoint(for geometry: MarkGeometry) -> NormalizedPoint {
+        switch geometry {
+        case .rectangle:
+            return NormalizedPoint(x: 0.2, y: 0.4)
+        case .freehand:
+            return NormalizedPoint(x: 0.3, y: 0.3)
+        default:
+            return NormalizedPoint(x: 0.5, y: 0.5)
+        }
+    }
+
+    private func toolIdentifier(_ tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "select"
+        case .arrow: return "arrow"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "ellipse"
+        case .pen: return "pen"
+        case .eraser: return "eraser"
+        case .emoji: return "emoji"
+        case .spotlight: return "spotlight"
+        }
+    }
+
+    private func toolDisplayName(_ tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "Select"
+        case .arrow: return "Arrow"
+        case .rectangle: return "Rectangle"
+        case .ellipse: return "Ellipse"
+        case .pen: return "Pen"
+        case .eraser: return "Eraser"
+        case .emoji: return "Emoji"
+        case .spotlight: return "Spotlight"
+        }
     }
 }
 
