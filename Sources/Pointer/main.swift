@@ -91,7 +91,10 @@ if arguments.contains("--benchmark-gestures") {
         let screenProvider = NSScreenProvider()
         let displayCoordinator = DisplayCoordinator(screenProvider: screenProvider)
         let hotKeyRegistrar = CarbonHotKeyRegistrar()
-        let shortcutStore = UserDefaultsShortcutStore(userDefaults: UserDefaults.standard)
+        let shortcutStore = UserDefaultsShortcutStore(
+            userDefaults: UserDefaults.standard,
+            key: "pointer.shortcut-preset"
+        )
         let shortcutScheduler = DispatchShortcutScheduler()
         let shortcutController = HotKeyController(
             registrar: hotKeyRegistrar,
