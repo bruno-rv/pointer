@@ -474,7 +474,7 @@ Expected: each new test either fails on the known missing behavior or passes aga
     @MainActor
     func testStopWithZeroDisplaysReturnsAllZeroCounts()
 
-Assert exact callback count, no orphan overlay, standby/no input interception, retained tool/style/shortcut/menu-bar state in the session-facing oracle, and fresh overlay identity after reconnect.
+Assert exact callback count, no orphan overlay, standby/no input interception, retained mode/tool/style/emoji/spotlight/canvas/undo state in the B-owned session oracle, and fresh overlay identity after reconnect. Record the C/F handoff for shortcut and menu-bar retention; B does not reach into those owners.
 The display-loss cancellation test uses the real OverlayPanel factory, begins a real CanvasView gesture, changes the provider to zero displays, records exactly one forwarded .cancelled boundary, then invokes the stale mouseUp path and asserts no second boundary or mark commit.
 
 - [ ] **Step 4: Implement only B-owned fixes required by failing tests.**
