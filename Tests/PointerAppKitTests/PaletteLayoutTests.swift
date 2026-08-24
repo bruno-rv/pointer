@@ -324,7 +324,10 @@ final class PaletteLayoutTests: XCTestCase {
             scaleFactor: 2
         )
 
-        palette.show(on: descriptor)
+        guard case .failed = palette.show(on: descriptor) else {
+            return XCTFail("Expected unsupported 220-point palette display")
+        }
+        XCTAssertFalse(palette.isVisible)
         palette.window.contentView?.layoutSubtreeIfNeeded()
 
         let plan = palette.paletteViewController.layoutPlan

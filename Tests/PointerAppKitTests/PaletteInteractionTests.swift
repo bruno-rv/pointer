@@ -131,6 +131,87 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertEqual(controller.statusMessage, "Standby — overlays are click-through")
     }
 
+    func testNoDisplayNoOpFeedbackUpdatesStatusAccessibilityValueWithoutRefresh() throws {
+        let provider = PaletteInteractionScreenProvider(displays: [])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        palette.paletteViewController.loadViewIfNeeded()
+        let status = palette.paletteViewController.control(identifier: "palette.status")
+
+        router.route(.setTool(.spotlight))
+        XCTAssertEqual(palette.paletteViewController.statusMessage, "No presentation display connected")
+        XCTAssertEqual(status.accessibilityValue() as? String, palette.paletteViewController.statusMessage)
+
+        router.route(.clear)
+        XCTAssertEqual(palette.paletteViewController.statusMessage, "Nothing to clear")
+        XCTAssertEqual(status.accessibilityValue() as? String, palette.paletteViewController.statusMessage)
+        XCTAssertEqual(
+            ControlMetadataInventory(palette: palette, menuBar: nil)
+                .metadata()
+                .first { $0.identifier == "palette.status" }?.value,
+            "Nothing to clear"
+        )
+    }
+
+    func testOverflowRefreshKeepsMenuIdentityAndFocusForContinuousStateUpdates() throws {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "overflow-stability"),
+            frame: DisplayFrame(x: 0, y: 0, width: 452, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 452, height: 1_056),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+        guard case .shown = palette.show(on: descriptor) else {
+            return XCTFail("Expected supported overflow width")
+        }
+        var session = router.session
+        session.apply(.setMode(.annotation))
+        session.apply(.setTool(.spotlight))
+        palette.refresh(session: session)
+        palette.window.contentView?.layoutSubtreeIfNeeded()
+        let overflow = try XCTUnwrap(palette.paletteViewController.control(identifier: "palette.tools.overflow") as? NSPopUpButton)
+        let originalItems = try XCTUnwrap(overflow.menu?.items)
+        let originalHeaderTitle = overflow.title
+        XCTAssertTrue(palette.makeFirstResponder(overflow))
+
+        for radius in [0.2, 0.3, 0.4] {
+            session.apply(.setSpotlight(radius: radius, dimness: 0.7))
+            palette.refresh(session: session)
+            palette.window.contentView?.layoutSubtreeIfNeeded()
+        }
+
+        XCTAssertEqual(overflow.title, originalHeaderTitle)
+        XCTAssertTrue(palette.firstResponder === overflow)
+        XCTAssertEqual(overflow.menu?.items.count, originalItems.count)
+        for (current, original) in zip(overflow.menu?.items ?? [], originalItems) {
+            XCTAssertTrue(current === original)
+        }
+        XCTAssertTrue((overflow.accessibilityValue() as? String)?.contains("Spotlight") == true)
+
+        session.apply(.setTool(.pen))
+        palette.refresh(session: session)
+        palette.window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertFalse(overflow.menu?.items.first === originalItems.first)
+    }
+
     func testPaletteUndoAndClearDisableWhenAcceptedPointerDisplayDisconnects() throws {
         let descriptor = PaletteInteractionScreenProvider.descriptor()
         let provider = PaletteInteractionScreenProvider(displays: [descriptor])

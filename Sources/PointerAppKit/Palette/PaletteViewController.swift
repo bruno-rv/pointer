@@ -68,6 +68,8 @@ public final class PaletteViewController: NSViewController {
     private var configuredButtonTypes: [String: NSButton.ButtonType] = [:]
     private var pendingLayoutWidth: CGFloat?
     private var deleteHitTargetConstraints: [NSLayoutConstraint] = []
+    private var renderedOverflowTools: [PointerTool] = []
+    private var renderedOverflowActiveTool: PointerTool?
 
     public init(router: CommandRouter) {
         self.router = router
@@ -467,25 +469,47 @@ public final class PaletteViewController: NSViewController {
             button.isHidden = !visibleTools.contains(tool)
         }
         overflowButton.isHidden = !plan.usesOverflow
-        overflowButton.menu?.removeAllItems()
         let hasActiveOverflowTool = plan.overflowTools.contains(currentSession.toolState.tool)
-        let headerTitle = hasActiveOverflowTool
-            ? "More · \(overflowActiveTitle(for: currentSession.toolState.tool))"
-            : "More Tools"
+        let activeOverflowTool = hasActiveOverflowTool ? currentSession.toolState.tool : nil
+        if renderedOverflowTools != plan.overflowTools
+            || renderedOverflowActiveTool != activeOverflowTool
+        {
+            renderOverflowMenu(
+                tools: plan.overflowTools,
+                activeTool: activeOverflowTool
+            )
+            renderedOverflowTools = plan.overflowTools
+            renderedOverflowActiveTool = activeOverflowTool
+        }
+        overflowButton.setAccessibilityValue(
+            plan.overflowTools.isEmpty
+                ? "No hidden tools"
+                : "Active tool: \(currentSession.toolState.tool.displayName). Hidden tools: "
+                    + plan.overflowTools.map(\.displayName).joined(separator: ", ")
+        )
+        updateKeyViewLoop()
+    }
+
+    private func renderOverflowMenu(
+        tools: [PointerTool],
+        activeTool: PointerTool?
+    ) {
+        overflowButton.menu?.removeAllItems()
+        let headerTitle = activeTool.map {
+            "More · \(overflowActiveTitle(for: $0))"
+        } ?? "More Tools"
         let header = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
         header.setAccessibilityElement(true)
         header.setAccessibilityLabel(
-            hasActiveOverflowTool
-                ? "More annotation tools; active tool \(currentSession.toolState.tool.displayName)"
-                : "More annotation tools"
+            activeTool.map {
+                "More annotation tools; active tool \($0.displayName)"
+            } ?? "More annotation tools"
         )
         header.setAccessibilityHelp("Choose an annotation tool from the compact overflow menu")
-        header.setAccessibilityValue(
-            hasActiveOverflowTool ? currentSession.toolState.tool.displayName : "No active hidden tool"
-        )
+        header.setAccessibilityValue(activeTool?.displayName ?? "No active hidden tool")
         header.isEnabled = false
         overflowButton.menu?.addItem(header)
-        for tool in plan.overflowTools {
+        for tool in tools {
             let item = NSMenuItem(
                 title: tool.displayName,
                 action: #selector(selectOverflowMenuItem(_:)),
@@ -493,7 +517,7 @@ public final class PaletteViewController: NSViewController {
             )
             item.target = self
             item.representedObject = tool.identifier
-            item.state = currentSession.toolState.tool == tool ? .on : .off
+            item.state = activeTool == tool ? .on : .off
             item.setAccessibilityElement(true)
             item.setAccessibilityLabel(tool.displayName)
             item.setAccessibilityHelp("Select the \(tool.displayName) annotation tool")
@@ -503,13 +527,6 @@ public final class PaletteViewController: NSViewController {
         overflowButton.title = headerTitle
         overflowButton.image = nil
         overflowButton.setAccessibilityLabel(header.accessibilityLabel() ?? "More annotation tools")
-        overflowButton.setAccessibilityValue(
-            plan.overflowTools.isEmpty
-                ? "No hidden tools"
-                : "Active tool: \(currentSession.toolState.tool.displayName). Hidden tools: "
-                    + plan.overflowTools.map(\.displayName).joined(separator: ", ")
-        )
-        updateKeyViewLoop()
     }
 
     private func overflowActiveTitle(for tool: PointerTool) -> String {
@@ -724,6 +741,7 @@ public final class PaletteViewController: NSViewController {
     private func showFeedback(_ message: String) {
         guard isViewLoaded else { return }
         statusLabel.stringValue = message
+        statusLabel.setAccessibilityValue(message)
     }
 
     @objc private func toggleMode() {
