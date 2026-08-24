@@ -495,6 +495,40 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertFalse(controller.deleteButton.isEnabled)
     }
 
+    func testNoSelectionKeepsActionsVisibleAndCollapsesDeleteUntilSelection() {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+        var noSelection = PointerSession()
+        noSelection.ensureCanvas(for: fixture.display.uuid)
+        noSelection.apply(.setMode(.annotation))
+        noSelection.apply(.setTool(.select))
+        controller.refresh(session: noSelection)
+        controller.view.layoutSubtreeIfNeeded()
+
+        for identifier in ["palette.undo", "palette.clear"] {
+            let action = controller.control(identifier: identifier)
+            XCTAssertFalse(action.isHidden, identifier)
+            XCTAssertGreaterThanOrEqual(action.frame.width, 44, identifier)
+            XCTAssertGreaterThanOrEqual(action.frame.height, 28, identifier)
+        }
+        XCTAssertTrue(controller.deleteButton.isHidden)
+        XCTAssertEqual(controller.deleteButton.frame.width, 0, accuracy: 1)
+        XCTAssertEqual(controller.deleteButton.frame.height, 0, accuracy: 1)
+
+        let selected = selectedSession(
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)),
+            hitPoint: NormalizedPoint(x: 0.2, y: 0.4),
+            display: fixture.display
+        )
+        controller.refresh(session: selected)
+        controller.view.layoutSubtreeIfNeeded()
+        XCTAssertFalse(controller.deleteButton.isHidden)
+        XCTAssertTrue(controller.deleteButton.isEnabled)
+        XCTAssertGreaterThanOrEqual(controller.deleteButton.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(controller.deleteButton.frame.height, 28)
+    }
+
     func testRefreshPreservesPaletteOriginAndFirstResponder() throws {
         let fixture = acceptedFixture()
         let palette = PalettePanel(

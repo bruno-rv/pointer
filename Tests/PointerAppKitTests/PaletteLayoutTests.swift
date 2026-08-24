@@ -74,8 +74,23 @@ final class PaletteLayoutTests: XCTestCase {
         }
     }
 
-    func testWideLayoutUsesOneToolRowWithoutOverflow() {
+    func testWideLayoutUsesOneToolRowWithNamedOverflow() {
         let plan = PaletteLayout.plan(availableWidth: 760)
+
+        XCTAssertEqual(plan.rows.count, 1)
+        XCTAssertTrue(plan.usesOverflow)
+        XCTAssertTrue(plan.rows.flatMap { $0 }.contains(.overflow))
+        XCTAssertEqual(
+            Set(plan.rows.flatMap { $0 }.compactMap { item -> PointerTool? in
+                guard case let .tool(tool) = item else { return nil }
+                return tool
+            }).union(plan.overflowTools),
+            Set(PointerTool.allCases)
+        )
+    }
+
+    func testUltraWideLayoutUsesOneToolRowWithoutOverflow() {
+        let plan = PaletteLayout.plan(availableWidth: 1_020)
 
         XCTAssertEqual(plan.rows.count, 1)
         XCTAssertFalse(plan.usesOverflow)
@@ -90,7 +105,11 @@ final class PaletteLayoutTests: XCTestCase {
 
     @MainActor
     func testRenderedPaletteKeepsToolAndActionHitTargetsAtSupportedWidths() throws {
-        for (displayWidth, expectedContentWidth) in [(452.0, 420.0), (792.0, 760.0)] {
+        for (displayWidth, expectedContentWidth) in [
+            (452.0, 420.0),
+            (792.0, 760.0),
+            (PaletteLayout.minimumAllToolsWidth + 32, PaletteLayout.minimumAllToolsWidth),
+        ] {
             let display = DisplayDescriptor(
                 uuid: DisplayUUID(rawValue: "display-\(Int(displayWidth))"),
                 frame: DisplayFrame(x: 0, y: 0, width: displayWidth, height: 1_080),
@@ -152,6 +171,17 @@ final class PaletteLayoutTests: XCTestCase {
                 visibleToolIDs,
                 Set(planTools.map { "palette.tool.\(identifier(for: $0))" })
             )
+            let hiddenToolIDs = Set(controller.controls.compactMap { control -> String? in
+                guard let identifier = control.identifier?.rawValue,
+                      identifier.hasPrefix("palette.tool."),
+                      control.isHidden
+                else { return nil }
+                return identifier
+            })
+            XCTAssertEqual(
+                hiddenToolIDs,
+                Set(controller.layoutPlan.overflowTools.map { "palette.tool.\(identifier(for: $0))" })
+            )
 
             let firstRowControls = controller.controls.filter { control in
                 guard let identifier = control.identifier?.rawValue else { return false }
@@ -162,7 +192,19 @@ final class PaletteLayoutTests: XCTestCase {
             let firstRowRects = firstRowControls.map { control in
                 control.convert(control.bounds, to: controller.view)
             }
-            XCTAssertTrue(firstRowRects.allSatisfy { $0.width >= 44 && $0.height >= 28 })
+            for (control, rect) in zip(firstRowControls, firstRowRects) {
+                if let button = control as? NSButton {
+                    XCTAssertGreaterThanOrEqual(
+                        rect.width,
+                        max(44, button.intrinsicContentSize.width),
+                        button.identifier?.rawValue ?? "first-row width"
+                    )
+                    XCTAssertFalse(button.title.isEmpty)
+                } else {
+                    XCTAssertGreaterThanOrEqual(rect.width, 44)
+                }
+                XCTAssertGreaterThanOrEqual(rect.height, 28)
+            }
             for index in firstRowRects.indices {
                 for otherIndex in firstRowRects.indices where otherIndex > index {
                     XCTAssertFalse(firstRowRects[index].intersects(firstRowRects[otherIndex]))

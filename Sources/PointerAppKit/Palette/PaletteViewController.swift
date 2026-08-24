@@ -7,10 +7,22 @@ private final class PaletteStyleScrollView: NSScrollView {
     }
 }
 
+private final class PaletteActionStack: NSStackView {
+    weak var contextualDelete: NSButton?
+
+    override func layout() {
+        super.layout()
+        guard let contextualDelete, contextualDelete.isHidden else { return }
+        contextualDelete.setFrameSize(.zero)
+    }
+}
+
 @MainActor
 public final class PaletteViewController: NSViewController {
     public private(set) var controls: [NSControl] = []
-    public private(set) var layoutPlan = PaletteLayout.plan(availableWidth: 760)
+    public private(set) var layoutPlan = PaletteLayout.plan(
+        availableWidth: PaletteLayout.minimumAllToolsWidth
+    )
     public private(set) var deleteButton: NSButton!
 
     private let router: CommandRouter
@@ -35,6 +47,7 @@ public final class PaletteViewController: NSViewController {
     private var currentSession = PointerSession()
     private var configuredButtonTypes: [String: NSButton.ButtonType] = [:]
     private var pendingLayoutWidth: CGFloat?
+    private var deleteHitTargetConstraints: [NSLayoutConstraint] = []
 
     public init(router: CommandRouter) {
         self.router = router
@@ -52,7 +65,14 @@ public final class PaletteViewController: NSViewController {
     }
 
     public override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 760, height: 156))
+        let root = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: PaletteLayout.minimumAllToolsWidth,
+                height: 156
+            )
+        )
         root.wantsLayer = true
         root.layer?.cornerRadius = 12
         root.layer?.borderWidth = 1
@@ -127,11 +147,13 @@ public final class PaletteViewController: NSViewController {
             } ?? modeStatus
         }
         statusLabel.setAccessibilityValue(statusLabel.stringValue)
-        updateLayout(for: view.bounds.width > 0 ? view.bounds.width : 760)
+        updateLayout(
+            for: view.bounds.width > 0 ? view.bounds.width : PaletteLayout.minimumAllToolsWidth
+        )
     }
 
     public var preferredSize: NSSize {
-        NSSize(width: 760, height: 156)
+        NSSize(width: PaletteLayout.minimumAllToolsWidth, height: 156)
     }
 
     public var statusMessage: String {
@@ -163,6 +185,7 @@ public final class PaletteViewController: NSViewController {
         if let pendingLayoutWidth, view.bounds.width <= pendingLayoutWidth + 1 {
             self.pendingLayoutWidth = nil
         }
+        collapseHiddenDelete()
     }
 
     private func buildControls() {
@@ -188,6 +211,7 @@ public final class PaletteViewController: NSViewController {
             )
             button.imagePosition = .imageLeading
             button.imageScaling = .scaleProportionallyDown
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: PaletteLayout.width(for: tool)).isActive = true
             button.tag = PointerTool.allCases.firstIndex(of: tool) ?? 0
             button.target = self
             button.action = #selector(selectTool(_:))
@@ -330,6 +354,8 @@ public final class PaletteViewController: NSViewController {
             arrangedSubview.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
             arrangedSubview.heightAnchor.constraint(greaterThanOrEqualToConstant: 28).isActive = true
         }
+        modeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: PaletteLayout.modeWidth).isActive = true
+        overflowButton.widthAnchor.constraint(greaterThanOrEqualToConstant: PaletteLayout.overflowWidth).isActive = true
         modeButton.bezelStyle = .texturedRounded
 
         let styleRow = NSStackView(views: [
@@ -349,16 +375,21 @@ public final class PaletteViewController: NSViewController {
             arrangedSubview.setContentHuggingPriority(.defaultLow, for: .horizontal)
         }
 
-        let actionStack = NSStackView(views: [undoButton, clearButton, deleteButton])
+        let actionStack = PaletteActionStack(views: [undoButton, clearButton, deleteButton])
+        actionStack.contextualDelete = deleteButton
         actionStack.orientation = .horizontal
         actionStack.spacing = 6
         actionStack.alignment = .centerY
         actionStack.distribution = .fillEqually
-        actionStack.detachesHiddenViews = false
-        for action in actionStack.arrangedSubviews {
+        actionStack.detachesHiddenViews = true
+        for action in [undoButton!, clearButton!] {
             action.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
             action.heightAnchor.constraint(greaterThanOrEqualToConstant: 28).isActive = true
         }
+        deleteHitTargetConstraints = [
+            deleteButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            deleteButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+        ]
 
         styleScrollView = PaletteStyleScrollView()
         styleScrollView.drawsBackground = false
@@ -483,6 +514,12 @@ public final class PaletteViewController: NSViewController {
         let canDelete = session.mode == .annotation && session.selection != nil
         deleteButton.isEnabled = canDelete
         deleteButton.isHidden = !canDelete
+        if canDelete {
+            NSLayoutConstraint.activate(deleteHitTargetConstraints)
+        } else {
+            NSLayoutConstraint.deactivate(deleteHitTargetConstraints)
+            collapseHiddenDelete()
+        }
         deleteButton.setAccessibilityHelp(
             canDelete
                 ? "Delete the selected mark"
@@ -497,6 +534,11 @@ public final class PaletteViewController: NSViewController {
     ) {
         control.isEnabled = enabled
         control.setAccessibilityHelp(help)
+    }
+
+    private func collapseHiddenDelete() {
+        guard deleteButton?.isHidden == true else { return }
+        deleteButton.setFrameSize(.zero)
     }
 
     private func selectedGeometry(in session: PointerSession) -> MarkGeometry? {
