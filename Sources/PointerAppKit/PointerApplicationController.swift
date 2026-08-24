@@ -14,6 +14,8 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public let controlMetadataProvider: any ControlMetadataProviding
     public let guidePlacementProvider: any GuidePlacementProviding
     public let notificationCenter: NotificationCenter
+    public private(set) var lastDisplayStopResult: DisplayStopResult?
+    public private(set) var lifecycleErrorMessage: String?
 
     private var started = false
     private var pendingFirstUseAttempt = false
@@ -115,7 +117,15 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         menuBar?.clearCallbacks()
         shortcutController.onToggle = nil
         shortcutController.stop()
-        _ = displayCoordinator.stop()
+        let stopResult = displayCoordinator.stop()
+        lastDisplayStopResult = stopResult
+        if stopResult.remainingOverlayCount == 0,
+           stopResult.boundHandlerCount == 0 {
+            lifecycleErrorMessage = nil
+        } else {
+            lifecycleErrorMessage =
+                "Display stop cleanup incomplete: remainingOverlayCount=\(stopResult.remainingOverlayCount), boundHandlerCount=\(stopResult.boundHandlerCount)"
+        }
         palette.hide()
         guide.hideForApplicationStop()
         menuBar?.remove()

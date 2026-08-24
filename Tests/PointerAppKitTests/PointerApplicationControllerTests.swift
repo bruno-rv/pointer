@@ -96,10 +96,45 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.stop()
         XCTAssertNil(fixture.coordinator.onDisplaySync)
         XCTAssertNil(fixture.router.onStateChange)
+        XCTAssertEqual(fixture.controller.lastDisplayStopResult?.remainingOverlayCount, 0)
+        XCTAssertEqual(fixture.controller.lastDisplayStopResult?.boundHandlerCount, 0)
+        XCTAssertNil(fixture.controller.lifecycleErrorMessage)
 
         fixture.controller.start()
         XCTAssertNotNil(fixture.coordinator.onDisplaySync)
         XCTAssertNotNil(fixture.router.onStateChange)
+        fixture.controller.stop()
+        XCTAssertEqual(fixture.controller.lastDisplayStopResult?.remainingOverlayCount, 0)
+        XCTAssertEqual(fixture.controller.lastDisplayStopResult?.boundHandlerCount, 0)
+        XCTAssertNil(fixture.controller.lifecycleErrorMessage)
+    }
+
+    func testStopStoresCleanupOracleErrorAndStillCompletesCleanup() throws {
+        let fixture = ControllerFixture(
+            { router in ControllerTestMenuBar(router: router) },
+            failingOverlay: true
+        )
+        let menuBar = try XCTUnwrap(fixture.menuBar as? ControllerTestMenuBar)
+
+        fixture.controller.start()
+        fixture.controller.stop()
+
+        let result = try XCTUnwrap(fixture.controller.lastDisplayStopResult)
+        XCTAssertEqual(result.remainingOverlayCount, 0)
+        XCTAssertEqual(result.boundHandlerCount, 1)
+        XCTAssertEqual(
+            fixture.controller.lifecycleErrorMessage,
+            "Display stop cleanup incomplete: remainingOverlayCount=0, boundHandlerCount=1"
+        )
+        XCTAssertNil(fixture.coordinator.onDisplaySync)
+        XCTAssertNil(fixture.router.onStateChange)
+        XCTAssertNil(fixture.shortcutController.onToggle)
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(fixture.palette.window.isVisible)
+
+        menuBar.requestClearAll()
+        XCTAssertEqual(menuBar.confirmationCount, 0)
+        XCTAssertEqual(menuBar.commandCount, 0)
     }
 
     func testClearAllCallbackRunsOnceBeforeAndAfterRestartAndNotWhileStopped() throws {
@@ -157,7 +192,10 @@ private final class ControllerFixture {
     let shortcutController: HotKeyController
     let controller: PointerApplicationController
 
-    init(_ menuBarFactory: ((CommandRouter) -> any MenuBarPresenting)? = nil) {
+    init(
+        _ menuBarFactory: ((CommandRouter) -> any MenuBarPresenting)? = nil,
+        failingOverlay: Bool = false
+    ) {
         let uuid = DisplayUUID(rawValue: "display-a")
         let descriptor = DisplayDescriptor(
             uuid: uuid,
@@ -168,7 +206,12 @@ private final class ControllerFixture {
         provider = ControllerTestScreenProvider(displays: [descriptor])
         coordinator = DisplayCoordinator(
             screenProvider: provider,
-            overlayFactory: { ControllerTestOverlay(display: $0) }
+            overlayFactory: { descriptor in
+                if failingOverlay {
+                    return ControllerFailingOverlay(display: descriptor)
+                }
+                return ControllerTestOverlay(display: descriptor)
+            }
         )
         router = CommandRouter(coordinator: coordinator, screenProvider: provider)
         menuBar = menuBarFactory?(router)
@@ -349,4 +392,27 @@ private final class ControllerTestOverlay: OverlayPresenting {
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {}
     func close() {}
+}
+
+@MainActor
+private final class ControllerFailingOverlay: OverlayPresenting {
+    let display: DisplayDescriptor
+
+    init(display: DisplayDescriptor) { self.display = display }
+    func update(display: DisplayDescriptor) {}
+    func update(session: PointerSession) {}
+    func setMode(_ mode: PointerMode) {}
+    func setEventHandlers(
+        onSessionUpdate: @escaping (PointerSession) -> Void,
+        onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
+    ) {}
+    func close() {}
+    func stopAndClear() -> OverlayCleanupResult {
+        OverlayCleanupResult(
+            cancelledActiveGesture: false,
+            clearedHandlerCount: 0,
+            remainingHandlerCount: 1,
+            didClose: true
+        )
+    }
 }
