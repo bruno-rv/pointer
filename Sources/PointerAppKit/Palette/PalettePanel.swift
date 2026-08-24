@@ -21,10 +21,7 @@ public protocol PalettePresenting: AnyObject {
 public final class PalettePanel: NSPanel, PalettePresenting {
     private static let placementMargin: CGFloat = 16
     private static let minimumNativeWidth = CGFloat(
-        PaletteLayout.horizontalPadding
-            + PaletteLayout.modeWidth
-            + (PaletteLayout.minimumToolWidth * 2)
-            + (PaletteLayout.toolSpacing * 2)
+        PaletteLayout.minimumSupportedWidth
     )
 
     public let paletteViewController: PaletteViewController
@@ -39,7 +36,12 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         self.guidePlacementProvider = guidePlacementProvider
         paletteViewController = PaletteViewController(router: router)
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 156),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: PaletteLayout.minimumAllToolsWidth,
+                height: 156
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
