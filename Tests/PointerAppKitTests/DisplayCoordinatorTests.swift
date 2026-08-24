@@ -1056,6 +1056,37 @@ final class DisplayCoordinatorTests: XCTestCase {
         ))
     }
 
+    func testSetModeSessionCallbackClearingPanelCannotSuppressCancellationBoundary() {
+        _ = NSApplication.shared
+        let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        panel.update(session: session)
+
+        var armed = false
+        var cleanup: OverlayCleanupResult?
+        var boundaries: [GestureBoundaryEvent] = []
+        panel.setEventHandlers(
+            onSessionUpdate: { [weak panel] _ in
+                guard armed else { return }
+                cleanup = panel?.stopAndClear()
+            },
+            onBoundaryEvent: { event in boundaries.append(event) }
+        )
+        panel.canvasView.onRedrawRequested = {}
+        panel.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        boundaries.removeAll()
+        armed = true
+
+        panel.setMode(.standby)
+
+        XCTAssertEqual(boundaries, [.cancelled])
+        XCTAssertEqual(cleanup?.clearedHandlerCount, 3)
+        XCTAssertNil(panel.canvasView.onSessionUpdate)
+        XCTAssertNil(panel.canvasView.onBoundaryEvent)
+        XCTAssertNil(panel.canvasView.onRedrawRequested)
+    }
+
     func testSetModeCancellationCallbackReentryPublishesFinalStandbyOnce() {
         _ = NSApplication.shared
         let panel = OverlayPanel(descriptor: descriptor(uuid: DisplayUUID(rawValue: "display-a")))

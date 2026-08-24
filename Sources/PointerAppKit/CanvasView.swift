@@ -82,20 +82,26 @@ public final class CanvasView: NSView {
         guard hasActiveGesture else { return }
         hasActiveGesture = false
         let commit = session.commitGesture()
+        let redrawHandler = onRedrawRequested
+        let sessionHandler = onSessionUpdate
+        let boundaryHandler = onBoundaryEvent
         needsDisplay = true
-        onRedrawRequested?()
-        onSessionUpdate?(session)
-        onBoundaryEvent?(commit.boundaryEvent)
+        redrawHandler?()
+        sessionHandler?(session)
+        boundaryHandler?(commit.boundaryEvent)
     }
 
     public func cancelGesture() {
         guard hasActiveGesture else { return }
         hasActiveGesture = false
         let cancellation = session.cancelGesture()
+        let redrawHandler = onRedrawRequested
+        let sessionHandler = onSessionUpdate
+        let boundaryHandler = onBoundaryEvent
         needsDisplay = true
-        onRedrawRequested?()
-        onSessionUpdate?(session)
-        onBoundaryEvent?(cancellation.boundaryEvent)
+        redrawHandler?()
+        sessionHandler?(session)
+        boundaryHandler?(cancellation.boundaryEvent)
         setCursorPlan(.clickThrough)
     }
 
@@ -126,15 +132,18 @@ public final class CanvasView: NSView {
     }
 
     private func apply(update: GestureUpdate) {
+        let redrawHandler = onRedrawRequested
+        let sessionHandler = onSessionUpdate
+        let boundaryHandler = onBoundaryEvent
         if update.needsRedraw {
             needsDisplay = true
-            onRedrawRequested?()
+            redrawHandler?()
         }
         if update.boundaryEvent != nil {
-            onSessionUpdate?(session)
+            sessionHandler?(session)
         }
         if let boundaryEvent = update.boundaryEvent {
-            onBoundaryEvent?(boundaryEvent)
+            boundaryHandler?(boundaryEvent)
         }
     }
 

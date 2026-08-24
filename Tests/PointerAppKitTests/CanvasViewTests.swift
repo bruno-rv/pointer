@@ -5,6 +5,54 @@ import XCTest
 
 @MainActor
 final class CanvasViewTests: XCTestCase {
+    func testBeginBoundarySurvivesRedrawCallbackClearingHandlers() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        let view = CanvasView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            display: DisplayUUID(rawValue: "display-a"),
+            session: session,
+            tool: .arrow
+        )
+        var boundaries: [GestureBoundaryEvent] = []
+        view.onBoundaryEvent = { boundaries.append($0) }
+        view.onRedrawRequested = {
+            view.onSessionUpdate = nil
+            view.onBoundaryEvent = nil
+        }
+
+        view.beginGesture(at: NSPoint(x: 100, y: 100))
+
+        XCTAssertEqual(boundaries, [.began])
+    }
+
+    func testCommitBoundarySurvivesCallbacksClearingHandlers() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        let view = CanvasView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+            display: DisplayUUID(rawValue: "display-a"),
+            session: session,
+            tool: .arrow
+        )
+        var boundaries: [GestureBoundaryEvent] = []
+        view.onBoundaryEvent = { boundaries.append($0) }
+        view.beginGesture(at: NSPoint(x: 100, y: 100))
+        boundaries.removeAll()
+        view.onRedrawRequested = {
+            view.onSessionUpdate = nil
+            view.onBoundaryEvent = nil
+            view.onRedrawRequested = nil
+        }
+        view.onSessionUpdate = { _ in
+            view.onBoundaryEvent = nil
+        }
+
+        view.endGesture()
+
+        XCTAssertEqual(boundaries, [.committed])
+    }
+
     func testInitializerAdoptsActiveGestureOwnershipByDisplay() {
         let displayA = DisplayUUID(rawValue: "display-a")
         let displayB = DisplayUUID(rawValue: "display-b")
