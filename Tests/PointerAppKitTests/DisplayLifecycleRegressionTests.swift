@@ -188,6 +188,7 @@ final class DisplayLifecycleRegressionTests: XCTestCase {
             overlayFactory: { LifecycleOverlay(display: $0) }
         )
 
+        _ = coordinator.synchronize()
         let first = coordinator.stop()
         let second = coordinator.stop()
 

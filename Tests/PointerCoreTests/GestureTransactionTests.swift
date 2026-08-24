@@ -62,6 +62,40 @@ final class GestureTransactionTests: XCTestCase {
         }
     }
 
+    func testSpotlightDragPreservesConfiguredDimnessAndUndoRestoresPriorState() {
+        var session = PointerSession()
+        session.apply(.setMode(.annotation))
+        session.apply(.setTool(.spotlight))
+        session.apply(.setSpotlight(radius: 0.15, dimness: 0.35))
+        session.ensureCanvas(for: display)
+        let prior = session
+
+        let start = NormalizedPoint(x: 0.4, y: 0.35)
+        let end = NormalizedPoint(x: 0.7, y: 0.65)
+        let began = session.beginGesture(tool: .spotlight, at: start, on: display)
+        XCTAssertEqual(began.boundaryEvent, .began)
+        _ = session.advanceGesture(to: end)
+        let commit = session.commitGesture()
+
+        XCTAssertTrue(commit.didMutate)
+        XCTAssertEqual(commit.boundaryEvent, .committed)
+        guard let mark = session.canvas(for: display).marks.first,
+              case let .spotlight(center, radius, dimness) = mark.geometry
+        else {
+            return XCTFail("Expected dragged spotlight mark")
+        }
+        XCTAssertEqual(center, start)
+        XCTAssertEqual(radius, hypot(end.x - start.x, end.y - start.y), accuracy: 1e-9)
+        XCTAssertEqual(dimness, 0.35, accuracy: 1e-9)
+        XCTAssertTrue(session.canUndo(on: display))
+
+        session.apply(.undo(on: display))
+
+        XCTAssertEqual(session, prior)
+        XCTAssertTrue(session.canvas(for: display).marks.isEmpty)
+        XCTAssertFalse(session.canUndo(on: display))
+    }
+
     func testSelectionChoosesTopmostAndEmptyClickClearsSelection() {
         var session = PointerSession()
         session.apply(.setMode(.annotation))

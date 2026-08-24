@@ -462,15 +462,20 @@ final class DisplayCoordinatorTests: XCTestCase {
     func testDisplayResizeChangesPixelsButNotDisplayLocalMeaning() throws {
         _ = NSApplication.shared
         let uuid = DisplayUUID(rawValue: "display-a")
-        let initial = descriptor(uuid: uuid, x: 0, width: 1_920)
+        let initial = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_000),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 976),
+            scaleFactor: 2
+        )
         let resized = DisplayDescriptor(
             uuid: uuid,
-            frame: DisplayFrame(x: 40, y: 20, width: 2_560, height: 1_440),
-            visibleFrame: DisplayFrame(x: 40, y: 44, width: 2_560, height: 1_416),
+            frame: DisplayFrame(x: 40, y: 20, width: 2_560, height: 1_400),
+            visibleFrame: DisplayFrame(x: 40, y: 44, width: 2_560, height: 1_376),
             scaleFactor: 1
         )
         let mark = Mark(
-            geometry: .rectangle(NormalizedRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)),
+            geometry: .rectangle(NormalizedRect(x: 0.25, y: 0.15, width: 0.5, height: 0.25)),
             style: .default
         )
         var session = PointerSession()
@@ -479,15 +484,23 @@ final class DisplayCoordinatorTests: XCTestCase {
         let panel = OverlayPanel(descriptor: initial, session: session)
 
         let initialPixels = try renderCanvas(panel.canvasView)
-        let beforePoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 480, y: 270))
+        let beforePoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 480, y: 150))
         guard case let .rectangle(beforeRect) = mark.geometry else {
             return XCTFail("Expected rectangle fixture")
         }
+        // CGContext bitmap rows are top-down here; these points encode the
+        // positive CanvasView coordinates after that conversion.
         let initialEdges = [
-            CGPoint(x: 480, y: 270),
-            CGPoint(x: 1_440, y: 270),
-            CGPoint(x: 480, y: 810),
-            CGPoint(x: 1_440, y: 810),
+            bitmapPoint(x: 480, viewY: 150, height: 1_000),
+            bitmapPoint(x: 1_440, viewY: 150, height: 1_000),
+            bitmapPoint(x: 480, viewY: 400, height: 1_000),
+            bitmapPoint(x: 1_440, viewY: 400, height: 1_000),
+        ]
+        let initialMirroredEdges = [
+            bitmapPoint(x: 480, viewY: 600, height: 1_000),
+            bitmapPoint(x: 1_440, viewY: 600, height: 1_000),
+            bitmapPoint(x: 480, viewY: 850, height: 1_000),
+            bitmapPoint(x: 1_440, viewY: 850, height: 1_000),
         ]
         for edge in initialEdges {
             XCTAssertTrue(
@@ -495,16 +508,28 @@ final class DisplayCoordinatorTests: XCTestCase {
                 "Expected committed stroke near initial pixel \(edge)"
             )
         }
+        for edge in initialMirroredEdges {
+            XCTAssertFalse(
+                containsOpaqueStroke(initialPixels, in: panel.canvasView, around: edge),
+                "Unexpected vertically mirrored stroke near initial pixel \(edge)"
+            )
+        }
 
         panel.update(display: resized)
 
         let resizedPixels = try renderCanvas(panel.canvasView)
-        let afterPoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 640, y: 360))
+        let afterPoint = panel.canvasView.normalizedPoint(for: NSPoint(x: 640, y: 210))
         let resizedEdges = [
-            CGPoint(x: 640, y: 360),
-            CGPoint(x: 1_920, y: 360),
-            CGPoint(x: 640, y: 1_080),
-            CGPoint(x: 1_920, y: 1_080),
+            bitmapPoint(x: 640, viewY: 210, height: 1_400),
+            bitmapPoint(x: 1_920, viewY: 210, height: 1_400),
+            bitmapPoint(x: 640, viewY: 560, height: 1_400),
+            bitmapPoint(x: 1_920, viewY: 560, height: 1_400),
+        ]
+        let resizedMirroredEdges = [
+            bitmapPoint(x: 640, viewY: 840, height: 1_400),
+            bitmapPoint(x: 1_920, viewY: 840, height: 1_400),
+            bitmapPoint(x: 640, viewY: 1_190, height: 1_400),
+            bitmapPoint(x: 1_920, viewY: 1_190, height: 1_400),
         ]
         for edge in resizedEdges {
             XCTAssertTrue(
@@ -512,18 +537,42 @@ final class DisplayCoordinatorTests: XCTestCase {
                 "Expected committed stroke near resized pixel \(edge)"
             )
         }
+        for edge in resizedMirroredEdges {
+            XCTAssertFalse(
+                containsOpaqueStroke(resizedPixels, in: panel.canvasView, around: edge),
+                "Unexpected vertically mirrored stroke near resized pixel \(edge)"
+            )
+        }
+        for edge in initialEdges {
+            XCTAssertFalse(
+                containsOpaqueStroke(resizedPixels, in: panel.canvasView, around: edge),
+                "Unexpected old-size stroke near resized pixel \(edge)"
+            )
+        }
         XCTAssertFalse(
-            containsOpaqueStroke(resizedPixels, in: panel.canvasView, around: CGPoint(x: 480, y: 270)),
+            containsOpaqueStroke(
+                resizedPixels,
+                in: panel.canvasView,
+                around: bitmapPoint(x: 480, viewY: 150, height: 1_400)
+            ),
             "The old pixel location must not retain the resized stroke"
         )
         XCTAssertEqual(beforePoint.x, 0.25, accuracy: 1e-12)
-        XCTAssertEqual(beforePoint.y, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(beforePoint.y, 0.15, accuracy: 1e-12)
         XCTAssertEqual(afterPoint.x, 0.25, accuracy: 1e-12)
-        XCTAssertEqual(afterPoint.y, 0.25, accuracy: 1e-12)
+        XCTAssertEqual(afterPoint.y, 0.15, accuracy: 1e-12)
         XCTAssertEqual(panel.canvasView.bounds.width, resized.frame.width, accuracy: 1e-12)
         XCTAssertEqual(panel.canvasView.bounds.height, resized.frame.height, accuracy: 1e-12)
-        XCTAssertEqual(beforeRect.denormalized(width: 1_920, height: 1_080).x, 480, accuracy: 1e-12)
-        XCTAssertEqual(beforeRect.denormalized(width: 2_560, height: 1_440).x, 640, accuracy: 1e-12)
+        let beforePixels = beforeRect.denormalized(width: 1_920, height: 1_000)
+        let afterPixels = beforeRect.denormalized(width: 2_560, height: 1_400)
+        XCTAssertEqual(beforePixels.x, 480, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.y, 150, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.width, 960, accuracy: 1e-12)
+        XCTAssertEqual(beforePixels.height, 250, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.x, 640, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.y, 210, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.width, 1_280, accuracy: 1e-12)
+        XCTAssertEqual(afterPixels.height, 350, accuracy: 1e-12)
         XCTAssertEqual(panel.canvasView.session.canvas(for: uuid).marks, [mark])
     }
 
@@ -902,6 +951,10 @@ final class DisplayCoordinatorTests: XCTestCase {
             }
         }
         return false
+    }
+
+    private func bitmapPoint(x: CGFloat, viewY: CGFloat, height: CGFloat) -> CGPoint {
+        CGPoint(x: x, y: height - viewY)
     }
 
     private enum BitmapError: Error {

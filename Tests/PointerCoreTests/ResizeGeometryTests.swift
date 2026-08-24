@@ -259,6 +259,63 @@ final class ResizeGeometryTests: XCTestCase {
                 ])
             ),
             ResizeFixture(
+                name: "freehand top left",
+                geometry: .freehand([
+                    NormalizedPoint(x: 0.2, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.3),
+                    NormalizedPoint(x: 0.2, y: 0.3),
+                ]),
+                handle: .topLeft,
+                selectionPoint: NormalizedPoint(x: 0.3, y: 0.2),
+                handlePoint: NormalizedPoint(x: 0.2, y: 0.3),
+                target: NormalizedPoint(x: 0, y: 0.4),
+                expected: .freehand([
+                    NormalizedPoint(x: 0, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.4),
+                    NormalizedPoint(x: 0, y: 0.4),
+                ])
+            ),
+            ResizeFixture(
+                name: "freehand bottom left",
+                geometry: .freehand([
+                    NormalizedPoint(x: 0.2, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.3),
+                    NormalizedPoint(x: 0.2, y: 0.3),
+                ]),
+                handle: .bottomLeft,
+                selectionPoint: NormalizedPoint(x: 0.3, y: 0.2),
+                handlePoint: NormalizedPoint(x: 0.2, y: 0.2),
+                target: NormalizedPoint(x: 0, y: 0.1),
+                expected: .freehand([
+                    NormalizedPoint(x: 0, y: 0.1),
+                    NormalizedPoint(x: 0.4, y: 0.1),
+                    NormalizedPoint(x: 0.4, y: 0.3),
+                    NormalizedPoint(x: 0, y: 0.3),
+                ])
+            ),
+            ResizeFixture(
+                name: "freehand bottom right",
+                geometry: .freehand([
+                    NormalizedPoint(x: 0.2, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.3),
+                    NormalizedPoint(x: 0.2, y: 0.3),
+                ]),
+                handle: .bottomRight,
+                selectionPoint: NormalizedPoint(x: 0.3, y: 0.2),
+                handlePoint: NormalizedPoint(x: 0.4, y: 0.2),
+                target: NormalizedPoint(x: 0.6, y: 0.1),
+                expected: .freehand([
+                    NormalizedPoint(x: 0.2, y: 0.1),
+                    NormalizedPoint(x: 0.6, y: 0.1),
+                    NormalizedPoint(x: 0.6, y: 0.3),
+                    NormalizedPoint(x: 0.2, y: 0.3),
+                ])
+            ),
+            ResizeFixture(
                 name: "emoji top right",
                 geometry: .emoji(
                     text: "⭐️",
@@ -271,6 +328,51 @@ final class ResizeGeometryTests: XCTestCase {
                 expected: .emoji(
                     text: "⭐️",
                     rect: NormalizedRect(x: 0.3, y: 0.3, width: 0.4, height: 0.4)
+                )
+            ),
+            ResizeFixture(
+                name: "emoji top left",
+                geometry: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+                ),
+                handle: .topLeft,
+                selectionPoint: NormalizedPoint(x: 0.4, y: 0.4),
+                handlePoint: NormalizedPoint(x: 0.3, y: 0.5),
+                target: NormalizedPoint(x: 0.1, y: 0.7),
+                expected: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.1, y: 0.3, width: 0.4, height: 0.4)
+                )
+            ),
+            ResizeFixture(
+                name: "emoji bottom left",
+                geometry: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+                ),
+                handle: .bottomLeft,
+                selectionPoint: NormalizedPoint(x: 0.4, y: 0.4),
+                handlePoint: NormalizedPoint(x: 0.3, y: 0.3),
+                target: NormalizedPoint(x: 0.1, y: 0.1),
+                expected: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.1, y: 0.1, width: 0.4, height: 0.4)
+                )
+            ),
+            ResizeFixture(
+                name: "emoji bottom right",
+                geometry: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+                ),
+                handle: .bottomRight,
+                selectionPoint: NormalizedPoint(x: 0.4, y: 0.4),
+                handlePoint: NormalizedPoint(x: 0.5, y: 0.3),
+                target: NormalizedPoint(x: 0.7, y: 0.1),
+                expected: .emoji(
+                    text: "⭐️",
+                    rect: NormalizedRect(x: 0.3, y: 0.1, width: 0.4, height: 0.4)
                 )
             ),
             ResizeFixture(
