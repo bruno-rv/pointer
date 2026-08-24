@@ -63,11 +63,6 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         identifier = NSUserInterfaceItemIdentifier("pointer.palette")
     }
 
-    @available(*, deprecated, message: "Inject one GuidePlacementProviding instance; remove this seam in C Task 3.")
-    internal convenience init(router: CommandRouter) {
-        self.init(router: router, guidePlacementProvider: GuidePlacementProvider())
-    }
-
     public func refresh(session: PointerSession) {
         paletteViewController.refresh(session: session)
     }

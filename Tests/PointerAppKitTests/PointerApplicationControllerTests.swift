@@ -7,7 +7,7 @@ import XCTest
 final class PointerApplicationControllerTests: XCTestCase {
     func testExplicitShowMovesAndClampsPaletteToPointerDisplay() throws {
         let fixture = ControllerFixture()
-        let palette = try XCTUnwrap(fixture.palette)
+        let palette = fixture.palette
         let display = fixture.provider.displays[0]
 
         fixture.controller.start()
@@ -22,7 +22,7 @@ final class PointerApplicationControllerTests: XCTestCase {
 
     func testNormalRefreshPreservesManualPaletteDrag() throws {
         let fixture = ControllerFixture()
-        let palette = try XCTUnwrap(fixture.palette)
+        let palette = fixture.palette
 
         fixture.controller.start()
         palette.window.setFrameOrigin(NSPoint(x: 240, y: 180))
@@ -85,6 +85,22 @@ final class PointerApplicationControllerTests: XCTestCase {
 
         XCTAssertEqual(overlay.display, changed)
     }
+
+    func testStopClearsControllerCallbacksAndRestartRebindsEachOnce() {
+        let fixture = ControllerFixture()
+
+        fixture.controller.start()
+        XCTAssertNotNil(fixture.coordinator.onDisplaySync)
+        XCTAssertNotNil(fixture.router.onStateChange)
+
+        fixture.controller.stop()
+        XCTAssertNil(fixture.coordinator.onDisplaySync)
+        XCTAssertNil(fixture.router.onStateChange)
+
+        fixture.controller.start()
+        XCTAssertNotNil(fixture.coordinator.onDisplaySync)
+        XCTAssertNotNil(fixture.router.onStateChange)
+    }
 }
 
 @MainActor
@@ -93,15 +109,19 @@ private final class ControllerFixture {
     let provider: ControllerTestScreenProvider
     let coordinator: DisplayCoordinator
     let router: CommandRouter
-    let palette: PalettePanel?
+    let palette: PalettePanel
+    let placementProvider: GuideTestPlacementProvider
+    let guide: GuideTestSpyGuide
+    let guideStateStore: GuideTestStateStore
+    let shortcutController: HotKeyController
     let controller: PointerApplicationController
 
     init() {
         let uuid = DisplayUUID(rawValue: "display-a")
         let descriptor = DisplayDescriptor(
             uuid: uuid,
-            frame: DisplayFrame(x: 0, y: 0, width: 800, height: 600),
-            visibleFrame: DisplayFrame(x: 0, y: 24, width: 800, height: 576),
+            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
             scaleFactor: 2
         )
         provider = ControllerTestScreenProvider(displays: [descriptor])
@@ -110,14 +130,30 @@ private final class ControllerFixture {
             overlayFactory: { ControllerTestOverlay(display: $0) }
         )
         router = CommandRouter(coordinator: coordinator, screenProvider: provider)
-        palette = PalettePanel(router: router)
+        placementProvider = GuideTestPlacementProvider(eventLog: GuideTestEventLog())
+        palette = PalettePanel(router: router, guidePlacementProvider: placementProvider)
+        guide = GuideTestSpyGuide(
+            placementProvider: placementProvider,
+            eventLog: GuideTestEventLog()
+        )
+        guideStateStore = GuideTestStateStore()
+        let registrar = GuideTestHotKeyRegistrar()
+        shortcutController = HotKeyController(
+            registrar: registrar,
+            store: GuideTestShortcutStore(),
+            scheduler: GuideTestShortcutScheduler()
+        )
         controller = PointerApplicationController(
             screenProvider: provider,
             displayCoordinator: coordinator,
             commandRouter: router,
             palette: palette,
             menuBar: nil,
-            shortcutController: nil,
+            shortcutController: shortcutController,
+            guide: guide,
+            guideStateStore: guideStateStore,
+            controlMetadataProvider: ControlMetadataInventory(palette: palette, menuBar: nil),
+            guidePlacementProvider: placementProvider,
             notificationCenter: notificationCenter
         )
     }

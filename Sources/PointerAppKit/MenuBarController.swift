@@ -6,11 +6,15 @@ public protocol MenuBarPresenting: AnyObject {
     func install()
     func refresh(session: PointerSession)
     func remove()
+    @discardableResult
+    func bindCallbacks(onShowPalette: (() -> Void)?, onLearnPointer: (() -> Void)?) -> Int
+    func clearCallbacks()
 }
 
 @MainActor
 public final class MenuBarController: NSObject, MenuBarPresenting {
     public var onShowPalette: (() -> Void)?
+    public var onLearnPointer: (() -> Void)?
 
     public private(set) var statusItem: NSStatusItem?
     public private(set) var menu: NSMenu?
@@ -21,6 +25,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     private var modeItem: NSMenuItem?
     private var undoClearAllItem: NSMenuItem?
     private var shortcutItems: [ShortcutPreset: NSMenuItem] = [:]
+    private var callbacksBound = false
 
     public init(
         router: CommandRouter,
@@ -31,9 +36,29 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         self.shortcutController = shortcutController
         self.terminate = terminate
         super.init()
+    }
+
+    @discardableResult
+    public func bindCallbacks(
+        onShowPalette: (() -> Void)?,
+        onLearnPointer: (() -> Void)?
+    ) -> Int {
+        self.onShowPalette = onShowPalette
+        self.onLearnPointer = onLearnPointer
+        callbacksBound = true
         router.onClearAllRequested = { [weak self] in
-            self?.presentClearAllConfirmation()
+            guard let self, self.callbacksBound else { return }
+            self.presentClearAllConfirmation()
         }
+        return (onShowPalette == nil ? 0 : 1)
+            + (onLearnPointer == nil ? 0 : 1)
+    }
+
+    public func clearCallbacks() {
+        callbacksBound = false
+        onShowPalette = nil
+        onLearnPointer = nil
+        router.onClearAllRequested = nil
     }
 
     public func install() {
@@ -49,6 +74,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         let menu = NSMenu(title: "Pointer")
         menu.autoenablesItems = false
         menu.addItem(itemWithTitle("Show Palette", action: #selector(showPalette), identifier: "menu.show-palette"))
+        menu.addItem(itemWithTitle("Learn Pointer", action: #selector(learnPointer), identifier: "menu.learn-pointer"))
         modeItem = itemWithTitle(
             "Enter Annotation",
             action: #selector(toggleMode),
@@ -111,6 +137,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     public func remove() {
+        clearCallbacks()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -119,14 +146,22 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     @objc private func showPalette() {
+        guard callbacksBound else { return }
         onShowPalette?()
     }
 
+    @objc private func learnPointer() {
+        guard callbacksBound else { return }
+        onLearnPointer?()
+    }
+
     @objc private func toggleMode() {
+        guard callbacksBound else { return }
         router.route(.toggleMode)
     }
 
     @objc private func selectShortcut(_ sender: NSMenuItem) {
+        guard callbacksBound else { return }
         guard let rawValue = sender.representedObject as? String,
               let preset = ShortcutPreset(rawValue: rawValue) else {
             return
@@ -135,14 +170,17 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     @objc private func clearAll() {
+        guard callbacksBound else { return }
         router.route(.clearAll)
     }
 
     @objc private func undoClearAll() {
+        guard callbacksBound else { return }
         router.route(.undoClearAll)
     }
 
     @objc private func quit() {
+        guard callbacksBound else { return }
         terminate()
     }
 
