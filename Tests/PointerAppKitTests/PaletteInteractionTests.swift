@@ -256,6 +256,263 @@ final class PaletteInteractionTests: XCTestCase {
         controller.refresh(session: session)
         XCTAssertFalse(controller.deleteButton.isEnabled)
     }
+
+    func testRelevantStyleControlsAreEnabledAndIrrelevantControlsExplainDisabledState() {
+        let controller = PaletteViewController(router: makeRouter())
+        controller.loadViewIfNeeded()
+
+        var session = controllerSession(tool: .arrow, mode: .annotation)
+        controller.refresh(session: session)
+        XCTAssertTrue(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+        XCTAssertTrue(
+            controller.control(identifier: "palette.spotlight.radius")
+                .accessibilityHelp()?.contains("Spotlight") == true
+        )
+
+        session = controllerSession(tool: .spotlight, mode: .annotation)
+        controller.refresh(session: session)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertTrue(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+    }
+
+    func testSliderValuesAreExposedAsAccessibleValues() {
+        let controller = PaletteViewController(router: makeRouter())
+        controller.loadViewIfNeeded()
+
+        var session = controllerSession(tool: .arrow, mode: .annotation)
+        session.apply(.setStyle(MarkStyle(color: .red, strokeWidth: 8, opacity: 0.75)))
+        session.apply(.setSpotlight(radius: 0.3, dimness: 0.65))
+        controller.refresh(session: session)
+
+        XCTAssertEqual(
+            controller.control(identifier: "palette.style.stroke-width").accessibilityValue() as? String,
+            "8"
+        )
+        XCTAssertEqual(
+            controller.control(identifier: "palette.style.opacity").accessibilityValue() as? String,
+            "75%"
+        )
+        XCTAssertEqual(
+            controller.control(identifier: "palette.spotlight.radius").accessibilityValue() as? String,
+            "30%"
+        )
+        XCTAssertEqual(
+            controller.control(identifier: "palette.spotlight.dimness").accessibilityValue() as? String,
+            "65%"
+        )
+    }
+
+    func testControlMetadataInventoryIsReadOnlyAndDeterministic() {
+        let palette = PalettePanel(
+            router: makeRouter(),
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        palette.paletteViewController.loadViewIfNeeded()
+        let inventory = ControlMetadataInventory(palette: palette, menuBar: nil)
+
+        let first = inventory.metadata()
+        let second = inventory.metadata()
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.map(\.identifier), palette.paletteViewController.controls.compactMap { $0.identifier?.rawValue })
+        XCTAssertTrue(first.allSatisfy {
+            !$0.identifier.isEmpty && !$0.accessibleName.isEmpty && !$0.role.isEmpty
+        })
+        XCTAssertFalse(first.first { $0.identifier == "palette.status" }?.isKeyboardReachable ?? true)
+        XCTAssertTrue(first.first { $0.identifier == "palette.style.stroke-width" }?.value != nil)
+    }
+
+    func testControlMetadataInventoryIncludesInstalledMenuHierarchyAfterPaletteRows() {
+        let router = makeRouter()
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        let menuBar = MenuBarController(router: router)
+        menuBar.install()
+        defer { menuBar.remove() }
+
+        let identifiers = ControlMetadataInventory(palette: palette, menuBar: menuBar)
+            .metadata()
+            .map(\.identifier)
+
+        XCTAssertEqual(identifiers.first, "palette.mode")
+        XCTAssertTrue(identifiers.contains("pointer.menu-bar"))
+        XCTAssertTrue(identifiers.contains("menu.show-palette"))
+        XCTAssertTrue(identifiers.contains("menu.shortcut"))
+        XCTAssertTrue(identifiers.contains("menu.shortcut.control-option-command-p"))
+        XCTAssertTrue(identifiers.contains("menu.quit"))
+    }
+
+    func testMetadataUsesHonestKeyboardReachabilityForDisabledAndHiddenControls() {
+        let router = makeRouter()
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        palette.paletteViewController.loadViewIfNeeded()
+        palette.paletteViewController.refresh(session: controllerSession(tool: .arrow, mode: .annotation))
+
+        let metadata = ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
+        XCTAssertFalse(metadata.first { $0.identifier == "palette.status" }?.isKeyboardReachable ?? true)
+        XCTAssertFalse(metadata.first { $0.identifier == "palette.spotlight.radius" }?.isKeyboardReachable ?? true)
+        XCTAssertFalse(metadata.first { $0.identifier == "palette.spotlight.radius" }?.isEnabled ?? true)
+    }
+
+    func testSelectedCompatibleMarksEnableContextualControlsWithAcceptedDisplay() {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+
+        let selectedGeometries: [(MarkGeometry, NormalizedPoint)] = [
+            (
+                .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)),
+                NormalizedPoint(x: 0.2, y: 0.4)
+            ),
+            (
+                .freehand([
+                    NormalizedPoint(x: 0.2, y: 0.2),
+                    NormalizedPoint(x: 0.4, y: 0.4),
+                ]),
+                NormalizedPoint(x: 0.3, y: 0.3)
+            ),
+        ]
+        for (geometry, hitPoint) in selectedGeometries {
+            let session = selectedSession(
+                geometry: geometry,
+                hitPoint: hitPoint,
+                display: fixture.display
+            )
+            controller.refresh(session: session)
+            XCTAssertTrue(controller.control(identifier: "palette.style.color").isEnabled)
+            XCTAssertTrue(controller.control(identifier: "palette.style.stroke-width").isEnabled)
+            XCTAssertTrue(controller.control(identifier: "palette.style.opacity").isEnabled)
+        }
+    }
+
+    func testSelectedSpecializedMarksEnableOnlyTheirContextualControls() {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+
+        let emoji = selectedSession(
+            geometry: .emoji(
+                text: "👉",
+                rect: NormalizedRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)
+            ),
+            hitPoint: NormalizedPoint(x: 0.3, y: 0.3),
+            display: fixture.display
+        )
+        controller.refresh(session: emoji)
+        XCTAssertTrue(controller.control(identifier: "palette.emoji").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+
+        let spotlight = selectedSession(
+            geometry: .spotlight(
+                center: NormalizedPoint(x: 0.4, y: 0.4),
+                radius: 0.15,
+                dimness: 0.5
+            ),
+            hitPoint: NormalizedPoint(x: 0.4, y: 0.4),
+            display: fixture.display
+        )
+        controller.refresh(session: spotlight)
+        XCTAssertFalse(controller.control(identifier: "palette.emoji").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertTrue(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+        XCTAssertTrue(controller.control(identifier: "palette.spotlight.dimness").isEnabled)
+    }
+
+    func testSelectWithoutSelectionDisablesSpecializedControlsAndDeleteIsHidden() {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+        var session = PointerSession()
+        session.ensureCanvas(for: fixture.display.uuid)
+        session.apply(.setMode(.annotation))
+        session.apply(.setTool(.select))
+
+        controller.refresh(session: session)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.emoji").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+        XCTAssertTrue(controller.control(identifier: "palette.style.color").accessibilityHelp()?.contains("Annotation color") == true)
+        XCTAssertTrue(controller.control(identifier: "palette.emoji").accessibilityHelp()?.contains("Emoji") == true)
+        XCTAssertTrue(controller.control(identifier: "palette.spotlight.radius").accessibilityHelp()?.contains("Spotlight") == true)
+        XCTAssertTrue(controller.deleteButton.isHidden)
+        XCTAssertFalse(controller.deleteButton.isEnabled)
+    }
+
+    func testRefreshPreservesPaletteOriginAndFirstResponder() throws {
+        let fixture = acceptedFixture()
+        let palette = PalettePanel(
+            router: fixture.router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to be shown")
+        }
+        let tool = palette.paletteViewController.control(identifier: "palette.tool.arrow")
+        XCTAssertTrue(palette.makeFirstResponder(tool))
+        let origin = palette.frame.origin
+        let firstResponder = palette.firstResponder
+
+        palette.refresh(session: controllerSession(tool: .arrow, mode: .annotation))
+
+        XCTAssertEqual(palette.frame.origin, origin)
+        XCTAssertTrue(palette.firstResponder === firstResponder)
+    }
+
+    private func makeRouter() -> CommandRouter {
+        let descriptor = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        return CommandRouter(coordinator: coordinator, screenProvider: provider)
+    }
+
+    private func controllerSession(tool: PointerTool, mode: PointerMode) -> PointerSession {
+        var session = PointerSession()
+        session.apply(.setMode(mode))
+        session.apply(.setTool(tool))
+        return session
+    }
+
+    private func acceptedFixture() -> (
+        router: CommandRouter,
+        coordinator: DisplayCoordinator,
+        display: DisplayDescriptor
+    ) {
+        let display = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [display])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+        return (router, coordinator, display)
+    }
+
+    private func selectedSession(
+        geometry: MarkGeometry,
+        hitPoint: NormalizedPoint,
+        display: DisplayDescriptor
+    ) -> PointerSession {
+        var session = PointerSession()
+        session.ensureCanvas(for: display.uuid)
+        session.apply(.setMode(.annotation))
+        session.apply(.append(Mark(geometry: geometry, style: .default), to: display.uuid))
+        session.apply(.setTool(.select))
+        _ = session.beginGesture(tool: .select, at: hitPoint, on: display.uuid)
+        _ = session.commitGesture()
+        return session
+    }
 }
 
 @MainActor

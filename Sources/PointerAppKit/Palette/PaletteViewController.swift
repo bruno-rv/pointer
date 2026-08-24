@@ -26,6 +26,10 @@ public final class PaletteViewController: NSViewController {
     private var statusLabel: NSTextField!
     private var undoButton: NSButton!
     private var clearButton: NSButton!
+    private var strokeValueLabel: NSTextField!
+    private var opacityValueLabel: NSTextField!
+    private var radiusValueLabel: NSTextField!
+    private var dimnessValueLabel: NSTextField!
     private var visualEffectView: NSVisualEffectView!
     private var styleScrollView: NSScrollView!
     private var currentSession = PointerSession()
@@ -74,32 +78,55 @@ public final class PaletteViewController: NSViewController {
 
         modeButton.title = session.mode == .annotation ? "Annotation" : "Standby"
         modeButton.state = session.mode == .annotation ? .on : .off
+        modeButton.setAccessibilityValue(session.mode == .annotation ? "On" : "Off")
         for (tool, button) in toolButtons {
             button.state = session.toolState.tool == tool ? .on : .off
             button.isEnabled = true
+            button.setAccessibilityValue(session.toolState.tool == tool ? "Selected" : "Not selected")
         }
         let style = session.toolState.style
         colorWell.color = nsColor(from: style.color)
+        colorWell.setAccessibilityValue(
+            "RGBA \(style.color.red), \(style.color.green), \(style.color.blue)"
+        )
         strokeSlider.doubleValue = style.strokeWidth
         opacitySlider.doubleValue = style.opacity
         radiusSlider.doubleValue = session.toolState.spotlightRadius
         dimnessSlider.doubleValue = session.toolState.spotlightDimness
         emojiPicker.selectItem(withTitle: session.toolState.emoji)
+        emojiPicker.setAccessibilityValue(session.toolState.emoji)
+        strokeSlider.setAccessibilityValue(formattedStroke(style.strokeWidth))
+        opacitySlider.setAccessibilityValue(formattedPercent(style.opacity))
+        radiusSlider.setAccessibilityValue(formattedPercent(session.toolState.spotlightRadius))
+        dimnessSlider.setAccessibilityValue(formattedPercent(session.toolState.spotlightDimness))
+        strokeValueLabel?.stringValue = formattedStroke(style.strokeWidth)
+        opacityValueLabel?.stringValue = formattedPercent(style.opacity)
+        radiusValueLabel?.stringValue = formattedPercent(session.toolState.spotlightRadius)
+        dimnessValueLabel?.stringValue = formattedPercent(session.toolState.spotlightDimness)
         let pointerDisplay = router.pointerDisplay
-        deleteButton.isEnabled = session.mode == .annotation && session.selection != nil
+        updateContextualState(
+            session: session,
+            selectionGeometry: selectedGeometry(in: session)
+        )
         undoButton.isEnabled = pointerDisplay.map(session.canUndo(on:)) ?? false
         clearButton.isEnabled = pointerDisplay.map {
             !session.canvas(for: $0).marks.isEmpty
         } ?? false
+        undoButton.setAccessibilityValue(undoButton.isEnabled ? "Available" : "Unavailable")
+        clearButton.setAccessibilityValue(clearButton.isEnabled ? "Available" : "Unavailable")
         if let error = router.shortcutError {
             statusLabel.stringValue = "Shortcut unavailable: \(error)"
         } else if let feedback = router.feedbackMessage {
             statusLabel.stringValue = feedback
         } else {
-            statusLabel.stringValue = session.mode == .annotation
+            let modeStatus = session.mode == .annotation
                 ? "Annotation enabled"
                 : "Standby — overlays are click-through"
+            statusLabel.stringValue = router.activeShortcutID.map {
+                "\(modeStatus) · Shortcut: \($0)"
+            } ?? modeStatus
         }
+        statusLabel.setAccessibilityValue(statusLabel.stringValue)
         updateLayout(for: view.bounds.width > 0 ? view.bounds.width : 760)
     }
 
@@ -109,6 +136,14 @@ public final class PaletteViewController: NSViewController {
 
     public var statusMessage: String {
         statusLabel?.stringValue ?? ""
+    }
+
+    public func control(identifier: String) -> NSControl {
+        loadViewIfNeeded()
+        guard let control = controls.first(where: { $0.identifier?.rawValue == identifier }) else {
+            preconditionFailure("Unknown palette control: \(identifier)")
+        }
+        return control
     }
 
     public func applyLayout(for width: CGFloat) {
@@ -147,6 +182,12 @@ public final class PaletteViewController: NSViewController {
                 label: "Select \(tool.displayName)",
                 help: "Choose the \(tool.displayName) annotation tool"
             )
+            button.image = NSImage(
+                systemSymbolName: symbolName(for: tool),
+                accessibilityDescription: title(for: tool)
+            )
+            button.imagePosition = .imageLeading
+            button.imageScaling = .scaleProportionallyDown
             button.tag = PointerTool.allCases.firstIndex(of: tool) ?? 0
             button.target = self
             button.action = #selector(selectTool(_:))
@@ -214,6 +255,11 @@ public final class PaletteViewController: NSViewController {
         radiusSlider.target = self
         radiusSlider.action = #selector(changeSpotlight(_:))
 
+        strokeValueLabel = valueLabel()
+        opacityValueLabel = valueLabel()
+        radiusValueLabel = valueLabel()
+        dimnessValueLabel = valueLabel()
+
         dimnessSlider = makeSlider(
             identifier: "palette.spotlight.dimness",
             label: "Spotlight dimness",
@@ -256,15 +302,18 @@ public final class PaletteViewController: NSViewController {
         deleteButton.action = #selector(delete)
 
         statusLabel = NSTextField(labelWithString: "Standby — overlays are click-through")
-        statusLabel.setAccessibilityElement(true)
-        statusLabel.setAccessibilityLabel("Pointer status")
-        statusLabel.setAccessibilityHelp("Current annotation mode and shortcut status")
-        statusLabel.identifier = NSUserInterfaceItemIdentifier("palette.status")
+        configure(
+            statusLabel,
+            identifier: "palette.status",
+            label: "Pointer status",
+            help: "Current annotation mode and shortcut status"
+        )
+        statusLabel.isSelectable = false
 
         controls += [modeButton]
         controls += PointerTool.allCases.compactMap { toolButtons[$0] }
         controls += [overflowButton, emojiPicker, colorWell, strokeSlider, opacitySlider, radiusSlider, dimnessSlider]
-        controls += [undoButton, clearButton, deleteButton]
+        controls += [undoButton, clearButton, deleteButton, statusLabel]
     }
 
     private func layoutControls() {
@@ -273,14 +322,21 @@ public final class PaletteViewController: NSViewController {
         firstRow.spacing = 6
         firstRow.distribution = .fillEqually
         firstRow.detachesHiddenViews = true
+        firstRow.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        firstRow.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        for arrangedSubview in firstRow.arrangedSubviews {
+            arrangedSubview.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            arrangedSubview.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        modeButton.bezelStyle = .texturedRounded
 
         let secondRow = NSStackView(views: [
             labeled("Color", colorWell),
             labeled("Emoji", emojiPicker),
-            labeled("Stroke", strokeSlider),
-            labeled("Opacity", opacitySlider),
-            labeled("Radius", radiusSlider),
-            labeled("Dimness", dimnessSlider),
+            labeled("Stroke", strokeSlider, valueLabel: strokeValueLabel),
+            labeled("Opacity", opacitySlider, valueLabel: opacityValueLabel),
+            labeled("Radius", radiusSlider, valueLabel: radiusValueLabel),
+            labeled("Dimness", dimnessSlider, valueLabel: dimnessValueLabel),
             controls.first { $0.identifier?.rawValue == "palette.undo" }!,
             controls.first { $0.identifier?.rawValue == "palette.clear" }!,
             deleteButton,
@@ -299,6 +355,8 @@ public final class PaletteViewController: NSViewController {
         styleScrollView.hasVerticalScroller = false
         styleScrollView.hasHorizontalScroller = true
         styleScrollView.horizontalScrollElasticity = .none
+        styleScrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        styleScrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
         styleScrollView.documentView = secondRow
         secondRow.translatesAutoresizingMaskIntoConstraints = true
         secondRow.frame = NSRect(
@@ -324,8 +382,9 @@ public final class PaletteViewController: NSViewController {
 
     private func updateLayout(for width: CGFloat) {
         let plan = PaletteLayout.plan(availableWidth: Double(width))
-        guard plan != layoutPlan else { return }
-        layoutPlan = plan
+        if plan != layoutPlan {
+            layoutPlan = plan
+        }
         let hidden = Set(plan.overflowTools)
         for (tool, button) in toolButtons {
             button.isHidden = hidden.contains(tool)
@@ -335,6 +394,124 @@ public final class PaletteViewController: NSViewController {
         for tool in plan.overflowTools {
             overflowButton.menu?.addItem(withTitle: tool.displayName, action: nil, keyEquivalent: "")
         }
+        overflowButton.title = "More Tools"
+    }
+
+    private func updateContextualState(
+        session: PointerSession,
+        selectionGeometry: MarkGeometry?
+    ) {
+        let styleEnabled = styleApplies(
+            to: session.toolState.tool,
+            selectionGeometry: selectionGeometry
+        )
+        setEnabled(
+            colorWell,
+            enabled: styleEnabled,
+            help: styleEnabled
+                ? "Choose the color for compatible annotation marks"
+                : "Annotation color applies to arrows, rectangles, ellipses, and pen marks"
+        )
+        setEnabled(
+            strokeSlider,
+            enabled: styleEnabled,
+            help: styleEnabled
+                ? "Set the stroke width for compatible annotation marks"
+                : "Stroke width applies to arrows, rectangles, ellipses, and pen marks"
+        )
+        setEnabled(
+            opacitySlider,
+            enabled: styleEnabled,
+            help: styleEnabled
+                ? "Set annotation opacity"
+                : "Opacity applies to arrows, rectangles, ellipses, and pen marks"
+        )
+
+        let emojiEnabled = session.toolState.tool == .emoji || isEmoji(selectionGeometry)
+        setEnabled(
+            emojiPicker,
+            enabled: emojiEnabled,
+            help: emojiEnabled
+                ? "Choose the emoji used by future emoji stamps and the selected emoji mark"
+                : "Emoji is available only for the Emoji tool or a selected Emoji mark"
+        )
+
+        let spotlightEnabled = session.toolState.tool == .spotlight || isSpotlight(selectionGeometry)
+        setEnabled(
+            radiusSlider,
+            enabled: spotlightEnabled,
+            help: spotlightEnabled
+                ? "Set the spotlight radius"
+                : "Spotlight radius is available only for the Spotlight tool or a selected Spotlight mark"
+        )
+        setEnabled(
+            dimnessSlider,
+            enabled: spotlightEnabled,
+            help: spotlightEnabled
+                ? "Set the dimness outside the spotlight"
+                : "Spotlight dimness is available only for the Spotlight tool or a selected Spotlight mark"
+        )
+
+        let canDelete = session.mode == .annotation && session.selection != nil
+        deleteButton.isEnabled = canDelete
+        deleteButton.isHidden = !canDelete
+        deleteButton.setAccessibilityHelp(
+            canDelete
+                ? "Delete the selected mark"
+                : "Delete is available only for an explicitly selected mark in annotation mode"
+        )
+    }
+
+    private func setEnabled(
+        _ control: NSControl,
+        enabled: Bool,
+        help: String
+    ) {
+        control.isEnabled = enabled
+        control.setAccessibilityHelp(help)
+    }
+
+    private func selectedGeometry(in session: PointerSession) -> MarkGeometry? {
+        guard let selection = session.selection,
+              let display = router.pointerDisplay
+        else {
+            return nil
+        }
+        return session.canvas(for: display).marks.first { $0.id == selection }?.geometry
+    }
+
+    private func styleApplies(
+        to tool: PointerTool,
+        selectionGeometry: MarkGeometry?
+    ) -> Bool {
+        switch tool {
+        case .arrow, .rectangle, .ellipse, .pen:
+            return true
+        case .select, .eraser, .emoji, .spotlight:
+            return styleGeometryIsCompatible(selectionGeometry)
+        }
+    }
+
+    private func styleGeometryIsCompatible(_ geometry: MarkGeometry?) -> Bool {
+        guard let geometry else { return false }
+        switch geometry {
+        case .arrow, .rectangle, .ellipse, .freehand:
+            return true
+        case .emoji, .spotlight:
+            return false
+        }
+    }
+
+    private func isEmoji(_ geometry: MarkGeometry?) -> Bool {
+        guard let geometry else { return false }
+        if case .emoji = geometry { return true }
+        return false
+    }
+
+    private func isSpotlight(_ geometry: MarkGeometry?) -> Bool {
+        guard let geometry else { return false }
+        if case .spotlight = geometry { return true }
+        return false
     }
 
     private func applyDisplayOptions() {
@@ -460,10 +637,28 @@ public final class PaletteViewController: NSViewController {
         control.isEnabled = true
     }
 
-    private func labeled(_ title: String, _ control: NSControl) -> NSView {
+    private func valueLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        label.alignment = .right
+        label.textColor = .secondaryLabelColor
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        return label
+    }
+
+    private func labeled(
+        _ title: String,
+        _ control: NSControl,
+        valueLabel: NSTextField? = nil
+    ) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = NSFont.systemFont(ofSize: 11)
-        let stack = NSStackView(views: [label, control])
+        let caption = NSStackView(views: valueLabel.map { [label, $0] } ?? [label])
+        caption.orientation = .horizontal
+        caption.alignment = .centerY
+        caption.spacing = 4
+        caption.distribution = .fill
+        let stack = NSStackView(views: [caption, control])
         stack.orientation = .vertical
         stack.spacing = 2
         return stack
@@ -473,13 +668,34 @@ public final class PaletteViewController: NSViewController {
         switch tool {
         case .select: return "Select"
         case .arrow: return "Arrow"
-        case .rectangle: return "Rect"
+        case .rectangle: return "Rectangle"
         case .ellipse: return "Ellipse"
         case .pen: return "Pen"
-        case .eraser: return "Erase"
+        case .eraser: return "Eraser"
         case .emoji: return "Emoji"
         case .spotlight: return "Spotlight"
         }
+    }
+
+    private func symbolName(for tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "cursorarrow"
+        case .arrow: return "arrow.up.right"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "oval"
+        case .pen: return "pencil.tip"
+        case .eraser: return "eraser"
+        case .emoji: return "face.smiling"
+        case .spotlight: return "flashlight.on.fill"
+        }
+    }
+
+    private func formattedStroke(_ value: Double) -> String {
+        value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    private func formattedPercent(_ value: Double) -> String {
+        "\(Int((value * 100).rounded()))%"
     }
 
     private func nsColor(from color: RGBAColor) -> NSColor {

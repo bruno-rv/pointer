@@ -1,63 +1,6 @@
 import AppKit
 import PointerCore
 
-public struct GuidePlacementContext: Equatable, Sendable {
-    public let display: DisplayDescriptor
-    public let visibleFrame: DisplayFrame
-    public let paletteFrame: DisplayFrame
-    public let avoidanceFrames: [DisplayFrame]
-
-    public init(
-        display: DisplayDescriptor,
-        visibleFrame: DisplayFrame,
-        paletteFrame: DisplayFrame,
-        avoidanceFrames: [DisplayFrame]
-    ) {
-        self.display = display
-        self.visibleFrame = visibleFrame
-        self.paletteFrame = paletteFrame
-        self.avoidanceFrames = avoidanceFrames
-    }
-}
-
-@MainActor
-public protocol GuidePlacementProviding: AnyObject {
-    func context(
-        for display: DisplayDescriptor,
-        paletteFrame: DisplayFrame
-    ) -> GuidePlacementContext?
-}
-
-@MainActor
-public final class GuidePlacementProvider: GuidePlacementProviding {
-    public init() {}
-
-    public func context(
-        for display: DisplayDescriptor,
-        paletteFrame: DisplayFrame
-    ) -> GuidePlacementContext? {
-        guard isValid(display.visibleFrame),
-              !display.uuid.rawValue.isEmpty,
-              isValid(paletteFrame)
-        else {
-            return nil
-        }
-
-        return GuidePlacementContext(
-            display: display,
-            visibleFrame: display.visibleFrame,
-            paletteFrame: paletteFrame,
-            avoidanceFrames: [paletteFrame]
-        )
-    }
-
-    private func isValid(_ frame: DisplayFrame) -> Bool {
-        frame.x.isFinite && frame.y.isFinite
-            && frame.width.isFinite && frame.width > 0
-            && frame.height.isFinite && frame.height > 0
-    }
-}
-
 public enum PaletteShowResult: Equatable, Sendable {
     case noDisplay
     case failed(String)

@@ -31,26 +31,28 @@ public enum PaletteLayout {
         toolWidth: Double = minimumToolWidth,
         spacing: Double = toolSpacing
     ) -> PaletteLayoutPlan {
+        let safeWidth = availableWidth.isFinite ? max(0, availableWidth) : 0
+        let safeToolWidth = toolWidth.isFinite && toolWidth > 0
+            ? toolWidth
+            : minimumToolWidth
+        let safeSpacing = spacing.isFinite && spacing >= 0 ? spacing : toolSpacing
         let fullWidth = horizontalPadding
             + modeWidth
-            + toolWidth * Double(allTools.count)
-            + spacing * Double(allTools.count)
-        guard availableWidth >= fullWidth else {
+            + safeToolWidth * Double(allTools.count)
+            + safeSpacing * Double(allTools.count)
+        guard safeWidth >= fullWidth else {
             let availableToolsWidth = max(
-                toolWidth,
-                availableWidth - horizontalPadding - modeWidth - spacing
+                safeToolWidth,
+                safeWidth - horizontalPadding - modeWidth - safeSpacing
             )
             let visibleCount = min(
                 allTools.count - 1,
-                max(1, Int((availableToolsWidth + spacing) / (toolWidth + spacing)))
+                max(1, Int((availableToolsWidth + safeSpacing) / (safeToolWidth + safeSpacing)))
             )
             let visibleTools = Array(allTools.prefix(visibleCount))
             let overflowTools = Array(allTools.dropFirst(visibleCount))
             return PaletteLayoutPlan(
-                rows: [[
-                    .tool(visibleTools[0]),
-                    .overflow,
-                ]],
+                rows: [visibleTools.map(PaletteLayoutItem.tool) + [.overflow]],
                 overflowTools: overflowTools
             )
         }

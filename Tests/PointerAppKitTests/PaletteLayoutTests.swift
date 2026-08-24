@@ -21,6 +21,55 @@ final class PaletteLayoutTests: XCTestCase {
         XCTAssertFalse(plan.overflowTools.isEmpty)
     }
 
+    func testNarrowPaletteKeepsModeAndReachableToolsWithNamedOverflow() throws {
+        let plan = PaletteLayout.plan(availableWidth: 420)
+
+        XCTAssertTrue(plan.usesOverflow)
+        XCTAssertFalse(plan.overflowTools.isEmpty)
+        XCTAssertTrue(plan.rows.flatMap { $0 }.contains(.overflow))
+
+        let visibleTools = plan.rows.flatMap { row in
+            row.compactMap { item -> PointerTool? in
+                guard case let .tool(tool) = item else { return nil }
+                return tool
+            }
+        }
+        XCTAssertFalse(visibleTools.isEmpty)
+        XCTAssertEqual(Set(visibleTools).union(plan.overflowTools), Set(PointerTool.allCases))
+        XCTAssertEqual(
+            visibleTools.count + plan.overflowTools.count,
+            PointerTool.allCases.count
+        )
+
+        let controller = PaletteViewController(router: makeRouter())
+        controller.loadViewIfNeeded()
+        controller.applyLayout(for: 420)
+        let overflow = try XCTUnwrap(
+            controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton
+        )
+        XCTAssertEqual(overflow.title, "More Tools")
+    }
+
+    func testPathologicalWidthsNeverDuplicateOrDropTools() {
+        for width in [0.0, -1.0, .nan, .infinity, -.infinity] {
+            let plan = PaletteLayout.plan(
+                availableWidth: width,
+                toolWidth: .nan,
+                spacing: .infinity
+            )
+            let visibleTools = plan.rows.flatMap { row in
+                row.compactMap { item -> PointerTool? in
+                    guard case let .tool(tool) = item else { return nil }
+                    return tool
+                }
+            }
+            let reachable = visibleTools + plan.overflowTools
+            XCTAssertEqual(Set(reachable), Set(PointerTool.allCases), "width \(width)")
+            XCTAssertEqual(reachable.count, PointerTool.allCases.count, "width \(width)")
+            XCTAssertTrue(reachable.allSatisfy { PointerTool.allCases.contains($0) })
+        }
+    }
+
     func testWideLayoutUsesTwoRowsWithoutOverflow() {
         let plan = PaletteLayout.plan(availableWidth: 760)
 
@@ -47,6 +96,44 @@ final class PaletteLayoutTests: XCTestCase {
             XCTAssertFalse((control.accessibilityHelp() ?? "").isEmpty)
             XCTAssertFalse(control.identifier?.rawValue.isEmpty ?? true)
             _ = control.isEnabled
+        }
+    }
+
+    func testPaletteControlsHaveStableNamesHelpValuesAndFocusOrder() {
+        let controller = PaletteViewController(router: makeRouter())
+        controller.loadViewIfNeeded()
+        let controls = controller.controls
+
+        XCTAssertEqual(Set(controls.compactMap { $0.identifier?.rawValue }).count, controls.count)
+        XCTAssertTrue(controls.allSatisfy {
+            $0.isAccessibilityElement() && !($0.accessibilityLabel() ?? "").isEmpty
+        })
+        XCTAssertTrue(controls.allSatisfy { $0.focusRingType != .none })
+        XCTAssertEqual(controls.first?.identifier?.rawValue, "palette.mode")
+        XCTAssertEqual(controller.control(identifier: "palette.status").identifier?.rawValue, "palette.status")
+    }
+
+    func testToolControlsUseCanonicalTitlesAndNativeSymbols() throws {
+        let controller = PaletteViewController(router: makeRouter())
+        controller.loadViewIfNeeded()
+
+        let expected: [String: String] = [
+            "select": "Select",
+            "arrow": "Arrow",
+            "rectangle": "Rectangle",
+            "ellipse": "Ellipse",
+            "pen": "Pen",
+            "eraser": "Eraser",
+            "emoji": "Emoji",
+            "spotlight": "Spotlight",
+        ]
+        for (identifier, title) in expected {
+            let button = try XCTUnwrap(
+                controller.control(identifier: "palette.tool.\(identifier)") as? NSButton,
+                identifier
+            )
+            XCTAssertEqual(button.title, title, identifier)
+            XCTAssertNotNil(button.image, identifier)
         }
     }
 
