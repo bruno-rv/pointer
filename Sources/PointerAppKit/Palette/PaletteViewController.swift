@@ -35,6 +35,11 @@ public final class PaletteViewController: NSViewController {
     public init(router: CommandRouter) {
         self.router = router
         super.init(nibName: nil, bundle: nil)
+        let existingFeedback = router.onFeedback
+        router.onFeedback = { [weak self] message in
+            existingFeedback?(message)
+            self?.showFeedback(message)
+        }
     }
 
     @available(*, unavailable)
@@ -100,6 +105,10 @@ public final class PaletteViewController: NSViewController {
 
     public var preferredSize: NSSize {
         NSSize(width: 760, height: 156)
+    }
+
+    public var statusMessage: String {
+        statusLabel?.stringValue ?? ""
     }
 
     public func applyLayout(for width: CGFloat) {
@@ -340,6 +349,11 @@ public final class PaletteViewController: NSViewController {
         }
         view.layer?.borderWidth = increaseContrast ? 2 : 1
         view.layer?.borderColor = (increaseContrast ? NSColor.labelColor : NSColor.separatorColor).cgColor
+    }
+
+    private func showFeedback(_ message: String) {
+        guard isViewLoaded else { return }
+        statusLabel.stringValue = message
     }
 
     @objc private func toggleMode() {

@@ -151,6 +151,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         orderFrontRegardless()
 
         guard isVisible else {
+            orderOut(nil)
             return .failed("Palette window did not become visible")
         }
         let paletteFrame = DisplayFrame(
@@ -163,6 +164,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
             for: display,
             paletteFrame: paletteFrame
         ) else {
+            orderOut(nil)
             return .failed("Palette placement produced an invalid frame")
         }
         return .shown(context)

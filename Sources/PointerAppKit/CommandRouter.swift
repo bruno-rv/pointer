@@ -108,12 +108,28 @@ public final class CommandRouter {
             coordinator.cancelActiveGestures()
             coordinator.apply(.setMode(.standby), cancellingActiveGestures: false)
         case .delete:
+            guard session.selection != nil else {
+                publishFeedback("Select a mark to delete")
+                return
+            }
             clearFeedback()
             coordinator.apply(.deleteSelected)
         case .undo:
-            applyToPointerDisplay { .undo(on: $0) }
+            guard let display = screenProvider.pointerDisplay(), session.canUndo(on: display) else {
+                publishFeedback("Nothing to undo")
+                return
+            }
+            clearFeedback()
+            coordinator.apply(.undo(on: display))
         case .clear:
-            applyToPointerDisplay { .clear($0) }
+            guard let display = screenProvider.pointerDisplay(),
+                  !session.canvas(for: display).marks.isEmpty
+            else {
+                publishFeedback("Nothing to clear")
+                return
+            }
+            clearFeedback()
+            coordinator.apply(.clear(display))
         case .clearAll:
             clearFeedback()
             onClearAllRequested?()
@@ -196,17 +212,6 @@ public final class CommandRouter {
         return false
     }
 
-    private func applyToPointerDisplay(
-        _ command: (DisplayUUID) -> SessionCommand
-    ) {
-        guard let display = screenProvider.pointerDisplay() else {
-            rejectAnnotationEntry()
-            return
-        }
-        clearFeedback()
-        coordinator.apply(command(display))
-    }
-
     private func requirePointerDisplayForAnnotation() -> Bool {
         guard let acceptedDisplayState,
               acceptedDisplayState.hasConnectedDisplays,
@@ -216,14 +221,13 @@ public final class CommandRouter {
               !acceptedDisplayState.connectedUUIDs.isEmpty,
               !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
         else {
-            rejectAnnotationEntry()
+            publishFeedback("No presentation display connected")
             return false
         }
         return true
     }
 
-    private func rejectAnnotationEntry() {
-        let message = "No presentation display connected"
+    private func publishFeedback(_ message: String) {
         feedbackMessage = message
         onFeedback?(message)
     }

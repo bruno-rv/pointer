@@ -20,6 +20,48 @@ final class CommandRouterTests: XCTestCase {
         XCTAssertEqual(router.feedbackMessage, "No presentation display connected")
     }
 
+    func testDeleteWithoutSelectionPublishesFeedbackWithoutMutatingSession() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        var feedback: [String] = []
+        fixture.router.onFeedback = { feedback.append($0) }
+        let before = fixture.router.session
+
+        fixture.router.route(.delete)
+
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Select a mark to delete")
+        XCTAssertEqual(feedback, ["Select a mark to delete"])
+    }
+
+    func testUndoWithoutPointerOrHistoryPublishesFeedbackWithoutMutatingSession() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        var feedback: [String] = []
+        fixture.router.onFeedback = { feedback.append($0) }
+        let before = fixture.router.session
+
+        fixture.router.route(.undo)
+
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to undo")
+        XCTAssertEqual(feedback, ["Nothing to undo"])
+    }
+
+    func testClearWithoutPointerOrMarksPublishesFeedbackWithoutMutatingSession() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        var feedback: [String] = []
+        fixture.router.onFeedback = { feedback.append($0) }
+        let before = fixture.router.session
+
+        fixture.router.route(.clear)
+
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to clear")
+        XCTAssertEqual(feedback, ["Nothing to clear"])
+    }
+
     func testInvalidPointerUUIDIsRejectedAgainstAcceptedDisplaySyncSet() {
         let valid = RouterTestScreenProvider.descriptor(uuid: DisplayUUID(rawValue: "valid"))
         let provider = RouterTestScreenProvider(
@@ -124,9 +166,6 @@ final class CommandRouterTests: XCTestCase {
 
     func testCommandsCancelActiveGestureBeforeStaleMouseUpCanRepublishIt() throws {
         let commands: [CommandRouter.Command] = [
-            .delete,
-            .undo,
-            .clear,
             .setTool(.ellipse),
             .setStyle(MarkStyle(color: MarkStyle.default.color, strokeWidth: 8, opacity: 0.5)),
             .setMode(.standby),

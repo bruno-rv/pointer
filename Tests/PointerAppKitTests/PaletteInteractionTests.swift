@@ -35,6 +35,46 @@ final class PaletteInteractionTests: XCTestCase {
         }
     }
 
+    func testPaletteShowFailureAfterOrderingOrdersPaletteOut() {
+        let descriptor = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: NilGuidePlacementProvider()
+        )
+        defer { palette.close() }
+
+        guard case .failed = palette.show(on: descriptor) else {
+            return XCTFail("Expected injected provider failure")
+        }
+        XCTAssertFalse(palette.isVisible)
+    }
+
+    func testPaletteFeedbackImmediatelyUpdatesVisibleStatusAndRefreshRestoresNormalStatus() {
+        let provider = PaletteInteractionScreenProvider(displays: [])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let controller = PaletteViewController(router: router)
+        controller.loadViewIfNeeded()
+
+        router.route(.setTool(.spotlight))
+
+        XCTAssertEqual(controller.statusMessage, "No presentation display connected")
+
+        router.route(.setStyle(.default))
+        controller.refresh(session: router.session)
+
+        XCTAssertEqual(controller.statusMessage, "Standby — overlays are click-through")
+    }
+
     func testGuidePlacementProviderRejectsInvalidFramesAndReturnsExactContext() {
         let provider = GuidePlacementProvider()
         let display = PaletteInteractionScreenProvider.descriptor()
@@ -151,4 +191,14 @@ private final class PaletteInteractionOverlay: OverlayPresenting {
         onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
     ) {}
     func close() {}
+}
+
+@MainActor
+private final class NilGuidePlacementProvider: GuidePlacementProviding {
+    func context(
+        for display: DisplayDescriptor,
+        paletteFrame: DisplayFrame
+    ) -> GuidePlacementContext? {
+        nil
+    }
 }
