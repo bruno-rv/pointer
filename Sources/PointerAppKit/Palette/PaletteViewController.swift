@@ -137,6 +137,11 @@ public final class PaletteViewController: NSViewController {
         layoutControls()
         refresh(session: currentSession)
         applyDisplayOptions()
+        installDisplayOptionsObserver()
+    }
+
+    private func installDisplayOptionsObserver() {
+        guard displayOptionsObserver == nil else { return }
         displayOptionsObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
             object: nil,
@@ -236,6 +241,25 @@ public final class PaletteViewController: NSViewController {
 
     public var hasOpaqueBackground: Bool {
         appliedDisplayOptions.reduceTransparency
+    }
+
+    public var appearanceObserverCount: Int {
+        displayOptionsObserver == nil ? 0 : 1
+    }
+
+    public func startAppearanceObservation() {
+        guard isViewLoaded else {
+            loadViewIfNeeded()
+            return
+        }
+        installDisplayOptionsObserver()
+    }
+
+    public func stopAppearanceObservation() {
+        if let displayOptionsObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(displayOptionsObserver)
+            self.displayOptionsObserver = nil
+        }
     }
 
     public func control(identifier: String) -> NSControl {

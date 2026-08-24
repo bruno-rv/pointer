@@ -11,7 +11,10 @@ public enum PaletteShowResult: Equatable, Sendable {
 public protocol PalettePresenting: AnyObject {
     var window: NSWindow { get }
     var guidePlacementProvider: any GuidePlacementProviding { get }
+    var appearanceObserverCount: Int { get }
     func refresh(session: PointerSession)
+    func startAppearanceObservation()
+    func stopAppearanceObservation()
     @discardableResult
     func show(on display: DisplayDescriptor) -> PaletteShowResult
     func hide()
@@ -28,6 +31,9 @@ public final class PalettePanel: NSPanel, PalettePresenting {
     public let guidePlacementProvider: any GuidePlacementProviding
 
     public var window: NSWindow { self }
+    public var appearanceObserverCount: Int {
+        paletteViewController.appearanceObserverCount
+    }
 
     public init(
         router: CommandRouter,
@@ -65,6 +71,14 @@ public final class PalettePanel: NSPanel, PalettePresenting {
 
     public func refresh(session: PointerSession) {
         paletteViewController.refresh(session: session)
+    }
+
+    public func startAppearanceObservation() {
+        paletteViewController.startAppearanceObservation()
+    }
+
+    public func stopAppearanceObservation() {
+        paletteViewController.stopAppearanceObservation()
     }
 
     @discardableResult
@@ -133,6 +147,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
     }
 
     public override func close() {
+        stopAppearanceObservation()
         orderOut(nil)
         super.close()
     }

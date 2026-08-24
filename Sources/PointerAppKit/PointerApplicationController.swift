@@ -5,6 +5,7 @@ public struct PointerResourceCheckpoint: Equatable, Sendable {
     public let paletteCount: Int
     public let menuCount: Int
     public let screenObserverCount: Int
+    public let appearanceObserverCount: Int
     public let shortcutWiringCount: Int
     public let overlayCount: Int
     public let callbackCount: Int
@@ -15,6 +16,7 @@ public struct PointerResourceCheckpoint: Equatable, Sendable {
         paletteCount: Int,
         menuCount: Int,
         screenObserverCount: Int,
+        appearanceObserverCount: Int,
         shortcutWiringCount: Int,
         overlayCount: Int,
         callbackCount: Int,
@@ -24,6 +26,7 @@ public struct PointerResourceCheckpoint: Equatable, Sendable {
         self.paletteCount = paletteCount
         self.menuCount = menuCount
         self.screenObserverCount = screenObserverCount
+        self.appearanceObserverCount = appearanceObserverCount
         self.shortcutWiringCount = shortcutWiringCount
         self.overlayCount = overlayCount
         self.callbackCount = callbackCount
@@ -62,13 +65,15 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             paletteCount: palette.window.isVisible ? 1 : 0,
             menuCount: menuBar?.menuResourceCount ?? 0,
             screenObserverCount: screenParametersObserver == nil ? 0 : 1,
+            appearanceObserverCount: palette.appearanceObserverCount,
             shortcutWiringCount: shortcutController.registrar.onEvent != nil
                 && shortcutController.onToggle != nil ? 1 : 0,
             overlayCount: displayCoordinator.overlays.count,
             callbackCount: commandCallbackCount
                 + (menuBar?.callbackBindingCount ?? 0)
-                + displayCallbackCount,
-            timerCount: 0,
+                + displayCallbackCount
+                + (shortcutController.onStateChange == nil ? 0 : 1),
+            timerCount: shortcutController.pendingTimerCount,
             guideCount: guide.isVisible ? 1 : 0
         )
     }
@@ -122,6 +127,8 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         pendingFirstUseAttempt = !guideStateStore.hasDismissedFirstUseGuide
         pendingDisplayLossRestore = false
 
+        palette.startAppearanceObservation()
+
         commandRouter.bindCallbacks(
             onStateChange: { [weak self] session in
                 self?.refresh(session: session)
@@ -144,6 +151,10 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
 
         shortcutController.onToggle = { [weak self] in
             self?.commandRouter.route(.toggleMode)
+        }
+        shortcutController.onStateChange = { [weak self] in
+            guard let self else { return }
+            self.commandRouter.onStateChange?(self.commandRouter.session)
         }
         shortcutController.start()
 
@@ -174,7 +185,9 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         displayCoordinator.onDisplaySync = nil
         commandRouter.clearCallbacks()
         menuBar?.clearCallbacks()
+        palette.stopAppearanceObservation()
         shortcutController.onToggle = nil
+        shortcutController.onStateChange = nil
         shortcutController.stop()
         let stopResult = displayCoordinator.stop()
         lastDisplayStopResult = stopResult

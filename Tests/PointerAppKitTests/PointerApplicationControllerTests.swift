@@ -92,10 +92,12 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.start()
         XCTAssertNotNil(fixture.coordinator.onDisplaySync)
         XCTAssertNotNil(fixture.router.onStateChange)
+        XCTAssertNotNil(fixture.shortcutController.onStateChange)
 
         fixture.controller.stop()
         XCTAssertNil(fixture.coordinator.onDisplaySync)
         XCTAssertNil(fixture.router.onStateChange)
+        XCTAssertNil(fixture.shortcutController.onStateChange)
         XCTAssertEqual(fixture.controller.lastDisplayStopResult?.remainingOverlayCount, 0)
         XCTAssertEqual(fixture.controller.lastDisplayStopResult?.boundHandlerCount, 0)
         XCTAssertNil(fixture.controller.lifecycleErrorMessage)
@@ -103,6 +105,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.start()
         XCTAssertNotNil(fixture.coordinator.onDisplaySync)
         XCTAssertNotNil(fixture.router.onStateChange)
+        XCTAssertNotNil(fixture.shortcutController.onStateChange)
         fixture.controller.stop()
         XCTAssertEqual(fixture.controller.lastDisplayStopResult?.remainingOverlayCount, 0)
         XCTAssertEqual(fixture.controller.lastDisplayStopResult?.boundHandlerCount, 0)
@@ -188,6 +191,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(running.paletteCount, 1)
         XCTAssertEqual(running.menuCount, 1)
         XCTAssertEqual(running.screenObserverCount, 1)
+        XCTAssertEqual(running.appearanceObserverCount, 1)
         XCTAssertEqual(running.shortcutWiringCount, 1)
         XCTAssertEqual(running.overlayCount, fixture.provider.displays.count)
         XCTAssertEqual(running.timerCount, 0)
@@ -199,6 +203,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(stopped.paletteCount, 0)
         XCTAssertEqual(stopped.menuCount, 0)
         XCTAssertEqual(stopped.screenObserverCount, 0)
+        XCTAssertEqual(stopped.appearanceObserverCount, 0)
         XCTAssertEqual(stopped.shortcutWiringCount, 0)
         XCTAssertEqual(stopped.overlayCount, 0)
         XCTAssertEqual(stopped.timerCount, 0)
@@ -210,11 +215,44 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(restarted.paletteCount, 1)
         XCTAssertEqual(restarted.menuCount, 1)
         XCTAssertEqual(restarted.screenObserverCount, 1)
+        XCTAssertEqual(restarted.appearanceObserverCount, 1)
         XCTAssertEqual(restarted.shortcutWiringCount, 1)
         XCTAssertEqual(restarted.overlayCount, fixture.provider.displays.count)
         XCTAssertEqual(restarted.timerCount, 0)
         XCTAssertEqual(restarted.guideCount, 1)
         XCTAssertGreaterThan(restarted.callbackCount, 0)
+    }
+
+    func testPendingShortcutOwnsOneTimerAndStopClearsTimerAndStateCallback() throws {
+        let fixture = ControllerFixture()
+        fixture.controller.start()
+        fixture.shortcutController.setShortcut(.controlOptionCommandO)
+
+        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 1)
+        XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 1)
+        XCTAssertNotNil(fixture.shortcutController.onStateChange)
+
+        fixture.controller.stop()
+
+        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 0)
+        XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
+        XCTAssertNil(fixture.shortcutController.onStateChange)
+        XCTAssertNil(fixture.shortcutController.pendingToken)
+
+        fixture.controller.start()
+        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 0)
+        XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
+        XCTAssertNotNil(fixture.shortcutController.onStateChange)
+
+        var statePublicationCount = 0
+        let existingStateChange = fixture.router.onStateChange
+        fixture.router.onStateChange = { session in
+            statePublicationCount += 1
+            existingStateChange?(session)
+        }
+        let activeToken = try XCTUnwrap(fixture.shortcutController.activeToken)
+        fixture.registrar.deliver(activeToken)
+        XCTAssertEqual(statePublicationCount, 1)
     }
 
     func testStopStartRebindsClearAllCallbackExactlyOnce() throws {
