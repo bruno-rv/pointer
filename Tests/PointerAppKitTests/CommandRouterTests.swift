@@ -181,11 +181,68 @@ final class CommandRouterTests: XCTestCase {
         feedback.removeAll()
 
         overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
+        XCTAssertTrue(feedback.isEmpty)
+        XCTAssertNil(router.feedbackMessage)
         overlay.canvasView.endGesture()
 
         XCTAssertNil(router.session.selection)
         XCTAssertEqual(feedback, ["Selection cleared"])
         XCTAssertEqual(router.feedbackMessage, "Selection cleared")
+    }
+
+    func testEmptyCanvasClickCancelledRestoresSelectionWithoutFeedback() throws {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let descriptor = RouterTestScreenProvider.descriptor(uuid: uuid)
+        let provider = RouterTestScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        var feedback: [String] = []
+        router.onFeedback = { feedback.append($0) }
+
+        _ = coordinator.synchronize()
+        router.route(.setMode(.annotation))
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        coordinator.apply(.append(mark, to: uuid))
+        router.route(.setTool(.select))
+        let overlay = try XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        overlay.canvasView.beginGesture(at: NSPoint(x: 960, y: 540))
+        overlay.canvasView.endGesture()
+        XCTAssertEqual(router.session.selection, mark.id)
+        feedback.removeAll()
+
+        overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
+        XCTAssertTrue(feedback.isEmpty)
+        XCTAssertNil(router.feedbackMessage)
+        overlay.canvasView.cancelGesture()
+
+        XCTAssertEqual(router.session.selection, mark.id)
+        XCTAssertTrue(feedback.isEmpty)
+        XCTAssertNil(router.feedbackMessage)
+
+        overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
+        XCTAssertTrue(feedback.isEmpty)
+        router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [uuid],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: true,
+            reconnected: false
+        ))
+        overlay.canvasView.endGesture()
+        XCTAssertTrue(feedback.isEmpty)
+        XCTAssertNil(router.feedbackMessage)
     }
 
     func testSelectionClearedFeedbackIsNotPublishedForStandbyDeleteOrClear() throws {

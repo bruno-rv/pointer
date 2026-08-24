@@ -33,6 +33,7 @@ public final class CommandRouter {
     private weak var shortcutController: HotKeyController?
     private var acceptedDisplayState: DisplaySyncResult?
     private var lastObservedSession: PointerSession?
+    private var pendingSelectionClearID: Mark.ID?
 
     public init(
         coordinator: DisplayCoordinator,
@@ -100,6 +101,9 @@ public final class CommandRouter {
 
     public func updateDisplayState(_ result: DisplaySyncResult) {
         acceptedDisplayState = result
+        if acceptedPointerDisplay == nil {
+            pendingSelectionClearID = nil
+        }
     }
 
     public func route(_ command: Command) {
@@ -249,19 +253,63 @@ public final class CommandRouter {
 
     private func observeSession(_ session: PointerSession) {
         defer { lastObservedSession = session }
+
+        if let pendingSelectionClearID {
+            guard session.mode == .annotation,
+                  session.selection == nil,
+                  acceptedSelectionMarkExists(pendingSelectionClearID, in: session)
+            else {
+                self.pendingSelectionClearID = nil
+                return
+            }
+
+            guard acceptedDisplayHasActiveGesture(in: session) else {
+                self.pendingSelectionClearID = nil
+                publishFeedback("Selection cleared")
+                return
+            }
+            return
+        }
+
         guard let previous = lastObservedSession,
               previous.mode == .annotation,
               session.mode == .annotation,
               let selectedID = previous.selection,
               session.selection == nil,
-              let acceptedDisplayState,
-              acceptedDisplayState.hasConnectedDisplays,
-              acceptedDisplayState.connectedUUIDs.contains(where: { display in
-                  session.canvas(for: display).marks.contains { $0.id == selectedID }
-              })
+              acceptedSelectionMarkExists(selectedID, in: session),
+              acceptedDisplayHasActiveGesture(in: session)
         else {
             return
         }
-        publishFeedback("Selection cleared")
+        self.pendingSelectionClearID = selectedID
+    }
+
+    private func acceptedSelectionMarkExists(
+        _ selectionID: Mark.ID,
+        in session: PointerSession
+    ) -> Bool {
+        guard let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              !acceptedDisplayState.connectedUUIDs.isEmpty,
+              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        else {
+            return false
+        }
+        return acceptedDisplayState.connectedUUIDs.contains { display in
+            session.canvas(for: display).marks.contains { $0.id == selectionID }
+        }
+    }
+
+    private func acceptedDisplayHasActiveGesture(in session: PointerSession) -> Bool {
+        guard let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              !acceptedDisplayState.connectedUUIDs.isEmpty,
+              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        else {
+            return false
+        }
+        return acceptedDisplayState.connectedUUIDs.contains {
+            session.hasActiveGesture(on: $0)
+        }
     }
 }
