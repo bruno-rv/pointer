@@ -170,7 +170,7 @@ No C file imports FirstUseGuideController or FirstUseGuideViewController. F inje
 
 - PalettePanel.show(on:) -> PaletteShowResult returns noDisplay for nonpositive visible-frame dimensions, failed(reason) for layout/order-front failure, and shown(GuidePlacementContext) only after the window is visible and clamped; the associated context is the exact provider output consumed by the guide.
 - PalettePanel.init(router:guidePlacementProvider:) stores the injected C GuidePlacementProvider as public let guidePlacementProvider and uses it to produce the associated .shown(context) value; it never creates a second provider.
-- Every PaletteFixture/fixtureRouter()/ControllerFixture constructs one GuidePlacementProvider and passes that same instance to PalettePanel(router:guidePlacementProvider:), PointerApplicationController, and the guide; no PalettePanel initializer has a default provider or discovers one globally.
+- Every Task 1 palette fixture constructs and injects one GuidePlacementProvider through PalettePanel(router:guidePlacementProvider:). The existing controller-only internal/deprecated convenience seam is retained solely so pre-Task-3 production/controller call sites compile; Task 3 must migrate every ControllerFixture and PointerApplicationController call site to the same injected provider/guide identity and delete that seam. No public palette initializer discovers a provider globally.
 - GuidePlacementProvider.context(for:paletteFrame:) returns nil for an invalid display/palette frame; otherwise it returns GuidePlacementContext(display: display, visibleFrame: display.visibleFrame, paletteFrame: paletteFrame, avoidanceFrames: [paletteFrame]) after deterministic clamping/avoidance calculation.
 - CommandRouter exposes public private(set) var feedbackMessage: String? and public var onFeedback: ((String) -> Void)?.
 - CommandRouter exposes public var activeShortcutID: String? { get } and public var shortcutError: String? { get }; activeShortcutID is shortcutController.activePreset?.rawValue and shortcutError is shortcutController.registrationError without discovering a controller.
@@ -187,7 +187,7 @@ No C file imports FirstUseGuideController or FirstUseGuideViewController. F inje
     ) -> Int
     public func clearCallbacks()
 
-  bindCallbacks installs each once and returns the binding count. MenuBarController exposes clearCallbacks() and bindCallbacks(onShowPalette:onLearnPointer:) -> Int, clearing/rebinding its Show Palette, Learn Pointer, Clear All, Undo Clear All, shortcut, and Quit action closures without replacing the NSMenu hierarchy.
+  bindCallbacks installs each once and returns the binding count. Task 3, which owns MenuBarController and controller lifecycle, must add clearCallbacks() and bindCallbacks(onShowPalette:onLearnPointer:) -> Int, clearing/rebinding its Show Palette, Learn Pointer, Clear All, Undo Clear All, shortcut, and Quit action closures without replacing the NSMenu hierarchy.
 - setTool still selects the tool and enters annotation in one route when a display exists; setStyle, setEmoji, and setSpotlight preserve existing selected-mark/future-default behavior.
 
 - [ ] **Step 1: Write failing command and show-result tests.**
