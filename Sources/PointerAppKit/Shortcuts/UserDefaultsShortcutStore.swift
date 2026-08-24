@@ -5,10 +5,7 @@ public final class UserDefaultsShortcutStore: ShortcutStoring {
     private let defaults: UserDefaults
     private let key: String
 
-    public init(
-        userDefaults: UserDefaults = .standard,
-        key: String = "pointer.shortcut-preset"
-    ) {
+    public init(userDefaults: UserDefaults, key: String) {
         self.defaults = userDefaults
         self.key = key
     }

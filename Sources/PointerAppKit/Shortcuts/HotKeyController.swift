@@ -12,9 +12,9 @@ public final class HotKeyController {
     public var onToggle: (() -> Void)?
     public var onStateChange: (() -> Void)?
 
-    private let registrar: any HotKeyRegistering
-    private let store: any ShortcutStoring
-    private let scheduler: any ShortcutScheduling
+    public let registrar: any HotKeyRegistering
+    public let store: any ShortcutStoring
+    public let scheduler: any ShortcutScheduling
     private let timeout: TimeInterval
     private var timeoutToken: ShortcutScheduleToken?
     private var started = false
@@ -29,20 +29,6 @@ public final class HotKeyController {
         self.store = store
         self.scheduler = scheduler
         self.timeout = timeout
-        registrar.onEvent = { [weak self] token in
-            self?.receive(token)
-        }
-    }
-
-    public convenience init(
-        registrar: any HotKeyRegistering,
-        store: any ShortcutStoring
-    ) {
-        self.init(
-            registrar: registrar,
-            store: store,
-            scheduler: DispatchShortcutScheduler()
-        )
     }
 
     public var isEnabled: Bool {
@@ -52,6 +38,9 @@ public final class HotKeyController {
     public func start() {
         guard !started else { return }
         started = true
+        registrar.onEvent = { [weak self] token in
+            self?.receive(token)
+        }
 
         let stored = store.load()
         if let stored, registerImmediately(stored) {
@@ -98,7 +87,9 @@ public final class HotKeyController {
             registrationError = nil
             onStateChange?()
         } catch {
-            registrationError = "Unable to register " + preset.displayName + ": " + String(describing: error)
+            registrationError =
+                "Unable to register \(preset.displayName) for the five-second delivery window: "
+                + String(describing: error)
             onStateChange?()
         }
     }
@@ -111,6 +102,7 @@ public final class HotKeyController {
         activeToken = nil
         activePreset = nil
         registrar.onEvent = nil
+        onToggle = nil
         started = false
         onStateChange?()
     }

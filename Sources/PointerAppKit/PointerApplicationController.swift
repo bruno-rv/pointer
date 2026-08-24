@@ -9,6 +9,9 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public let palette: any PalettePresenting
     public let menuBar: (any MenuBarPresenting)?
     public let shortcutController: HotKeyController
+    public let shortcutStore: any ShortcutStoring
+    public let hotKeyRegistrar: any HotKeyRegistering
+    public let shortcutScheduler: any ShortcutScheduling
     public let guide: any FirstUseGuidePresenting
     public let guideStateStore: any FirstUseGuideStateStoring
     public let controlMetadataProvider: any ControlMetadataProviding
@@ -41,6 +44,9 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         self.palette = palette
         self.menuBar = menuBar
         self.shortcutController = shortcutController
+        self.shortcutStore = shortcutController.store
+        self.hotKeyRegistrar = shortcutController.registrar
+        self.shortcutScheduler = shortcutController.scheduler
         self.guide = guide
         self.guideStateStore = guideStateStore
         self.controlMetadataProvider = controlMetadataProvider
