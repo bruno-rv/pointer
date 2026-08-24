@@ -189,6 +189,9 @@ private final class ControllerFixture {
     let placementProvider: GuideTestPlacementProvider
     let guide: GuideTestSpyGuide
     let guideStateStore: GuideTestStateStore
+    let registrar: GuideTestHotKeyRegistrar
+    let shortcutStore: GuideTestShortcutStore
+    let shortcutScheduler: GuideTestShortcutScheduler
     let shortcutController: HotKeyController
     let controller: PointerApplicationController
 
@@ -213,7 +216,23 @@ private final class ControllerFixture {
                 return ControllerTestOverlay(display: descriptor)
             }
         )
-        router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let registrar = GuideTestHotKeyRegistrar()
+        let store = GuideTestShortcutStore()
+        let scheduler = GuideTestShortcutScheduler()
+        let shortcutController = HotKeyController(
+            registrar: registrar,
+            store: store,
+            scheduler: scheduler
+        )
+        self.registrar = registrar
+        shortcutStore = store
+        shortcutScheduler = scheduler
+        self.shortcutController = shortcutController
+        router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
         menuBar = menuBarFactory?(router)
         placementProvider = GuideTestPlacementProvider(eventLog: GuideTestEventLog())
         palette = PalettePanel(router: router, guidePlacementProvider: placementProvider)
@@ -224,12 +243,6 @@ private final class ControllerFixture {
         guideStateStore = GuideTestStateStore()
         let stateStore = guideStateStore
         guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
-        let registrar = GuideTestHotKeyRegistrar()
-        shortcutController = HotKeyController(
-            registrar: registrar,
-            store: GuideTestShortcutStore(),
-            scheduler: GuideTestShortcutScheduler()
-        )
         controller = PointerApplicationController(
             screenProvider: provider,
             displayCoordinator: coordinator,
@@ -303,6 +316,9 @@ private final class SelectionControllerFixture {
     let placementProvider: GuideTestPlacementProvider
     let guide: GuideTestSpyGuide
     let guideStateStore = GuideTestStateStore()
+    let registrar: GuideTestHotKeyRegistrar
+    let shortcutStore: GuideTestShortcutStore
+    let shortcutScheduler: GuideTestShortcutScheduler
     let shortcutController: HotKeyController
     let controller: PointerApplicationController
 
@@ -318,7 +334,23 @@ private final class SelectionControllerFixture {
             screenProvider: provider,
             overlayFactory: { OverlayPanel(descriptor: $0) }
         )
-        router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let registrar = GuideTestHotKeyRegistrar()
+        let store = GuideTestShortcutStore()
+        let scheduler = GuideTestShortcutScheduler()
+        let shortcutController = HotKeyController(
+            registrar: registrar,
+            store: store,
+            scheduler: scheduler
+        )
+        self.registrar = registrar
+        shortcutStore = store
+        shortcutScheduler = scheduler
+        self.shortcutController = shortcutController
+        router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
         placementProvider = GuideTestPlacementProvider(eventLog: GuideTestEventLog())
         palette = PalettePanel(router: router, guidePlacementProvider: placementProvider)
         guide = GuideTestSpyGuide(
@@ -327,12 +359,6 @@ private final class SelectionControllerFixture {
         )
         let stateStore = guideStateStore
         guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
-        let registrar = GuideTestHotKeyRegistrar()
-        shortcutController = HotKeyController(
-            registrar: registrar,
-            store: GuideTestShortcutStore(),
-            scheduler: GuideTestShortcutScheduler()
-        )
         controller = PointerApplicationController(
             screenProvider: provider,
             displayCoordinator: coordinator,

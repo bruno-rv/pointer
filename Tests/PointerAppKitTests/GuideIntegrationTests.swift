@@ -406,7 +406,9 @@ final class GuideControllerFixture {
     let palette: PalettePanel
     let guide: GuideTestSpyGuide
     let guideStateStore = GuideTestStateStore()
-    let registrar = GuideTestHotKeyRegistrar()
+    let registrar: GuideTestHotKeyRegistrar
+    let shortcutStore: GuideTestShortcutStore
+    let shortcutScheduler: GuideTestShortcutScheduler
     let shortcutController: HotKeyController
     let canvasView: CanvasView
     let controller: PointerApplicationController
@@ -425,7 +427,23 @@ final class GuideControllerFixture {
             screenProvider: provider,
             overlayFactory: { GuideTestOverlay(display: $0) }
         )
-        router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let registrar = GuideTestHotKeyRegistrar()
+        let store = GuideTestShortcutStore()
+        let scheduler = GuideTestShortcutScheduler()
+        let shortcutController = HotKeyController(
+            registrar: registrar,
+            store: store,
+            scheduler: scheduler
+        )
+        self.registrar = registrar
+        shortcutStore = store
+        shortcutScheduler = scheduler
+        self.shortcutController = shortcutController
+        router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
         placementProvider = GuideTestPlacementProvider(eventLog: eventLog)
         palette = PalettePanel(
             router: router,
@@ -434,11 +452,6 @@ final class GuideControllerFixture {
         guide = GuideTestSpyGuide(placementProvider: placementProvider, eventLog: eventLog)
         let stateStore = guideStateStore
         guide.onVisible = { stateStore.markFirstUseGuideDismissed() }
-        shortcutController = HotKeyController(
-            registrar: registrar,
-            store: GuideTestShortcutStore(),
-            scheduler: GuideTestShortcutScheduler()
-        )
         canvasView = CanvasView(
             frame: NSRect(x: 0, y: 0, width: 1_600, height: 1_000),
             display: display.uuid,
