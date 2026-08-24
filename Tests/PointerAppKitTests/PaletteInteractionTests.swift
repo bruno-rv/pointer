@@ -856,6 +856,72 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertTrue(palette.firstResponder === firstResponder)
     }
 
+    func testReduceTransparencyAndIncreaseContrastChangeUsableVisualState() {
+        var options = PaletteViewController.DisplayOptions(
+            reduceTransparency: false,
+            increaseContrast: false
+        )
+        let controller = PaletteViewController(
+            router: makeRouter(),
+            displayOptionsProvider: { options }
+        )
+        controller.loadViewIfNeeded()
+        let initialRefreshCount = controller.displayOptionsRefreshCount
+        let originalFrame = controller.view.frame
+
+        options = PaletteViewController.DisplayOptions(
+            reduceTransparency: true,
+            increaseContrast: true
+        )
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+
+        XCTAssertEqual(controller.displayOptionsRefreshCount, initialRefreshCount + 1)
+        XCTAssertTrue(controller.isVisualEffectHidden)
+        XCTAssertEqual(controller.appliedBorderWidth, 2)
+        XCTAssertTrue(controller.hasOpaqueBackground)
+        XCTAssertEqual(controller.view.frame, originalFrame)
+
+        options = PaletteViewController.DisplayOptions(
+            reduceTransparency: false,
+            increaseContrast: false
+        )
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+
+        XCTAssertFalse(controller.isVisualEffectHidden)
+        XCTAssertEqual(controller.appliedBorderWidth, 1)
+        XCTAssertFalse(controller.hasOpaqueBackground)
+    }
+
+    func testFeedbackDoesNotStealFocusOrMovePalette() throws {
+        let fixture = acceptedFixture()
+        let palette = PalettePanel(
+            router: fixture.router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to be shown")
+        }
+
+        let focusedControl = palette.paletteViewController.control(identifier: "palette.mode")
+        XCTAssertTrue(palette.makeFirstResponder(focusedControl))
+        let origin = palette.frame.origin
+        let firstResponder = palette.firstResponder
+
+        fixture.router.route(.clear)
+
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to clear")
+        XCTAssertEqual(palette.paletteViewController.statusMessage, "Nothing to clear")
+        XCTAssertEqual(palette.frame.origin, origin)
+        XCTAssertTrue(palette.firstResponder === firstResponder)
+    }
+
     private func makeRouter() -> CommandRouter {
         let descriptor = PaletteInteractionScreenProvider.descriptor()
         let provider = PaletteInteractionScreenProvider(displays: [descriptor])

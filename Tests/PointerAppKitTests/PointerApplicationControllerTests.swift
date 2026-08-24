@@ -176,6 +176,78 @@ final class PointerApplicationControllerTests: XCTestCase {
 
         XCTAssertEqual(feedback, ["Selection cleared", "Selection cleared"])
     }
+
+    func testRunningStoppedAndRestartedResourceCheckpointsAreSeparate() throws {
+        let fixture = ControllerFixture { router in
+            MenuBarController(router: router)
+        }
+        fixture.guide.onVisible = nil
+
+        fixture.controller.start()
+        let running = fixture.controller.resourceCheckpoint
+        XCTAssertEqual(running.paletteCount, 1)
+        XCTAssertEqual(running.menuCount, 1)
+        XCTAssertEqual(running.screenObserverCount, 1)
+        XCTAssertEqual(running.shortcutWiringCount, 1)
+        XCTAssertEqual(running.overlayCount, fixture.provider.displays.count)
+        XCTAssertEqual(running.timerCount, 0)
+        XCTAssertEqual(running.guideCount, 1)
+        XCTAssertGreaterThan(running.callbackCount, 0)
+
+        fixture.controller.stop()
+        let stopped = fixture.controller.resourceCheckpoint
+        XCTAssertEqual(stopped.paletteCount, 0)
+        XCTAssertEqual(stopped.menuCount, 0)
+        XCTAssertEqual(stopped.screenObserverCount, 0)
+        XCTAssertEqual(stopped.shortcutWiringCount, 0)
+        XCTAssertEqual(stopped.overlayCount, 0)
+        XCTAssertEqual(stopped.timerCount, 0)
+        XCTAssertEqual(stopped.guideCount, 0)
+        XCTAssertEqual(stopped.callbackCount, 0)
+
+        fixture.controller.start()
+        let restarted = fixture.controller.resourceCheckpoint
+        XCTAssertEqual(restarted.paletteCount, 1)
+        XCTAssertEqual(restarted.menuCount, 1)
+        XCTAssertEqual(restarted.screenObserverCount, 1)
+        XCTAssertEqual(restarted.shortcutWiringCount, 1)
+        XCTAssertEqual(restarted.overlayCount, fixture.provider.displays.count)
+        XCTAssertEqual(restarted.timerCount, 0)
+        XCTAssertEqual(restarted.guideCount, 1)
+        XCTAssertGreaterThan(restarted.callbackCount, 0)
+    }
+
+    func testStopStartRebindsClearAllCallbackExactlyOnce() throws {
+        let fixture = ControllerFixture { router in
+            ControllerTestMenuBar(router: router)
+        }
+        let menuBar = try XCTUnwrap(fixture.menuBar as? ControllerTestMenuBar)
+
+        fixture.controller.start()
+        fixture.controller.stop()
+        fixture.controller.start()
+        XCTAssertEqual(menuBar.bindCount, 2)
+        menuBar.requestClearAll()
+        XCTAssertEqual(menuBar.confirmationCount, 1)
+        XCTAssertEqual(menuBar.commandCount, 1)
+    }
+
+    func testStopClearsDisplaySyncCallbackAndRestartBindsExactlyOnce() throws {
+        let fixture = ControllerFixture()
+        fixture.controller.start()
+        fixture.controller.stop()
+        XCTAssertNil(fixture.coordinator.onDisplaySync)
+
+        fixture.controller.start()
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        let overlay = try XCTUnwrap(
+            fixture.coordinator.overlays[fixture.provider.displays[0].uuid] as? ControllerTestOverlay
+        )
+        XCTAssertEqual(overlay.updateDisplayCount, 1)
+    }
 }
 
 @MainActor
@@ -267,6 +339,7 @@ private final class ControllerTestMenuBar: MenuBarPresenting {
     private var onLearnPointer: (() -> Void)?
     private(set) var confirmationCount = 0
     private(set) var commandCount = 0
+    private(set) var bindCount = 0
 
     init(router: CommandRouter) {
         self.router = router
@@ -281,6 +354,7 @@ private final class ControllerTestMenuBar: MenuBarPresenting {
         onShowPalette: (() -> Void)?,
         onLearnPointer: (() -> Void)?
     ) -> Int {
+        bindCount += 1
         self.onShowPalette = onShowPalette
         self.onLearnPointer = onLearnPointer
         callbacksBound = true
@@ -408,9 +482,13 @@ private final class ControllerTestScreenProvider: ScreenProviding {
 @MainActor
 private final class ControllerTestOverlay: OverlayPresenting {
     var display: DisplayDescriptor
+    private(set) var updateDisplayCount = 0
 
     init(display: DisplayDescriptor) { self.display = display }
-    func update(display: DisplayDescriptor) { self.display = display }
+    func update(display: DisplayDescriptor) {
+        self.display = display
+        updateDisplayCount += 1
+    }
     func update(session: PointerSession) {}
     func setMode(_ mode: PointerMode) {}
     func setEventHandlers(

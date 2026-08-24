@@ -39,11 +39,30 @@ private final class PaletteFocusableSlider: NSSlider {
 
 @MainActor
 public final class PaletteViewController: NSViewController {
+    public struct DisplayOptions: Equatable, Sendable {
+        public let reduceTransparency: Bool
+        public let increaseContrast: Bool
+
+        public init(reduceTransparency: Bool, increaseContrast: Bool) {
+            self.reduceTransparency = reduceTransparency
+            self.increaseContrast = increaseContrast
+        }
+
+        public static var current: DisplayOptions {
+            DisplayOptions(
+                reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+                increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            )
+        }
+    }
+
     public private(set) var controls: [NSControl] = []
     public private(set) var layoutPlan = PaletteLayout.plan(
         availableWidth: PaletteLayout.minimumAllToolsWidth
     )
     public private(set) var deleteButton: NSButton!
+    public private(set) var appliedDisplayOptions = DisplayOptions.current
+    public private(set) var displayOptionsRefreshCount = 0
 
     private let router: CommandRouter
     private var toolButtons: [PointerTool: NSButton] = [:]
@@ -70,9 +89,15 @@ public final class PaletteViewController: NSViewController {
     private var deleteHitTargetConstraints: [NSLayoutConstraint] = []
     private var renderedOverflowTools: [PointerTool] = []
     private var renderedOverflowActiveTool: PointerTool?
+    private let displayOptionsProvider: @MainActor () -> DisplayOptions
+    private var displayOptionsObserver: NSObjectProtocol?
 
-    public init(router: CommandRouter) {
+    public init(
+        router: CommandRouter,
+        displayOptionsProvider: @escaping @MainActor () -> DisplayOptions = { .current }
+    ) {
         self.router = router
+        self.displayOptionsProvider = displayOptionsProvider
         super.init(nibName: nil, bundle: nil)
         let existingFeedback = router.onFeedback
         router.onFeedback = { [weak self] message in
@@ -112,6 +137,22 @@ public final class PaletteViewController: NSViewController {
         layoutControls()
         refresh(session: currentSession)
         applyDisplayOptions()
+        displayOptionsObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.applyDisplayOptions()
+            }
+        }
+    }
+
+    deinit {
+        if let displayOptionsObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(displayOptionsObserver)
+        }
     }
 
     public func refresh(session: PointerSession) {
@@ -183,6 +224,18 @@ public final class PaletteViewController: NSViewController {
 
     public var statusMessage: String {
         statusLabel?.stringValue ?? ""
+    }
+
+    public var isVisualEffectHidden: Bool {
+        visualEffectView?.isHidden ?? true
+    }
+
+    public var appliedBorderWidth: CGFloat {
+        viewIfLoaded?.layer?.borderWidth ?? 0
+    }
+
+    public var hasOpaqueBackground: Bool {
+        appliedDisplayOptions.reduceTransparency
     }
 
     public func control(identifier: String) -> NSControl {
@@ -725,17 +778,18 @@ public final class PaletteViewController: NSViewController {
     }
 
     private func applyDisplayOptions() {
-        let reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-        if reduceTransparency {
+        let options = displayOptionsProvider()
+        appliedDisplayOptions = options
+        displayOptionsRefreshCount += 1
+        if options.reduceTransparency {
             visualEffectView.isHidden = true
             view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         } else {
             visualEffectView.isHidden = false
             view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.84).cgColor
         }
-        view.layer?.borderWidth = increaseContrast ? 2 : 1
-        view.layer?.borderColor = (increaseContrast ? NSColor.labelColor : NSColor.separatorColor).cgColor
+        view.layer?.borderWidth = options.increaseContrast ? 2 : 1
+        view.layer?.borderColor = (options.increaseContrast ? NSColor.labelColor : NSColor.separatorColor).cgColor
     }
 
     private func showFeedback(_ message: String) {
@@ -859,6 +913,22 @@ public final class PaletteViewController: NSViewController {
         control.identifier = NSUserInterfaceItemIdentifier(identifier)
         control.focusRingType = .exterior
         control.isEnabled = true
+        control.setAccessibilityRoleDescription(roleDescription(for: control))
+    }
+
+    private func roleDescription(for control: NSControl) -> String {
+        switch control {
+        case is NSPopUpButton:
+            return "popup button"
+        case is NSColorWell:
+            return "color well"
+        case is NSSlider:
+            return "slider"
+        case is NSTextField:
+            return "status"
+        default:
+            return "button"
+        }
     }
 
     private func valueLabel() -> NSTextField {

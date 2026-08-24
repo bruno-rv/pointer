@@ -3,12 +3,19 @@ import PointerCore
 
 @MainActor
 public protocol MenuBarPresenting: AnyObject {
+    var menuResourceCount: Int { get }
+    var callbackBindingCount: Int { get }
     func install()
     func refresh(session: PointerSession)
     func remove()
     @discardableResult
     func bindCallbacks(onShowPalette: (() -> Void)?, onLearnPointer: (() -> Void)?) -> Int
     func clearCallbacks()
+}
+
+public extension MenuBarPresenting {
+    var menuResourceCount: Int { 0 }
+    var callbackBindingCount: Int { 0 }
 }
 
 @MainActor
@@ -18,6 +25,8 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
 
     public private(set) var statusItem: NSStatusItem?
     public private(set) var menu: NSMenu?
+    public var menuResourceCount: Int { statusItem == nil ? 0 : 1 }
+    public var callbackBindingCount: Int { callbacksBound ? 1 : 0 }
 
     private let router: CommandRouter
     private weak var shortcutController: HotKeyController?
@@ -69,6 +78,8 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         item.button?.setAccessibilityElement(true)
         item.button?.setAccessibilityLabel("Pointer menu")
         item.button?.setAccessibilityHelp("Open Pointer controls")
+        item.button?.setAccessibilityRoleDescription("menu bar item")
+        item.button?.focusRingType = .exterior
         item.button?.identifier = NSUserInterfaceItemIdentifier("pointer.menu-bar")
 
         let menu = NSMenu(title: "Pointer")
@@ -85,9 +96,11 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
 
         let shortcuts = NSMenuItem(title: "Shortcut", action: nil, keyEquivalent: "")
         shortcuts.identifier = NSUserInterfaceItemIdentifier("menu.shortcut")
+        shortcuts.isEnabled = true
         shortcuts.setAccessibilityElement(true)
         shortcuts.setAccessibilityLabel("Shortcut")
         shortcuts.setAccessibilityHelp("Choose the active global shortcut preset")
+        shortcuts.setAccessibilityRoleDescription("menu")
         let shortcutMenu = NSMenu(title: "Shortcut")
         for preset in ShortcutPreset.allCases {
             let shortcutItem = itemWithTitle(
@@ -124,15 +137,21 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
             modeItem.title = session.mode == .annotation ? "Exit Annotation" : "Enter Annotation"
             modeItem.setAccessibilityLabel(modeItem.title)
             modeItem.setAccessibilityHelp("Toggle annotation mode")
+            modeItem.setAccessibilityValue(session.mode == .annotation ? "Selected" : "Not selected")
         }
         undoClearAllItem?.isEnabled = router.canUndoClearAll
+        undoClearAllItem?.setAccessibilityValue(router.canUndoClearAll ? "Available" : "Unavailable")
         for preset in ShortcutPreset.allCases {
-            shortcutItems[preset]?.state = shortcutController?.activePreset == preset ? .on : .off
+            let isSelected = shortcutController?.activePreset == preset
+            shortcutItems[preset]?.state = isSelected ? .on : .off
+            shortcutItems[preset]?.setAccessibilityValue(isSelected ? "Selected" : "Not selected")
         }
         if let error = shortcutController?.registrationError {
             statusItem?.button?.toolTip = "Pointer shortcut unavailable: \(error)"
+            statusItem?.button?.setAccessibilityValue("Shortcut unavailable: \(error)")
         } else {
             statusItem?.button?.toolTip = "Pointer controls"
+            statusItem?.button?.setAccessibilityValue("Pointer controls")
         }
     }
 
@@ -207,6 +226,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         item.setAccessibilityElement(true)
         item.setAccessibilityLabel(title)
         item.setAccessibilityHelp("Pointer command: \(title)")
+        item.setAccessibilityRoleDescription("menu item")
         return item
     }
 }

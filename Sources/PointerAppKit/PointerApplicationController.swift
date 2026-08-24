@@ -1,6 +1,37 @@
 import AppKit
 import PointerCore
 
+public struct PointerResourceCheckpoint: Equatable, Sendable {
+    public let paletteCount: Int
+    public let menuCount: Int
+    public let screenObserverCount: Int
+    public let shortcutWiringCount: Int
+    public let overlayCount: Int
+    public let callbackCount: Int
+    public let timerCount: Int
+    public let guideCount: Int
+
+    public init(
+        paletteCount: Int,
+        menuCount: Int,
+        screenObserverCount: Int,
+        shortcutWiringCount: Int,
+        overlayCount: Int,
+        callbackCount: Int,
+        timerCount: Int,
+        guideCount: Int
+    ) {
+        self.paletteCount = paletteCount
+        self.menuCount = menuCount
+        self.screenObserverCount = screenObserverCount
+        self.shortcutWiringCount = shortcutWiringCount
+        self.overlayCount = overlayCount
+        self.callbackCount = callbackCount
+        self.timerCount = timerCount
+        self.guideCount = guideCount
+    }
+}
+
 @MainActor
 public final class PointerApplicationController: NSObject, NSApplicationDelegate {
     public let screenProvider: any ScreenProviding
@@ -19,6 +50,28 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public let notificationCenter: NotificationCenter
     public private(set) var lastDisplayStopResult: DisplayStopResult?
     public private(set) var lifecycleErrorMessage: String?
+
+    public var resourceCheckpoint: PointerResourceCheckpoint {
+        let commandCallbackCount = [
+            commandRouter.onStateChange != nil,
+            commandRouter.onClearAllRequested != nil,
+            commandRouter.onAnnotationEntry != nil,
+        ].filter { $0 }.count
+        let displayCallbackCount = displayCoordinator.onDisplaySync == nil ? 0 : 1
+        return PointerResourceCheckpoint(
+            paletteCount: palette.window.isVisible ? 1 : 0,
+            menuCount: menuBar?.menuResourceCount ?? 0,
+            screenObserverCount: screenParametersObserver == nil ? 0 : 1,
+            shortcutWiringCount: shortcutController.registrar.onEvent != nil
+                && shortcutController.onToggle != nil ? 1 : 0,
+            overlayCount: displayCoordinator.overlays.count,
+            callbackCount: commandCallbackCount
+                + (menuBar?.callbackBindingCount ?? 0)
+                + displayCallbackCount,
+            timerCount: 0,
+            guideCount: guide.isVisible ? 1 : 0
+        )
+    }
 
     private var started = false
     private var pendingFirstUseAttempt = false
