@@ -76,6 +76,14 @@ public protocol PalettePresenting: AnyObject {
 
 @MainActor
 public final class PalettePanel: NSPanel, PalettePresenting {
+    private static let placementMargin: CGFloat = 16
+    private static let minimumNativeWidth = CGFloat(
+        PaletteLayout.horizontalPadding
+            + PaletteLayout.modeWidth
+            + (PaletteLayout.minimumToolWidth * 2)
+            + (PaletteLayout.toolSpacing * 2)
+    )
+
     public let paletteViewController: PaletteViewController
     public let guidePlacementProvider: any GuidePlacementProviding
 
@@ -127,12 +135,22 @@ public final class PalettePanel: NSPanel, PalettePresenting {
 
         paletteViewController.loadViewIfNeeded()
         let size = paletteViewController.preferredSize
-        let width = max(1, min(size.width, CGFloat(display.visibleFrame.width - 32)))
+        let width = min(
+            size.width,
+            CGFloat(display.visibleFrame.width) - (Self.placementMargin * 2)
+        )
         guard width.isFinite, width > 0, size.height.isFinite, size.height > 0 else {
+            orderOut(nil)
             return .failed("Palette layout produced an invalid size")
         }
         paletteViewController.applyLayout(for: width)
-        contentMinSize = NSSize(width: 1, height: size.height)
+        guard width >= Self.minimumNativeWidth,
+              CGFloat(display.visibleFrame.height) >= size.height + (Self.placementMargin * 2)
+        else {
+            orderOut(nil)
+            return .failed("Palette display is too small for native layout")
+        }
+        contentMinSize = NSSize(width: Self.minimumNativeWidth, height: size.height)
         setContentSize(NSSize(width: width, height: size.height))
         paletteViewController.view.layoutSubtreeIfNeeded()
         if frame.width > width {

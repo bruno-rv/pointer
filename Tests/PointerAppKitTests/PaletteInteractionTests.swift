@@ -55,6 +55,62 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertFalse(palette.isVisible)
     }
 
+    func testPaletteShowFailsAndStaysHiddenWhenPositiveFrameCannotFitNativeLayout() {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "tiny"),
+            frame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            visibleFrame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+
+        XCTAssertTrue({
+            if case .shown = palette.show(on: PaletteInteractionScreenProvider.descriptor()) {
+                return true
+            }
+            return false
+        }())
+        guard case .failed = palette.show(on: descriptor) else {
+            return XCTFail("Expected native layout failure")
+        }
+        XCTAssertFalse(palette.isVisible)
+    }
+
+    func testPaletteShowSupportsNarrowDisplayThatFitsNativeLayout() {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "narrow"),
+            frame: DisplayFrame(x: 0, y: 0, width: 420, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 420, height: 1_056),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+
+        guard case .shown = palette.show(on: descriptor) else {
+            return XCTFail("Expected supported narrow display")
+        }
+        XCTAssertTrue(palette.isVisible)
+    }
+
     func testPaletteFeedbackImmediatelyUpdatesVisibleStatusAndRefreshRestoresNormalStatus() {
         let provider = PaletteInteractionScreenProvider(displays: [])
         let coordinator = DisplayCoordinator(
@@ -73,6 +129,54 @@ final class PaletteInteractionTests: XCTestCase {
         controller.refresh(session: router.session)
 
         XCTAssertEqual(controller.statusMessage, "Standby — overlays are click-through")
+    }
+
+    func testPaletteUndoAndClearDisableWhenAcceptedPointerDisplayDisconnects() throws {
+        let descriptor = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        coordinator.apply(.append(mark, to: descriptor.uuid))
+
+        let controller = PaletteViewController(router: router)
+        controller.loadViewIfNeeded()
+        controller.refresh(session: coordinator.session)
+        let undo = try XCTUnwrap(control(in: controller, identifier: "palette.undo"))
+        let clear = try XCTUnwrap(control(in: controller, identifier: "palette.clear"))
+        XCTAssertTrue(undo.isEnabled)
+        XCTAssertTrue(clear.isEnabled)
+
+        router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [descriptor.uuid],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: true,
+            reconnected: false
+        ))
+        controller.refresh(session: coordinator.session)
+
+        XCTAssertFalse(undo.isEnabled)
+        XCTAssertFalse(clear.isEnabled)
+    }
+
+    private func control(
+        in controller: PaletteViewController,
+        identifier: String
+    ) -> NSControl? {
+        controller.controls.first { $0.identifier?.rawValue == identifier }
     }
 
     func testGuidePlacementProviderRejectsInvalidFramesAndReturnsExactContext() {

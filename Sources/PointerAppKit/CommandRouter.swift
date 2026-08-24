@@ -32,6 +32,7 @@ public final class CommandRouter {
     private let screenProvider: any ScreenProviding
     private weak var shortcutController: HotKeyController?
     private var acceptedDisplayState: DisplaySyncResult?
+    private var lastObservedSession: PointerSession?
 
     public init(
         coordinator: DisplayCoordinator,
@@ -41,8 +42,10 @@ public final class CommandRouter {
         self.coordinator = coordinator
         self.screenProvider = screenProvider
         self.shortcutController = shortcutController
+        self.lastObservedSession = coordinator.session
         let existingDisplaySync = coordinator.onDisplaySync
         coordinator.onSessionUpdate = { [weak self] session in
+            self?.observeSession(session)
             self?.onStateChange?(session)
         }
         coordinator.onDisplaySync = { [weak self] result in
@@ -64,7 +67,7 @@ public final class CommandRouter {
     }
 
     public var pointerDisplay: DisplayUUID? {
-        screenProvider.pointerDisplay()
+        acceptedPointerDisplay
     }
 
     public var activeShortcutID: String? {
@@ -115,14 +118,14 @@ public final class CommandRouter {
             clearFeedback()
             coordinator.apply(.deleteSelected)
         case .undo:
-            guard let display = screenProvider.pointerDisplay(), session.canUndo(on: display) else {
+            guard let display = pointerDisplay, session.canUndo(on: display) else {
                 publishFeedback("Nothing to undo")
                 return
             }
             clearFeedback()
             coordinator.apply(.undo(on: display))
         case .clear:
-            guard let display = screenProvider.pointerDisplay(),
+            guard let display = pointerDisplay,
                   !session.canvas(for: display).marks.isEmpty
             else {
                 publishFeedback("Nothing to clear")
@@ -213,13 +216,7 @@ public final class CommandRouter {
     }
 
     private func requirePointerDisplayForAnnotation() -> Bool {
-        guard let acceptedDisplayState,
-              acceptedDisplayState.hasConnectedDisplays,
-              let pointerDisplay = acceptedDisplayState.pointerDisplay,
-              !pointerDisplay.rawValue.isEmpty,
-              acceptedDisplayState.connectedUUIDs.contains(pointerDisplay),
-              !acceptedDisplayState.connectedUUIDs.isEmpty,
-              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        guard acceptedPointerDisplay != nil
         else {
             publishFeedback("No presentation display connected")
             return false
@@ -234,5 +231,37 @@ public final class CommandRouter {
 
     private func clearFeedback() {
         feedbackMessage = nil
+    }
+
+    private var acceptedPointerDisplay: DisplayUUID? {
+        guard let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              let pointerDisplay = acceptedDisplayState.pointerDisplay,
+              !pointerDisplay.rawValue.isEmpty,
+              acceptedDisplayState.connectedUUIDs.contains(pointerDisplay),
+              !acceptedDisplayState.connectedUUIDs.isEmpty,
+              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        else {
+            return nil
+        }
+        return pointerDisplay
+    }
+
+    private func observeSession(_ session: PointerSession) {
+        defer { lastObservedSession = session }
+        guard let previous = lastObservedSession,
+              previous.mode == .annotation,
+              session.mode == .annotation,
+              let selectedID = previous.selection,
+              session.selection == nil,
+              let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              acceptedDisplayState.connectedUUIDs.contains(where: { display in
+                  session.canvas(for: display).marks.contains { $0.id == selectedID }
+              })
+        else {
+            return
+        }
+        publishFeedback("Selection cleared")
     }
 }

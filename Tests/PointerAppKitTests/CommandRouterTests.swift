@@ -81,6 +81,49 @@ final class CommandRouterTests: XCTestCase {
         XCTAssertEqual(router.feedbackMessage, "No presentation display connected")
     }
 
+    func testPointerDisplayUsesLastAcceptedSyncStateInsteadOfRawProviderPointer() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        fixture.provider.pointerUUID = DisplayUUID(rawValue: "stale")
+
+        XCTAssertEqual(fixture.router.pointerDisplay, fixture.uuid)
+    }
+
+    func testDisconnectedAcceptedDisplayDisablesUndoAndClearWithoutMutatingRetainedCanvas() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        fixture.coordinator.apply(.append(mark, to: fixture.uuid))
+        let before = fixture.router.session
+        var feedback: [String] = []
+        fixture.router.onFeedback = { feedback.append($0) }
+
+        fixture.router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [fixture.uuid],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: true,
+            reconnected: false
+        ))
+
+        XCTAssertNil(fixture.router.pointerDisplay)
+        fixture.router.route(.undo)
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to undo")
+        fixture.router.route(.clear)
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to clear")
+        XCTAssertEqual(feedback, ["Nothing to undo", "Nothing to clear"])
+    }
+
     func testEscapeCancelsRealOverlayOnceAndStaleMouseUpDoesNotDuplicateBoundary() throws {
         _ = NSApplication.shared
         let uuid = DisplayUUID(rawValue: "display-a")
@@ -104,6 +147,103 @@ final class CommandRouterTests: XCTestCase {
         XCTAssertEqual(boundaries, [.began, .cancelled])
         XCTAssertEqual(router.session.mode, .standby)
         XCTAssertTrue(router.session.canvas(for: uuid).marks.isEmpty)
+    }
+
+    func testEmptyCanvasClickPublishesSelectionClearedForRealOverlay() throws {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let descriptor = RouterTestScreenProvider.descriptor(uuid: uuid)
+        let provider = RouterTestScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        var feedback: [String] = []
+        router.onFeedback = { feedback.append($0) }
+
+        _ = coordinator.synchronize()
+        router.route(.setMode(.annotation))
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        coordinator.apply(.append(mark, to: uuid))
+        router.route(.setTool(.select))
+        let overlay = try XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+
+        overlay.canvasView.beginGesture(at: NSPoint(x: 960, y: 540))
+        overlay.canvasView.endGesture()
+        XCTAssertEqual(router.session.selection, mark.id)
+        feedback.removeAll()
+
+        overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
+        overlay.canvasView.endGesture()
+
+        XCTAssertNil(router.session.selection)
+        XCTAssertEqual(feedback, ["Selection cleared"])
+        XCTAssertEqual(router.feedbackMessage, "Selection cleared")
+    }
+
+    func testSelectionClearedFeedbackIsNotPublishedForStandbyDeleteOrClear() throws {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let descriptor = RouterTestScreenProvider.descriptor(uuid: uuid)
+        let provider = RouterTestScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        var feedback: [String] = []
+        router.onFeedback = { feedback.append($0) }
+        _ = coordinator.synchronize()
+        router.route(.setMode(.annotation))
+        let overlay = try XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+
+        func appendAndSelect(_ mark: Mark) {
+            coordinator.apply(.append(mark, to: uuid))
+            router.route(.setTool(.select))
+            overlay.canvasView.beginGesture(at: NSPoint(x: 960, y: 540))
+            overlay.canvasView.endGesture()
+            XCTAssertEqual(router.session.selection, mark.id)
+        }
+
+        appendAndSelect(Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        ))
+        feedback.removeAll()
+        router.route(.delete)
+        XCTAssertFalse(feedback.contains("Selection cleared"))
+
+        appendAndSelect(Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        ))
+        feedback.removeAll()
+        router.route(.clear)
+        XCTAssertFalse(feedback.contains("Selection cleared"))
+
+        appendAndSelect(Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        ))
+        feedback.removeAll()
+        router.route(.setMode(.standby))
+        XCTAssertFalse(feedback.contains("Selection cleared"))
     }
 
     func testEscapeCancelsDraftThenEntersStandbyFromPaletteFocus() throws {
@@ -263,7 +403,7 @@ private final class RouterFixture {
 @MainActor
 private final class RouterTestScreenProvider: ScreenProviding {
     let displays: [DisplayDescriptor]
-    let pointerUUID: DisplayUUID?
+    var pointerUUID: DisplayUUID?
 
     init(displays: [DisplayDescriptor], pointerUUID: DisplayUUID? = nil) {
         self.displays = displays
