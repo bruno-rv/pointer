@@ -21,7 +21,7 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
     private weak var palette: PalettePanel?
     private weak var menuBar: MenuBarController?
 
-    public init(palette: PalettePanel, menuBar: MenuBarController? = nil) {
+    public init(palette: PalettePanel, menuBar: MenuBarController?) {
         self.palette = palette
         self.menuBar = menuBar
     }
@@ -44,7 +44,9 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
     }
 
     private func metadata(for control: NSControl) -> ControlMetadata {
-        let identifier = control.identifier?.rawValue ?? "palette.control.unknown"
+        let rawIdentifier = control.identifier?.rawValue
+        let identifier = rawIdentifier.flatMap { $0.isEmpty ? nil : $0 }
+            ?? "palette.control.unknown"
         let accessibleName = control.accessibilityLabel() ?? title(of: control)
         return ControlMetadata(
             identifier: identifier,
@@ -55,7 +57,8 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
             isEnabled: control.isEnabled,
             isKeyboardReachable: control.isEnabled
                 && !control.isHidden
-                && control.focusRingType != .none
+                && control.acceptsFirstResponder
+                && rawIdentifier?.isEmpty == false
                 && identifier != "palette.status"
         )
     }
@@ -70,14 +73,18 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
     }
 
     private func metadata(for item: NSMenuItem) -> ControlMetadata {
-        ControlMetadata(
-            identifier: item.identifier?.rawValue ?? "menu.item.\(item.title)",
+        let rawIdentifier = item.identifier?.rawValue
+        return ControlMetadata(
+            identifier: rawIdentifier.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "menu.item.\(item.title)",
             accessibleName: item.accessibilityLabel() ?? item.title,
             help: nonEmpty(item.accessibilityHelp()),
             value: stringValue(item.accessibilityValue()),
             role: role(of: item),
             isEnabled: item.isEnabled,
-            isKeyboardReachable: item.isEnabled && !item.isHidden
+            isKeyboardReachable: item.isEnabled
+                && !item.isHidden
+                && rawIdentifier?.isEmpty == false
         )
     }
 

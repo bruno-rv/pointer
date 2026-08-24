@@ -57,12 +57,8 @@ public enum PaletteLayout {
             )
         }
 
-        let midpoint = (allTools.count + 1) / 2
         return PaletteLayoutPlan(
-            rows: [
-                allTools.prefix(midpoint).map(PaletteLayoutItem.tool),
-                allTools.dropFirst(midpoint).map(PaletteLayoutItem.tool),
-            ],
+            rows: [allTools.map(PaletteLayoutItem.tool)],
             overflowTools: []
         )
     }

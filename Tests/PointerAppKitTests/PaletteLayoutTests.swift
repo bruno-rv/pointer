@@ -48,6 +48,10 @@ final class PaletteLayoutTests: XCTestCase {
             controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton
         )
         XCTAssertEqual(overflow.title, "More Tools")
+        let overflowValue = try XCTUnwrap(overflow.accessibilityValue() as? String)
+        XCTAssertTrue(overflowValue.contains("Eraser"))
+        XCTAssertTrue(overflowValue.contains("Emoji"))
+        XCTAssertTrue(overflowValue.contains("Spotlight"))
     }
 
     func testPathologicalWidthsNeverDuplicateOrDropTools() {
@@ -70,10 +74,10 @@ final class PaletteLayoutTests: XCTestCase {
         }
     }
 
-    func testWideLayoutUsesTwoRowsWithoutOverflow() {
+    func testWideLayoutUsesOneToolRowWithoutOverflow() {
         let plan = PaletteLayout.plan(availableWidth: 760)
 
-        XCTAssertEqual(plan.rows.count, 2)
+        XCTAssertEqual(plan.rows.count, 1)
         XCTAssertFalse(plan.usesOverflow)
         XCTAssertEqual(
             Set(plan.rows.flatMap { $0 }.compactMap { item -> PointerTool? in
@@ -82,6 +86,114 @@ final class PaletteLayoutTests: XCTestCase {
             }),
             Set(PointerTool.allCases)
         )
+    }
+
+    @MainActor
+    func testRenderedPaletteKeepsToolAndActionHitTargetsAtSupportedWidths() throws {
+        for (displayWidth, expectedContentWidth) in [(452.0, 420.0), (792.0, 760.0)] {
+            let display = DisplayDescriptor(
+                uuid: DisplayUUID(rawValue: "display-\(Int(displayWidth))"),
+                frame: DisplayFrame(x: 0, y: 0, width: displayWidth, height: 1_080),
+                visibleFrame: DisplayFrame(x: 0, y: 24, width: displayWidth, height: 1_056),
+                scaleFactor: 2
+            )
+            let provider = PaletteTestScreenProvider(displays: [display])
+            let coordinator = DisplayCoordinator(
+                screenProvider: provider,
+                overlayFactory: { PaletteTestOverlay(display: $0) }
+            )
+            let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+            _ = coordinator.synchronize()
+            let mark = Mark(
+                geometry: .arrow(
+                    start: NormalizedPoint(x: 0.2, y: 0.2),
+                    end: NormalizedPoint(x: 0.8, y: 0.8)
+                ),
+                style: .default
+            )
+            coordinator.apply(.append(mark, to: display.uuid))
+            var selectedSession = coordinator.session
+            selectedSession.apply(.setMode(.annotation))
+            selectedSession.apply(.setTool(.select))
+            _ = selectedSession.beginGesture(
+                tool: .select,
+                at: NormalizedPoint(x: 0.5, y: 0.5),
+                on: display.uuid
+            )
+            _ = selectedSession.commitGesture()
+            let palette = PalettePanel(
+                router: router,
+                guidePlacementProvider: GuidePlacementProvider()
+            )
+            defer { palette.close() }
+
+            guard case .shown = palette.show(on: display) else {
+                return XCTFail("Expected supported width \(displayWidth)")
+            }
+            palette.refresh(session: selectedSession)
+            palette.window.contentView?.layoutSubtreeIfNeeded()
+            let controller = palette.paletteViewController
+            XCTAssertEqual(palette.frame.width, expectedContentWidth, accuracy: 1)
+
+            let planTools = Set(controller.layoutPlan.rows.flatMap { row in
+                row.compactMap { item -> PointerTool? in
+                    guard case let .tool(tool) = item else { return nil }
+                    return tool
+                }
+            })
+            let visibleToolIDs = Set(controller.controls.compactMap { control -> String? in
+                guard let identifier = control.identifier?.rawValue,
+                      identifier.hasPrefix("palette.tool."),
+                      !control.isHidden
+                else { return nil }
+                return identifier
+            })
+            XCTAssertEqual(
+                visibleToolIDs,
+                Set(planTools.map { "palette.tool.\(identifier(for: $0))" })
+            )
+
+            let firstRowControls = controller.controls.filter { control in
+                guard let identifier = control.identifier?.rawValue else { return false }
+                return identifier == "palette.mode"
+                    || (identifier == "palette.tools.overflow" && !control.isHidden)
+                    || (identifier.hasPrefix("palette.tool.") && !control.isHidden)
+            }
+            let firstRowRects = firstRowControls.map { control in
+                control.convert(control.bounds, to: controller.view)
+            }
+            XCTAssertTrue(firstRowRects.allSatisfy { $0.width >= 44 && $0.height >= 28 })
+            for index in firstRowRects.indices {
+                for otherIndex in firstRowRects.indices where otherIndex > index {
+                    XCTAssertFalse(firstRowRects[index].intersects(firstRowRects[otherIndex]))
+                }
+            }
+
+            for identifier in [
+                "palette.style.stroke-width",
+                "palette.style.opacity",
+                "palette.spotlight.radius",
+                "palette.spotlight.dimness",
+            ] {
+                let slider = try XCTUnwrap(controller.control(identifier: identifier) as? NSSlider)
+                XCTAssertGreaterThanOrEqual(slider.frame.width, 120, identifier)
+                XCTAssertGreaterThan(slider.frame.height, 0, identifier)
+            }
+            for identifier in ["palette.undo", "palette.clear"] {
+                let button = try XCTUnwrap(controller.control(identifier: identifier) as? NSButton)
+                XCTAssertFalse(button.isHidden, identifier)
+                XCTAssertTrue(button.isEnabled, identifier)
+                XCTAssertGreaterThanOrEqual(button.frame.width, 44, identifier)
+                XCTAssertGreaterThanOrEqual(button.frame.height, 28, identifier)
+                XCTAssertFalse(hasAncestor(button, of: NSScrollView.self), identifier)
+            }
+            let delete = try XCTUnwrap(controller.control(identifier: "palette.delete") as? NSButton)
+            XCTAssertFalse(delete.isHidden)
+            XCTAssertTrue(delete.isEnabled)
+            XCTAssertGreaterThanOrEqual(delete.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(delete.frame.height, 28)
+            XCTAssertFalse(hasAncestor(delete, of: NSScrollView.self))
+        }
     }
 
     func testEveryPaletteControlHasLabelHelpIdentifierAndEnabledState() {
@@ -133,6 +245,7 @@ final class PaletteLayoutTests: XCTestCase {
                 identifier
             )
             XCTAssertEqual(button.title, title, identifier)
+            XCTAssertEqual(button.accessibilityLabel(), title, identifier)
             XCTAssertNotNil(button.image, identifier)
         }
     }
@@ -220,6 +333,28 @@ final class PaletteLayoutTests: XCTestCase {
             overlayFactory: { PaletteTestOverlay(display: $0) }
         )
         return CommandRouter(coordinator: coordinator, screenProvider: provider)
+    }
+
+    private func identifier(for tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "select"
+        case .arrow: return "arrow"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "ellipse"
+        case .pen: return "pen"
+        case .eraser: return "eraser"
+        case .emoji: return "emoji"
+        case .spotlight: return "spotlight"
+        }
+    }
+
+    private func hasAncestor(_ view: NSView, of type: NSView.Type) -> Bool {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if current.isKind(of: type) { return true }
+            ancestor = current.superview
+        }
+        return false
     }
 }
 

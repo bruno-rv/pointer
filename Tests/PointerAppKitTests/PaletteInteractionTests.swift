@@ -343,6 +343,14 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertTrue(identifiers.contains("menu.shortcut"))
         XCTAssertTrue(identifiers.contains("menu.shortcut.control-option-command-p"))
         XCTAssertTrue(identifiers.contains("menu.quit"))
+
+        let metadata = ControlMetadataInventory(palette: palette, menuBar: menuBar).metadata()
+        XCTAssertTrue(metadata.allSatisfy {
+            !$0.identifier.isEmpty
+                && !$0.accessibleName.isEmpty
+                && $0.help?.isEmpty == false
+                && !$0.role.isEmpty
+        })
     }
 
     func testMetadataUsesHonestKeyboardReachabilityForDisabledAndHiddenControls() {
@@ -425,6 +433,48 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertTrue(controller.control(identifier: "palette.spotlight.dimness").isEnabled)
     }
 
+    func testSelectedDisplayWinsWhenPointerDisplayMovesToAnotherDisplay() {
+        let fixture = crossDisplayFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+
+        let rectangle = selectedSession(
+            geometry: .rectangle(NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)),
+            hitPoint: NormalizedPoint(x: 0.2, y: 0.4),
+            display: fixture.selectedDisplay
+        )
+        controller.refresh(session: rectangle)
+        XCTAssertTrue(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertTrue(controller.deleteButton.isEnabled)
+
+        let emoji = selectedSession(
+            geometry: .emoji(
+                text: "👉",
+                rect: NormalizedRect(x: 0.2, y: 0.2, width: 0.2, height: 0.2)
+            ),
+            hitPoint: NormalizedPoint(x: 0.3, y: 0.3),
+            display: fixture.selectedDisplay
+        )
+        controller.refresh(session: emoji)
+        XCTAssertTrue(controller.control(identifier: "palette.emoji").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertTrue(controller.deleteButton.isEnabled)
+
+        let spotlight = selectedSession(
+            geometry: .spotlight(
+                center: NormalizedPoint(x: 0.4, y: 0.4),
+                radius: 0.15,
+                dimness: 0.5
+            ),
+            hitPoint: NormalizedPoint(x: 0.4, y: 0.4),
+            display: fixture.selectedDisplay
+        )
+        controller.refresh(session: spotlight)
+        XCTAssertTrue(controller.control(identifier: "palette.spotlight.radius").isEnabled)
+        XCTAssertFalse(controller.control(identifier: "palette.style.color").isEnabled)
+        XCTAssertTrue(controller.deleteButton.isEnabled)
+    }
+
     func testSelectWithoutSelectionDisablesSpecializedControlsAndDeleteIsHidden() {
         let fixture = acceptedFixture()
         let controller = PaletteViewController(router: fixture.router)
@@ -499,6 +549,32 @@ final class PaletteInteractionTests: XCTestCase {
         return (router, coordinator, display)
     }
 
+    private func crossDisplayFixture() -> (
+        router: CommandRouter,
+        selectedDisplay: DisplayDescriptor,
+        pointerDisplay: DisplayDescriptor
+    ) {
+        let selectedDisplay = PaletteInteractionScreenProvider.descriptor()
+        let pointerDisplay = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "display-b"),
+            frame: DisplayFrame(x: 1_920, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 1_920, y: 24, width: 1_920, height: 1_056),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(
+            displays: [selectedDisplay, pointerDisplay],
+            pointerUUID: pointerDisplay.uuid
+        )
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+        XCTAssertEqual(router.pointerDisplay, pointerDisplay.uuid)
+        return (router, selectedDisplay, pointerDisplay)
+    }
+
     private func selectedSession(
         geometry: MarkGeometry,
         hitPoint: NormalizedPoint,
@@ -518,13 +594,15 @@ final class PaletteInteractionTests: XCTestCase {
 @MainActor
 private final class PaletteInteractionScreenProvider: ScreenProviding {
     let displays: [DisplayDescriptor]
+    let pointerUUID: DisplayUUID?
 
-    init(displays: [DisplayDescriptor]) {
+    init(displays: [DisplayDescriptor], pointerUUID: DisplayUUID? = nil) {
         self.displays = displays
+        self.pointerUUID = pointerUUID
     }
 
     func currentDisplays() -> [DisplayDescriptor] { displays }
-    func pointerDisplay() -> DisplayUUID? { displays.first?.uuid }
+    func pointerDisplay() -> DisplayUUID? { pointerUUID ?? displays.first?.uuid }
 
     static func descriptor() -> DisplayDescriptor {
         DisplayDescriptor(

@@ -59,6 +59,9 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
 
         let shortcuts = NSMenuItem(title: "Shortcut", action: nil, keyEquivalent: "")
         shortcuts.identifier = NSUserInterfaceItemIdentifier("menu.shortcut")
+        shortcuts.setAccessibilityElement(true)
+        shortcuts.setAccessibilityLabel("Shortcut")
+        shortcuts.setAccessibilityHelp("Choose the active global shortcut preset")
         let shortcutMenu = NSMenu(title: "Shortcut")
         for preset in ShortcutPreset.allCases {
             let shortcutItem = itemWithTitle(
@@ -91,7 +94,11 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     public func refresh(session: PointerSession) {
-        modeItem?.title = session.mode == .annotation ? "Exit Annotation" : "Enter Annotation"
+        if let modeItem {
+            modeItem.title = session.mode == .annotation ? "Exit Annotation" : "Enter Annotation"
+            modeItem.setAccessibilityLabel(modeItem.title)
+            modeItem.setAccessibilityHelp("Toggle annotation mode")
+        }
         undoClearAllItem?.isEnabled = router.canUndoClearAll
         for preset in ShortcutPreset.allCases {
             shortcutItems[preset]?.state = shortcutController?.activePreset == preset ? .on : .off

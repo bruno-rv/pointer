@@ -103,11 +103,11 @@ public final class PaletteViewController: NSViewController {
         opacityValueLabel?.stringValue = formattedPercent(style.opacity)
         radiusValueLabel?.stringValue = formattedPercent(session.toolState.spotlightRadius)
         dimnessValueLabel?.stringValue = formattedPercent(session.toolState.spotlightDimness)
-        let pointerDisplay = router.pointerDisplay
         updateContextualState(
             session: session,
             selectionGeometry: selectedGeometry(in: session)
         )
+        let pointerDisplay = router.pointerDisplay
         undoButton.isEnabled = pointerDisplay.map(session.canUndo(on:)) ?? false
         clearButton.isEnabled = pointerDisplay.map {
             !session.canvas(for: $0).marks.isEmpty
@@ -179,7 +179,7 @@ public final class PaletteViewController: NSViewController {
             let button = makeButton(
                 title: title(for: tool),
                 identifier: "palette.tool.\(tool.identifier)",
-                label: "Select \(tool.displayName)",
+                label: title(for: tool),
                 help: "Choose the \(tool.displayName) annotation tool"
             )
             button.image = NSImage(
@@ -327,27 +327,37 @@ public final class PaletteViewController: NSViewController {
         for arrangedSubview in firstRow.arrangedSubviews {
             arrangedSubview.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             arrangedSubview.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            arrangedSubview.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+            arrangedSubview.heightAnchor.constraint(greaterThanOrEqualToConstant: 28).isActive = true
         }
         modeButton.bezelStyle = .texturedRounded
 
-        let secondRow = NSStackView(views: [
+        let styleRow = NSStackView(views: [
             labeled("Color", colorWell),
             labeled("Emoji", emojiPicker),
             labeled("Stroke", strokeSlider, valueLabel: strokeValueLabel),
             labeled("Opacity", opacitySlider, valueLabel: opacityValueLabel),
             labeled("Radius", radiusSlider, valueLabel: radiusValueLabel),
             labeled("Dimness", dimnessSlider, valueLabel: dimnessValueLabel),
-            controls.first { $0.identifier?.rawValue == "palette.undo" }!,
-            controls.first { $0.identifier?.rawValue == "palette.clear" }!,
-            deleteButton,
         ])
-        secondRow.orientation = .horizontal
-        secondRow.spacing = 8
-        secondRow.alignment = .centerY
-        secondRow.distribution = .fillEqually
-        for arrangedSubview in secondRow.arrangedSubviews {
+        styleRow.orientation = .horizontal
+        styleRow.spacing = 8
+        styleRow.alignment = .centerY
+        styleRow.distribution = .fill
+        for arrangedSubview in styleRow.arrangedSubviews {
             arrangedSubview.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             arrangedSubview.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+
+        let actionStack = NSStackView(views: [undoButton, clearButton, deleteButton])
+        actionStack.orientation = .horizontal
+        actionStack.spacing = 6
+        actionStack.alignment = .centerY
+        actionStack.distribution = .fillEqually
+        actionStack.detachesHiddenViews = false
+        for action in actionStack.arrangedSubviews {
+            action.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+            action.heightAnchor.constraint(greaterThanOrEqualToConstant: 28).isActive = true
         }
 
         styleScrollView = PaletteStyleScrollView()
@@ -357,14 +367,22 @@ public final class PaletteViewController: NSViewController {
         styleScrollView.horizontalScrollElasticity = .none
         styleScrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         styleScrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        styleScrollView.documentView = secondRow
-        secondRow.translatesAutoresizingMaskIntoConstraints = true
-        secondRow.frame = NSRect(
+        styleScrollView.documentView = styleRow
+        styleRow.translatesAutoresizingMaskIntoConstraints = true
+        styleRow.frame = NSRect(
             origin: .zero,
-            size: NSSize(width: secondRow.fittingSize.width, height: 42)
+            size: NSSize(width: styleRow.fittingSize.width, height: 42)
         )
 
-        let stack = NSStackView(views: [firstRow, styleScrollView, statusLabel])
+        let styleAndActions = NSStackView(views: [styleScrollView, actionStack])
+        styleAndActions.orientation = .horizontal
+        styleAndActions.spacing = 8
+        styleAndActions.alignment = .centerY
+        styleAndActions.distribution = .fill
+        styleScrollView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        styleScrollView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let stack = NSStackView(views: [firstRow, styleAndActions, statusLabel])
         stack.orientation = .vertical
         stack.spacing = 8
         stack.alignment = .width
@@ -376,7 +394,7 @@ public final class PaletteViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 10),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -10),
             firstRow.heightAnchor.constraint(equalToConstant: 34),
-            styleScrollView.heightAnchor.constraint(equalToConstant: 42),
+            styleAndActions.heightAnchor.constraint(equalToConstant: 42),
         ])
     }
 
@@ -385,9 +403,14 @@ public final class PaletteViewController: NSViewController {
         if plan != layoutPlan {
             layoutPlan = plan
         }
-        let hidden = Set(plan.overflowTools)
+        let visibleTools = Set(plan.rows.flatMap { row in
+            row.compactMap { item -> PointerTool? in
+                guard case let .tool(tool) = item else { return nil }
+                return tool
+            }
+        })
         for (tool, button) in toolButtons {
-            button.isHidden = hidden.contains(tool)
+            button.isHidden = !visibleTools.contains(tool)
         }
         overflowButton.isHidden = !plan.usesOverflow
         overflowButton.menu?.removeAllItems()
@@ -395,6 +418,11 @@ public final class PaletteViewController: NSViewController {
             overflowButton.menu?.addItem(withTitle: tool.displayName, action: nil, keyEquivalent: "")
         }
         overflowButton.title = "More Tools"
+        overflowButton.setAccessibilityValue(
+            plan.overflowTools.isEmpty
+                ? "No hidden tools"
+                : plan.overflowTools.map(\.displayName).joined(separator: ", ")
+        )
     }
 
     private func updateContextualState(
@@ -473,7 +501,7 @@ public final class PaletteViewController: NSViewController {
 
     private func selectedGeometry(in session: PointerSession) -> MarkGeometry? {
         guard let selection = session.selection,
-              let display = router.pointerDisplay
+              let display = session.selectedDisplay
         else {
             return nil
         }
@@ -624,6 +652,7 @@ public final class PaletteViewController: NSViewController {
     ) -> NSSlider {
         let slider = NSSlider(value: value, minValue: min, maxValue: max, target: nil, action: nil)
         configure(slider, identifier: identifier, label: label, help: help)
+        slider.widthAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         slider.isContinuous = true
         return slider
     }
