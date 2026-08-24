@@ -247,7 +247,7 @@ public final class PaletteViewController: NSViewController {
             label: "More annotation tools",
             help: "Choose an annotation tool from the compact overflow menu"
         )
-        overflowButton.addItems(withTitles: PointerTool.allCases.map(\.displayName))
+        overflowButton.pullsDown = true
         overflowButton.target = self
         overflowButton.action = #selector(selectOverflowTool(_:))
 
@@ -468,23 +468,41 @@ public final class PaletteViewController: NSViewController {
         }
         overflowButton.isHidden = !plan.usesOverflow
         overflowButton.menu?.removeAllItems()
+        let hasActiveOverflowTool = plan.overflowTools.contains(currentSession.toolState.tool)
+        let headerTitle = hasActiveOverflowTool
+            ? "More · \(overflowActiveTitle(for: currentSession.toolState.tool))"
+            : "More Tools"
+        let header = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
+        header.setAccessibilityElement(true)
+        header.setAccessibilityLabel(
+            hasActiveOverflowTool
+                ? "More annotation tools; active tool \(currentSession.toolState.tool.displayName)"
+                : "More annotation tools"
+        )
+        header.setAccessibilityHelp("Choose an annotation tool from the compact overflow menu")
+        header.setAccessibilityValue(
+            hasActiveOverflowTool ? currentSession.toolState.tool.displayName : "No active hidden tool"
+        )
+        header.isEnabled = false
+        overflowButton.menu?.addItem(header)
         for tool in plan.overflowTools {
-            let item = NSMenuItem(title: tool.displayName, action: nil, keyEquivalent: "")
+            let item = NSMenuItem(
+                title: tool.displayName,
+                action: #selector(selectOverflowMenuItem(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = tool.identifier
             item.state = currentSession.toolState.tool == tool ? .on : .off
             item.setAccessibilityElement(true)
             item.setAccessibilityLabel(tool.displayName)
             item.setAccessibilityHelp("Select the \(tool.displayName) annotation tool")
             overflowButton.menu?.addItem(item)
         }
-        overflowButton.title = "More Tools"
+        overflowButton.selectItem(at: 0)
+        overflowButton.title = headerTitle
         overflowButton.image = nil
-        overflowButton.setAccessibilityLabel("More annotation tools")
-        if plan.overflowTools.contains(currentSession.toolState.tool) {
-            overflowButton.title = "More · \(overflowActiveTitle(for: currentSession.toolState.tool))"
-            overflowButton.setAccessibilityLabel(
-                "More annotation tools; active tool \(currentSession.toolState.tool.displayName)"
-            )
-        }
+        overflowButton.setAccessibilityLabel(header.accessibilityLabel() ?? "More annotation tools")
         overflowButton.setAccessibilityValue(
             plan.overflowTools.isEmpty
                 ? "No hidden tools"
@@ -496,6 +514,8 @@ public final class PaletteViewController: NSViewController {
 
     private func overflowActiveTitle(for tool: PointerTool) -> String {
         switch tool {
+        case .rectangle: return "Rect"
+        case .ellipse: return "Oval"
         case .spotlight: return "Spot"
         case .eraser: return "Erase"
         default: return tool.displayName
@@ -716,8 +736,14 @@ public final class PaletteViewController: NSViewController {
     }
 
     @objc private func selectOverflowTool(_ sender: NSPopUpButton) {
-        let title = sender.titleOfSelectedItem ?? ""
-        guard let tool = PointerTool.allCases.first(where: { $0.displayName == title }) else { return }
+        let rawIdentifier = sender.selectedItem?.representedObject as? String
+        guard let tool = PointerTool.allCases.first(where: { $0.identifier == rawIdentifier }) else { return }
+        route(.setTool(tool))
+    }
+
+    @objc private func selectOverflowMenuItem(_ sender: NSMenuItem) {
+        let rawIdentifier = sender.representedObject as? String
+        guard let tool = PointerTool.allCases.first(where: { $0.identifier == rawIdentifier }) else { return }
         route(.setTool(tool))
     }
 

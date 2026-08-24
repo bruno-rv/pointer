@@ -22,7 +22,7 @@ public struct PaletteLayoutPlan: Equatable, Sendable {
 public enum PaletteLayout {
     public static let allTools = PointerTool.allCases
     public static let minimumToolWidth = 76.0
-    public static let overflowWidth = 120.0
+    public static let overflowWidth = 132.0
     public static let toolSpacing = 6.0
     public static let horizontalPadding = 24.0
     public static let modeWidth = 92.0

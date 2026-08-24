@@ -611,6 +611,54 @@ final class PaletteInteractionTests: XCTestCase {
         }
     }
 
+    func testEveryOverflowToolAt420UsesStablePullDownHeaderAndRepresentedIDRouting() throws {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(router: fixture.router)
+        controller.loadViewIfNeeded()
+        let overflowedTools: [PointerTool] = [.rectangle, .ellipse, .pen, .eraser, .emoji, .spotlight]
+
+        for tool in overflowedTools {
+            var session = fixture.router.session
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(tool))
+            controller.refresh(session: session)
+            controller.applyLayout(for: 420)
+            controller.view.layoutSubtreeIfNeeded()
+            let overflow = try XCTUnwrap(controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton)
+            let items = try XCTUnwrap(overflow.menu?.items)
+            XCTAssertTrue(overflow.pullsDown)
+            XCTAssertEqual(items.count, overflowedTools.count + 1)
+            XCTAssertEqual(items.first?.representedObject as? String, nil)
+            XCTAssertFalse(items.first?.isEnabled == true)
+            XCTAssertTrue(items.first?.title.contains("More") == true)
+            XCTAssertGreaterThanOrEqual(overflow.frame.width, overflow.intrinsicContentSize.width)
+            XCTAssertEqual(
+                Set(items.dropFirst().map(\.title)),
+                Set(overflowedTools.map(toolDisplayName))
+            )
+            for item in items.dropFirst() {
+                XCTAssertEqual(item.representedObject as? String, toolIdentifier(forTitle: item.title))
+                XCTAssertNotNil(item.action)
+                XCTAssertNotNil(item.target)
+            }
+            let active = try XCTUnwrap(items.dropFirst().first { $0.title == toolDisplayName(tool) })
+            XCTAssertEqual(active.state, .on)
+
+            XCTAssertTrue(NSApp.sendAction(active.action!, to: active.target, from: active))
+            XCTAssertEqual(fixture.router.session.toolState.tool, tool)
+
+            controller.refresh(session: fixture.router.session)
+            controller.applyLayout(for: 420)
+            controller.view.layoutSubtreeIfNeeded()
+            let refreshed = try XCTUnwrap(controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton)
+            XCTAssertEqual(refreshed.menu?.items.count, items.count)
+            XCTAssertEqual(
+                Set(refreshed.menu?.items.dropFirst().map(\.title) ?? []),
+                Set(overflowedTools.map(toolDisplayName))
+            )
+        }
+    }
+
     func testNativeKeyViewTraversalMatchesReachableMetadataAtWideAndOverflowWidths() throws {
         for width in [420.0, PaletteLayout.minimumAllToolsWidth] {
             let fixture = acceptedFixture()
@@ -878,6 +926,10 @@ final class PaletteInteractionTests: XCTestCase {
         case .emoji: return "Emoji"
         case .spotlight: return "Spotlight"
         }
+    }
+
+    private func toolIdentifier(forTitle title: String) -> String? {
+        PointerTool.allCases.first { toolDisplayName($0) == title }.map(toolIdentifier)
     }
 }
 
