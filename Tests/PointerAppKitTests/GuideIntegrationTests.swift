@@ -39,6 +39,30 @@ final class GuideIntegrationTests: XCTestCase {
         XCTAssertEqual(fixture.events, ["palette.show"])
     }
 
+    func testPendingFirstUsePaletteFailureHidesAndRestoresAfterDisplayLoss() {
+        let fixture = GuideControllerFixture(
+            displays: [GuideTestScreenProvider.narrowDisplay]
+        )
+
+        fixture.controller.start()
+        XCTAssertEqual(fixture.events, [])
+        XCTAssertFalse(fixture.guide.isVisible)
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        XCTAssertEqual(fixture.events, ["guide.hideForDisplayLoss"])
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
+        )
+        XCTAssertTrue(fixture.guide.isVisible)
+    }
+
     func testVisibleGuideConsumesEscapeBeforeCommandRouter() {
         let guide = GuideTestSpyGuide(placementProvider: GuidePlacementProvider(), visible: true)
         let provider = GuideTestScreenProvider(displays: [])
@@ -258,6 +282,29 @@ final class GuideIntegrationTests: XCTestCase {
         fixture.postScreenChange()
 
         XCTAssertEqual(fixture.events, ["palette.show"])
+    }
+
+    func testDisplayLossRestoreSurvivesReconnectPaletteFailureAndRetriesOnLaterSync() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        XCTAssertEqual(fixture.events, ["guide.hideForDisplayLoss"])
+
+        fixture.provider.displays = [GuideTestScreenProvider.narrowDisplay]
+        fixture.postScreenChange()
+        XCTAssertEqual(fixture.events, ["guide.hideForDisplayLoss"])
+        XCTAssertFalse(fixture.guide.isVisible)
+
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
+        )
+        XCTAssertTrue(fixture.guide.isVisible)
     }
 
     func testStopClearsDisplayLossIntentWithoutChangingGuideStateAndRestartUsesUnseenRule() {
@@ -543,6 +590,13 @@ final class GuideTestScreenProvider: ScreenProviding {
         uuid: DisplayUUID(rawValue: "guide-display"),
         frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
         visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+        scaleFactor: 2
+    )
+
+    static let narrowDisplay = DisplayDescriptor(
+        uuid: defaultDisplay.uuid,
+        frame: DisplayFrame(x: 0, y: 0, width: 420, height: 150),
+        visibleFrame: DisplayFrame(x: 0, y: 24, width: 420, height: 126),
         scaleFactor: 2
     )
 

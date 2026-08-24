@@ -155,7 +155,9 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         refresh()
 
         guard result.hasConnectedDisplays else {
-            if result.enteredZeroDisplayState, guide.isVisible {
+            if result.enteredZeroDisplayState,
+               (guide.isVisible || pendingFirstUseAttempt),
+               !guideStateStore.hasDismissedFirstUseGuide {
                 pendingDisplayLossRestore = true
                 pendingFirstUseAttempt = false
                 guide.hideForDisplayLoss()
@@ -176,7 +178,7 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             return
         }
 
-        if result.reconnected, pendingDisplayLossRestore {
+        if pendingDisplayLossRestore {
             switch palette.show(on: display) {
             case let .shown(context):
                 guide.restoreAfterDisplayLoss(in: context)
