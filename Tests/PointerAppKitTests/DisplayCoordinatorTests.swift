@@ -54,6 +54,84 @@ final class DisplayCoordinatorTests: XCTestCase {
         XCTAssertNil(result.pointerDisplay)
     }
 
+    func testChangedDescriptorCancelsActiveArrowBeforeUpdatingPanelAndRejectsStaleEvents() {
+        _ = NSApplication.shared
+        let uuid = DisplayUUID(rawValue: "display-a")
+        let original = descriptor(uuid: uuid, x: 0, width: 1_920)
+        let changed = DisplayDescriptor(
+            uuid: uuid,
+            frame: DisplayFrame(x: 40, y: 12, width: 1_600, height: 900),
+            visibleFrame: DisplayFrame(x: 40, y: 36, width: 1_560, height: 860),
+            scaleFactor: 1
+        )
+        let provider = FakeScreenProvider(displays: [original])
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            OverlayPanel(descriptor: descriptor)
+        }
+        _ = coordinator.synchronize()
+        let panel = try! XCTUnwrap(coordinator.overlays[uuid] as? OverlayPanel)
+        let mark = fixtureRectangle()
+        coordinator.apply(.append(mark, to: uuid))
+        coordinator.apply(.setTool(.select))
+        coordinator.apply(.setMode(.annotation))
+        panel.canvasView.beginGesture(at: NSPoint(x: 768, y: 378))
+        panel.canvasView.endGesture()
+        coordinator.apply(.setTool(.arrow))
+        let preGestureSession = coordinator.session
+        XCTAssertEqual(preGestureSession.selection, mark.id)
+        XCTAssertTrue(preGestureSession.canUndo(on: uuid))
+
+        var boundaryEvents: [GestureBoundaryEvent] = []
+        var sessionUpdateCount = 0
+        coordinator.onBoundaryEvent = { _, event in boundaryEvents.append(event) }
+        coordinator.onSessionUpdate = { _ in sessionUpdateCount += 1 }
+        panel.canvasView.beginGesture(at: NSPoint(x: 1_100, y: 700))
+        boundaryEvents.removeAll()
+        sessionUpdateCount = 0
+        XCTAssertTrue(panel.canvasView.hasActiveGesture)
+
+        provider.displays = [changed]
+        coordinator.synchronize()
+
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertEqual(sessionUpdateCount, 1)
+        XCTAssertFalse(panel.canvasView.hasActiveGesture)
+        XCTAssertEqual(panel.display, changed)
+        XCTAssertEqual(coordinator.session.canvas(for: uuid), preGestureSession.canvas(for: uuid))
+        XCTAssertEqual(coordinator.session.selection, preGestureSession.selection)
+        XCTAssertEqual(coordinator.session.canUndo(on: uuid), preGestureSession.canUndo(on: uuid))
+
+        panel.canvasView.continueGesture(to: NSPoint(x: 1_300, y: 760))
+        panel.canvasView.endGesture()
+
+        XCTAssertEqual(boundaryEvents, [.cancelled])
+        XCTAssertEqual(coordinator.session.canvas(for: uuid), preGestureSession.canvas(for: uuid))
+        XCTAssertEqual(coordinator.session.selection, preGestureSession.selection)
+    }
+
+    func testUnchangedDescriptorsAndPointerOnlyChangesDoNotCancelOverlays() {
+        let uuidA = DisplayUUID(rawValue: "a")
+        let uuidB = DisplayUUID(rawValue: "b")
+        let displayA = descriptor(uuid: uuidA)
+        let displayB = descriptor(uuid: uuidB, x: 1_920)
+        let provider = FakeScreenProvider(displays: [displayA, displayB])
+        var created: [FakeOverlay] = []
+        let coordinator = makeCoordinator(provider: provider) { descriptor in
+            let overlay = FakeOverlay(display: descriptor)
+            created.append(overlay)
+            return overlay
+        }
+        _ = coordinator.synchronize()
+        created.forEach { $0.cancelCount = 0 }
+
+        provider.displays = [displayB, displayA]
+        let result = coordinator.synchronize()
+
+        XCTAssertEqual(result.pointerDisplay, uuidB)
+        XCTAssertEqual(created.map(\.cancelCount), [0, 0])
+        XCTAssertEqual(created.count, 2)
+    }
+
     func testOneToZeroSynchronizeCancelsRealOverlayOnceThenAppliesStandbyBeforeCallback() {
         _ = NSApplication.shared
         let uuid = DisplayUUID(rawValue: "display-a")

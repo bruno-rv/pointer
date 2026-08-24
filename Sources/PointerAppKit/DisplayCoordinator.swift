@@ -66,6 +66,9 @@ public final class DisplayCoordinator {
             session.ensureCanvas(for: descriptor.uuid)
             retainedUUIDs.insert(descriptor.uuid)
             if let overlay = overlays[descriptor.uuid] {
+                if overlay.display != descriptor {
+                    overlay.cancelActiveGesture()
+                }
                 configure(overlay, for: descriptor.uuid)
                 overlay.update(display: descriptor)
                 overlay.update(session: session)
