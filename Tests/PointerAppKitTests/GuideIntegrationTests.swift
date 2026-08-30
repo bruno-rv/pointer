@@ -94,11 +94,94 @@ final class GuideIntegrationTests: XCTestCase {
 
         fixture.controller.start()
         fixture.events.removeAll()
+        fixture.placementProvider.suppressContextEvents = true
         fixture.guide.showIfNeededResult = .shown
         fixture.postScreenChange()
 
         XCTAssertEqual(fixture.events, ["guide.showIfNeeded"])
         XCTAssertTrue(fixture.guide.isVisible)
+    }
+
+    func testSuccessfulLearnPointerConsumesFailedFirstUseAndDismissalStaysDismissed() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.guide.showResult = .shown
+        XCTAssertEqual(fixture.controller.showGuide(), .shown)
+        fixture.guide.dismiss()
+        fixture.events.removeAll()
+        fixture.placementProvider.suppressContextEvents = true
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+    }
+
+    func testHiddenLearnPointerShownResultKeepsFirstUsePendingForRetry() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+        fixture.controller.start()
+        fixture.guide.leavesVisibleAfterShownResult = false
+        fixture.guide.showResult = .shown
+        XCTAssertEqual(fixture.controller.showGuide(), .shown)
+        fixture.guide.leavesVisibleAfterShownResult = true
+        fixture.events.removeAll()
+        fixture.placementProvider.suppressContextEvents = true
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.showIfNeeded"])
+    }
+
+    func testSuccessfulLearnPointerSupersedesFailedDisplayLossRestoreIntent() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.guide.restoreAfterDisplayLossResult = .failed("panel unavailable")
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        fixture.guide.showResult = .shown
+        fixture.guide.dismiss()
+        _ = fixture.controller.showGuide()
+        fixture.guide.dismiss()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+    }
+
+    func testFailedFirstUseRetryUsesFreshCurrentPaletteContextWithoutReshowingPalette() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+        fixture.controller.start()
+
+        fixture.palette.window.setFrameOrigin(NSPoint(x: 240, y: 180))
+        let manualOrigin = fixture.palette.window.frame.origin
+        let changedDisplay = DisplayDescriptor(
+            uuid: fixture.display.uuid,
+            frame: DisplayFrame(x: 100, y: 0, width: 1_920, height: 1_080),
+            visibleFrame: DisplayFrame(x: 100, y: 24, width: 1_920, height: 1_056),
+            scaleFactor: 2
+        )
+        fixture.provider.displays = [changedDisplay]
+        fixture.guide.showIfNeededResult = .shown
+        fixture.placementProvider.suppressContextEvents = true
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.palette.window.frame.origin, manualOrigin)
+        XCTAssertEqual(fixture.guide.lastContext?.display, changedDisplay)
+        XCTAssertEqual(
+            fixture.guide.lastContext?.paletteFrame,
+            DisplayFrame(fixture.palette.window.frame)
+        )
+        XCTAssertEqual(fixture.events, ["guide.showIfNeeded"])
     }
 
     func testFailedDisplayLossRestoreRetriesOnLaterSyncWithoutReshowingPalette() {
@@ -113,6 +196,7 @@ final class GuideIntegrationTests: XCTestCase {
 
         fixture.events.removeAll()
         fixture.guide.restoreAfterDisplayLossResult = .shown
+        fixture.placementProvider.suppressContextEvents = true
         fixture.postScreenChange()
 
         XCTAssertEqual(fixture.events, ["guide.restoreAfterDisplayLoss"])
@@ -138,6 +222,7 @@ final class GuideIntegrationTests: XCTestCase {
 
         fixture.controller.start()
         fixture.events.removeAll()
+        fixture.placementProvider.suppressContextEvents = true
         fixture.guide.leavesVisibleAfterShownResult = true
         fixture.postScreenChange()
 
@@ -735,6 +820,7 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
 final class GuideTestPlacementProvider: GuidePlacementProviding {
     let eventLog: GuideTestEventLog
     var lastContext: GuidePlacementContext?
+    var suppressContextEvents = false
 
     init(eventLog: GuideTestEventLog) { self.eventLog = eventLog }
 
@@ -748,7 +834,9 @@ final class GuideTestPlacementProvider: GuidePlacementProviding {
               paletteFrame.height > 0 else {
             return nil
         }
-        eventLog.values.append("palette.show")
+        if !suppressContextEvents {
+            eventLog.values.append("palette.show")
+        }
         let context = GuidePlacementContext(
             display: display,
             visibleFrame: display.visibleFrame,

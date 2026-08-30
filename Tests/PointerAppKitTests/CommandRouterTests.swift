@@ -22,7 +22,7 @@ final class CommandRouterTests: XCTestCase {
 
         for tool in PointerTool.allCases {
             fixture.router.route(.setTool(tool))
-            XCTAssertEqual(feedback.last, "\(toolName(tool)) tool selected")
+            XCTAssertEqual(feedback.last, "\(tool.displayName) tool selected")
         }
     }
 
@@ -484,18 +484,6 @@ final class CommandRouterTests: XCTestCase {
         RouterFixture()
     }
 
-    private func toolName(_ tool: PointerTool) -> String {
-        switch tool {
-        case .select: return "Select"
-        case .arrow: return "Arrow"
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .pen: return "Pen"
-        case .eraser: return "Eraser"
-        case .emoji: return "Emoji"
-        case .spotlight: return "Spotlight"
-        }
-    }
 }
 
 @MainActor

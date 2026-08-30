@@ -299,6 +299,65 @@ final class PaletteInteractionTests: XCTestCase {
         )
     }
 
+    func testShortcutErrorKeepsPriorityOverFeedbackAndRestoresNormalStatus() throws {
+        _ = NSApplication.shared
+        let display = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [display])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let registrar = PaletteShortcutRegistrar()
+        let shortcutController = HotKeyController(
+            registrar: registrar,
+            store: PaletteShortcutStore(),
+            scheduler: PaletteShortcutScheduler()
+        )
+        let router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+        _ = coordinator.synchronize()
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected palette to be shown")
+        }
+        shortcutController.start()
+        registrar.shouldFail = true
+        shortcutController.setShortcut(.controlOptionCommandO)
+        palette.paletteViewController.refresh(session: router.session)
+
+        let focusedControl = palette.paletteViewController.control(identifier: "palette.mode")
+        XCTAssertTrue(palette.makeFirstResponder(focusedControl))
+        let origin = palette.frame.origin
+        let firstResponder = palette.firstResponder
+        let errorStatus = palette.paletteViewController.statusMessage
+        XCTAssertTrue(errorStatus.hasPrefix("Shortcut unavailable:"))
+
+        router.route(.setMode(.annotation))
+        router.route(.delete)
+
+        XCTAssertEqual(palette.paletteViewController.statusMessage, errorStatus)
+        XCTAssertEqual(palette.frame.origin, origin)
+        XCTAssertTrue(palette.firstResponder === firstResponder)
+
+        shortcutController.stop()
+        registrar.shouldFail = false
+        shortcutController.start()
+        palette.paletteViewController.refresh(session: router.session)
+        palette.paletteViewController.refresh(session: router.session)
+
+        XCTAssertEqual(
+            palette.paletteViewController.statusMessage,
+            "Annotation enabled · Shortcut: control-option-command-p"
+        )
+    }
+
     func testOverflowRefreshKeepsMenuIdentityAndFocusForContinuousStateUpdates() throws {
         let descriptor = DisplayDescriptor(
             uuid: DisplayUUID(rawValue: "overflow-stability"),
@@ -820,12 +879,12 @@ final class PaletteInteractionTests: XCTestCase {
             XCTAssertFalse(overflow.isHidden)
             XCTAssertTrue(overflow.title.contains("More"))
             XCTAssertTrue(
-                overflow.title.contains(toolDisplayName(tool))
+                overflow.title.contains(tool.displayName)
                     || overflow.title.contains(tool == .spotlight ? "Spot" : "Pen")
             )
             XCTAssertGreaterThanOrEqual(overflow.frame.width, overflow.intrinsicContentSize.width)
-            XCTAssertTrue((overflow.accessibilityValue() as? String)?.contains("\(toolDisplayName(tool))") == true)
-            let item = try XCTUnwrap(overflow.menu?.items.first { $0.title == toolDisplayName(tool) })
+            XCTAssertTrue((overflow.accessibilityValue() as? String)?.contains("\(tool.displayName)") == true)
+            let item = try XCTUnwrap(overflow.menu?.items.first { $0.title == tool.displayName })
             XCTAssertEqual(item.state, .on)
             XCTAssertTrue(controller.control(identifier: "palette.tool.\(toolIdentifier(tool))").isHidden)
         }
@@ -854,14 +913,14 @@ final class PaletteInteractionTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(overflow.frame.width, overflow.intrinsicContentSize.width)
             XCTAssertEqual(
                 Set(items.dropFirst().map(\.title)),
-                Set(overflowedTools.map(toolDisplayName))
+                Set(overflowedTools.map(\.displayName))
             )
             for item in items.dropFirst() {
                 XCTAssertEqual(item.representedObject as? String, toolIdentifier(forTitle: item.title))
                 XCTAssertNotNil(item.action)
                 XCTAssertNotNil(item.target)
             }
-            let active = try XCTUnwrap(items.dropFirst().first { $0.title == toolDisplayName(tool) })
+            let active = try XCTUnwrap(items.dropFirst().first { $0.title == tool.displayName })
             XCTAssertEqual(active.state, .on)
 
             XCTAssertTrue(NSApp.sendAction(active.action!, to: active.target, from: active))
@@ -874,7 +933,7 @@ final class PaletteInteractionTests: XCTestCase {
             XCTAssertEqual(refreshed.menu?.items.count, items.count)
             XCTAssertEqual(
                 Set(refreshed.menu?.items.dropFirst().map(\.title) ?? []),
-                Set(overflowedTools.map(toolDisplayName))
+                Set(overflowedTools.map(\.displayName))
             )
         }
     }
@@ -1312,21 +1371,8 @@ final class PaletteInteractionTests: XCTestCase {
         }
     }
 
-    private func toolDisplayName(_ tool: PointerTool) -> String {
-        switch tool {
-        case .select: return "Select"
-        case .arrow: return "Arrow"
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .pen: return "Pen"
-        case .eraser: return "Eraser"
-        case .emoji: return "Emoji"
-        case .spotlight: return "Spotlight"
-        }
-    }
-
     private func toolIdentifier(forTitle title: String) -> String? {
-        PointerTool.allCases.first { toolDisplayName($0) == title }.map(toolIdentifier)
+        PointerTool.allCases.first { $0.displayName == title }.map(toolIdentifier)
     }
 }
 
@@ -1351,6 +1397,45 @@ private final class PaletteInteractionScreenProvider: ScreenProviding {
             scaleFactor: 2
         )
     }
+}
+
+@MainActor
+private final class PaletteShortcutRegistrar: HotKeyRegistering {
+    var onEvent: ((HotKeyToken) -> Void)?
+    var shouldFail = false
+    private var nextToken: UInt64 = 1
+
+    func register(_ preset: ShortcutPreset) throws -> HotKeyToken {
+        if shouldFail {
+            throw PaletteShortcutError.registrationFailed
+        }
+        defer { nextToken += 1 }
+        return HotKeyToken(rawValue: nextToken)
+    }
+
+    func unregister(_ token: HotKeyToken) {}
+}
+
+private enum PaletteShortcutError: Error {
+    case registrationFailed
+}
+
+@MainActor
+private final class PaletteShortcutStore: ShortcutStoring {
+    func load() -> ShortcutPreset? { nil }
+    func save(_ preset: ShortcutPreset) {}
+}
+
+@MainActor
+private final class PaletteShortcutScheduler: ShortcutScheduling {
+    var activeTimerCount: Int { 0 }
+
+    @discardableResult
+    func schedule(after interval: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {
+        fatalError("A failing shortcut registration does not schedule a timer")
+    }
+
+    func cancel(_ token: ShortcutScheduleToken) {}
 }
 
 @MainActor

@@ -317,6 +317,12 @@ Acceptance criteria:
   and clamped. B owns the `PointerSession.selectedDisplay` handoff that C
   consumes read-only for selection/style controls; ownership changes return to
   B.
+- Explicit Learn Pointer/showGuide success supersedes pending first-use or
+  display-loss intent only when `.shown` is actually visible or `.notNeeded`;
+  failures remain pending. Ordinary retries obtain a fresh placement context
+  from the injected provider using the current display and palette frame, so a
+  manual palette drag and display-frame changes are reflected without a
+  palette re-show.
 - C's public `PalettePresenting.show(on:)` returns a `PaletteShowResult` with
   `.shown(GuidePlacementContext)`, `.noDisplay`, or `.failed` rather than
   silently ordering a window; the guide timing and zero-display retry logic
@@ -461,6 +467,10 @@ Acceptance criteria:
   status message without stealing focus, moving the palette, or intercepting
   the presented application. The standby message explicitly says that
   overlays are click-through; a tool message names the newly selected tool.
+- An active shortcut registration error remains higher priority than immediate
+  success or no-op feedback. Once that error resolves, stale suppressed
+  feedback is not replayed; the palette returns to the current normal mode and
+  shortcut status without moving focus or frame.
 - Palette and menu-bar flows are keyboard-operable in a logical order. Escape,
   Delete/Backspace, Undo, mode toggle, and tool selection behave consistently
   whether focus is in the palette or an overlay. The menu bar remains a full

@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 Worktree: `/Users/bruno/Dev/pointer/.worktrees/stable-app`
-Status: `DONE_WITH_CONCERNS` (worker handoff; no commit)
+Status: `DONE_WITH_CONCERNS` (reviewer revisions reconciled; no commit)
 
 ## Scope
 
@@ -24,17 +24,46 @@ GuideIntegrationTests.swift: value of type 'GuideTestSpyGuide' has no member
 ```
 
 The failure was caused by the missing explicit guide-result test seam, not a
-runtime assertion typo. After the protocol, controller, spy, command, and
-palette changes, the focused suites were rerun GREEN:
+runtime assertion typo. After the protocol, controller, spy, command, palette,
+and test-fake changes, the focused suites were rerun GREEN. The follow-up
+reviewer requirements were then written RED before implementation:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'GuideIntegrationTests|PaletteInteractionTests|CommandRouterTests'
+exit 1
+GuideIntegrationTests.swift: cannot find 'GuideRetryFixture' in scope
+PaletteInteractionTests.swift: stale post-resolution expectation omitted the
+active shortcut label
+```
+
+The durable-suppression follow-up was also run RED by adding a second
+post-resolution refresh:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PaletteInteractionTests/testShortcutErrorKeepsPriorityOverFeedbackAndRestoresNormalStatus
+exit 1
+XCTAssertEqual failed: "Select a mark to delete" is not equal to
+"Annotation enabled · Shortcut: control-option-command-p"
+```
+
+After the explicit Learn Pointer tests, fresh-context real-fixture test, shortcut
+precedence guard, and single tool-label source were implemented, the focused
+suite was rerun GREEN:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|GuideIntegrationTests|PaletteInteractionTests'
 exit 0
 CommandRouterTests: 18 passed
-GuideIntegrationTests: 31 passed
-PaletteInteractionTests: 34 passed
-total: 83 passed, 0 failed
+GuideIntegrationTests: 35 passed
+PaletteInteractionTests: 35 passed
+total: 88 passed, 0 failed
 ```
+
+The fresh-context test reuses the existing real `GuideControllerFixture` and
+`PalettePanel`: its placement provider suppresses only the context-request
+label after startup, while the manually dragged real window provides the
+no-re-show oracle. This avoids maintaining a parallel 140-line fake palette
+and keeps the assertion on production behavior.
 
 ## Reconciled behavior
 
@@ -48,8 +77,10 @@ total: 83 passed, 0 failed
   presentation methods are `@discardableResult`. The controller clears pending
   first-use/restore intent only for `.shown` when `guide.isVisible` is true or
   `.notNeeded`; `.failed` and hidden/false `.shown` results remain retryable.
-  Retry uses the last successful palette context, so it does not reposition the
-  palette on an ordinary connected sync.
+  Retry recomputes a fresh context from the injected provider, current display,
+  and current palette frame, so it does not reposition the palette on an
+  ordinary connected sync. Explicit Learn Pointer/showGuide success consumes
+  superseded pending intent; failed or hidden explicit shows remain retryable.
 - Successful mode/tool routes publish explicit status text: annotation entry,
   standby click-through state, every tool name, and the combined standby-to-tool
   transition. Existing no-display/no-op feedback remains authoritative.
@@ -57,13 +88,20 @@ total: 83 passed, 0 failed
   `No presentation display connected` message after an accepted valid pointer
   display. Unrelated feedback survives, and the palette status returns to its
   normal mode message after refresh.
+- Palette status gives shortcut registration errors precedence over immediate
+  success and no-op feedback, preserves frame/focus, and returns to the current
+  normal mode/shortcut status after the error resolves. The module-internal
+  `PointerTool.displayName` is the single source for tool labels.
+- Shortcut-error suppression is durable across repeated refreshes while the
+  router still holds the exact hidden feedback; changing or clearing that
+  feedback releases suppression for the next status update.
 
 ## Current source context
 
-The worktree started at `677d974` (`fix: refresh Pointer effective
-appearance`), with C's prior accepted history through `118486a` and the
-shortcut/guide lifecycle commits preceding it. This handoff intentionally has
-no new commit; the coordinator owns commit grouping and publication.
+The reviewer revision was applied on top of `433a943` (`fix: reconcile Pointer
+product surface`), which contains the prior C phase implementation. This
+handoff intentionally has no new commit; the coordinator owns commit grouping
+and publication.
 
 Changed paths in this worker diff:
 
@@ -90,13 +128,17 @@ bootstrap until F replaces it with the final composition root.
 After the focused GREEN run:
 
 ```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
+exit 0
+C phase-wide filter: 127 passed, 0 failed
+
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 247 passed, 0 failed
+PointerPackageTests.xctest: 252 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 247 passed, 0 failed
+full tests: 252 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

@@ -158,8 +158,8 @@ public final class CommandRouter {
             }
             publishFeedback(
                 entersAnnotation
-                    ? "Annotation enabled · \(toolName(tool)) tool selected"
-                    : "\(toolName(tool)) tool selected"
+                    ? "Annotation enabled · \(tool.displayName) tool selected"
+                    : "\(tool.displayName) tool selected"
             )
             onAnnotationEntry?()
         case let .setStyle(style):
@@ -245,19 +245,6 @@ public final class CommandRouter {
 
     private func clearFeedback() {
         feedbackMessage = nil
-    }
-
-    private func toolName(_ tool: PointerTool) -> String {
-        switch tool {
-        case .select: return "Select"
-        case .arrow: return "Arrow"
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .pen: return "Pen"
-        case .eraser: return "Eraser"
-        case .emoji: return "Emoji"
-        case .spotlight: return "Spotlight"
-        }
     }
 
     private var acceptedPointerDisplay: DisplayUUID? {

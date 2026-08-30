@@ -90,7 +90,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     private var pendingPaletteRestore = false
     private var pendingDisplayLossRestore = false
     private var paletteEverPresented = false
-    private var lastPaletteContext: GuidePlacementContext?
     private var screenParametersObserver: NSObjectProtocol?
 
     public init(
@@ -139,7 +138,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         pendingPaletteRestore = false
         pendingDisplayLossRestore = false
         paletteEverPresented = false
-        lastPaletteContext = nil
 
         palette.startAppearanceObservation()
 
@@ -217,7 +215,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         menuBar?.remove()
         pendingInitialPalettePresentation = false
         pendingPaletteRestore = false
-        lastPaletteContext = nil
         pendingFirstUseAttempt = false
         pendingDisplayLossRestore = false
     }
@@ -235,7 +232,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         paletteEverPresented = true
         pendingInitialPalettePresentation = false
         pendingPaletteRestore = false
-        lastPaletteContext = context
         consumePendingGuide(in: context)
     }
 
@@ -246,8 +242,12 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         paletteEverPresented = true
         pendingInitialPalettePresentation = false
         pendingPaletteRestore = false
-        lastPaletteContext = context
-        return guide.show(in: context)
+        let result = guide.show(in: context)
+        if guideResultConsumed(result) {
+            pendingFirstUseAttempt = false
+            pendingDisplayLossRestore = false
+        }
+        return result
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -303,24 +303,35 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             paletteEverPresented = true
             pendingInitialPalettePresentation = false
             pendingPaletteRestore = false
-            lastPaletteContext = context
             consumePendingGuide(in: context)
             return
         }
 
         if pendingDisplayLossRestore {
-            guard palette.window.isVisible, let context = lastPaletteContext else {
+            guard palette.window.isVisible else {
                 pendingDisplayLossRestore = false
                 return
             }
+            guard let context = currentGuideContext(for: display) else { return }
             consumePendingGuide(in: context)
             return
         }
 
         if pendingFirstUseAttempt {
-            guard palette.window.isVisible, let context = lastPaletteContext else { return }
+            guard palette.window.isVisible,
+                  let context = currentGuideContext(for: display)
+            else { return }
             consumePendingGuide(in: context)
         }
+    }
+
+    private func currentGuideContext(
+        for display: DisplayDescriptor
+    ) -> GuidePlacementContext? {
+        guidePlacementProvider.context(
+            for: display,
+            paletteFrame: DisplayFrame(palette.window.frame)
+        )
     }
 
     private func consumePendingGuide(in context: GuidePlacementContext) {

@@ -101,6 +101,8 @@ public final class PaletteViewController: NSViewController {
     private var renderedOverflowActiveTool: PointerTool?
     private let displayOptionsProvider: @MainActor () -> DisplayOptions
     private var displayOptionsObserver: NSObjectProtocol?
+    private var shortcutErrorWasDisplayed = false
+    private var shortcutSuppressedFeedback: String?
 
     public init(
         router: CommandRouter,
@@ -218,16 +220,22 @@ public final class PaletteViewController: NSViewController {
         undoButton.setAccessibilityValue(undoButton.isEnabled ? "Available" : "Unavailable")
         clearButton.setAccessibilityValue(clearButton.isEnabled ? "Available" : "Unavailable")
         if let error = router.shortcutError {
+            shortcutErrorWasDisplayed = true
+            if let feedback = router.feedbackMessage {
+                shortcutSuppressedFeedback = feedback
+            }
             statusLabel.stringValue = "Shortcut unavailable: \(error)"
+        } else if shortcutErrorWasDisplayed {
+            shortcutErrorWasDisplayed = false
+            statusLabel.stringValue = shouldSuppressCurrentFeedback()
+                ? normalStatusMessage(for: session)
+                : router.feedbackMessage ?? normalStatusMessage(for: session)
+        } else if shouldSuppressCurrentFeedback() {
+            statusLabel.stringValue = normalStatusMessage(for: session)
         } else if let feedback = router.feedbackMessage {
             statusLabel.stringValue = feedback
         } else {
-            let modeStatus = session.mode == .annotation
-                ? "Annotation enabled"
-                : "Standby — overlays are click-through"
-            statusLabel.stringValue = router.activeShortcutID.map {
-                "\(modeStatus) · Shortcut: \($0)"
-            } ?? modeStatus
+            statusLabel.stringValue = normalStatusMessage(for: session)
         }
         statusLabel.setAccessibilityValue(statusLabel.stringValue)
         updateLayout(
@@ -828,8 +836,43 @@ public final class PaletteViewController: NSViewController {
 
     private func showFeedback(_ message: String) {
         guard isViewLoaded else { return }
+        if let error = router.shortcutError {
+            shortcutErrorWasDisplayed = true
+            shortcutSuppressedFeedback = message
+            statusLabel.stringValue = "Shortcut unavailable: \(error)"
+            statusLabel.setAccessibilityValue(statusLabel.stringValue)
+            return
+        }
+        if shortcutSuppressedFeedback == message {
+            statusLabel.stringValue = normalStatusMessage(for: currentSession)
+            statusLabel.setAccessibilityValue(statusLabel.stringValue)
+            return
+        }
+        shortcutSuppressedFeedback = nil
         statusLabel.stringValue = message
         statusLabel.setAccessibilityValue(message)
+    }
+
+    private func normalStatusMessage(for session: PointerSession) -> String {
+        let modeStatus = session.mode == .annotation
+            ? "Annotation enabled"
+            : "Standby — overlays are click-through"
+        return router.activeShortcutID.map {
+            "\(modeStatus) · Shortcut: \($0)"
+        } ?? modeStatus
+    }
+
+    private func shouldSuppressCurrentFeedback() -> Bool {
+        guard let suppressed = shortcutSuppressedFeedback else { return false }
+        guard let feedback = router.feedbackMessage else {
+            shortcutSuppressedFeedback = nil
+            return false
+        }
+        guard feedback == suppressed else {
+            shortcutSuppressedFeedback = nil
+            return false
+        }
+        return true
     }
 
     @objc private func toggleMode() {
@@ -1046,8 +1089,8 @@ public final class PaletteViewController: NSViewController {
     }
 }
 
-private extension PointerTool {
-    var identifier: String {
+extension PointerTool {
+    fileprivate var identifier: String {
         switch self {
         case .select: return "select"
         case .arrow: return "arrow"
@@ -1059,7 +1102,9 @@ private extension PointerTool {
         case .spotlight: return "spotlight"
         }
     }
+}
 
+extension PointerTool {
     var displayName: String {
         switch self {
         case .select: return "Select"

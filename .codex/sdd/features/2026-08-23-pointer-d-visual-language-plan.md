@@ -19,6 +19,9 @@
   presentation is required, and `.failed(String)` when a request cannot be
   fulfilled. C retains pending intent on failures, so D must not report
   `.shown` for an order-front request that remains hidden.
+- C may ask for a later retry after an explicit Learn Pointer request or a
+  display change; D receives the fresh `GuidePlacementContext` supplied by C
+  and must not assume a cached display or palette frame.
 - The guide appears once after successful palette show, reopens from Learn Pointer, dismisses with Close/Done or Escape, and never changes mode, tool, selection, or canvas.
 - Display-loss hiding is non-committing; application-stop cleanup clears restoration intent without marking the guide seen.
 - Informative icons/examples have accessible names and descriptions; decorative art is hidden; focus order teaches the task.
