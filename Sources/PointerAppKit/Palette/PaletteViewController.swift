@@ -318,14 +318,14 @@ public final class PaletteViewController: NSViewController {
 
         for tool in PointerTool.allCases {
             let button = makeButton(
-                title: title(for: tool),
+                title: tool.displayName,
                 identifier: "palette.tool.\(tool.identifier)",
-                label: title(for: tool),
+                label: tool.displayName,
                 help: "Choose the \(tool.displayName) annotation tool"
             )
             button.image = NSImage(
                 systemSymbolName: symbolName(for: tool),
-                accessibilityDescription: title(for: tool)
+                accessibilityDescription: tool.displayName
             )
             button.imagePosition = .imageLeading
             button.imageScaling = .scaleProportionallyDown
@@ -1033,19 +1033,6 @@ public final class PaletteViewController: NSViewController {
         stack.orientation = .vertical
         stack.spacing = 2
         return stack
-    }
-
-    private func title(for tool: PointerTool) -> String {
-        switch tool {
-        case .select: return "Select"
-        case .arrow: return "Arrow"
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .pen: return "Pen"
-        case .eraser: return "Eraser"
-        case .emoji: return "Emoji"
-        case .spotlight: return "Spotlight"
-        }
     }
 
     private func symbolName(for tool: PointerTool) -> String {

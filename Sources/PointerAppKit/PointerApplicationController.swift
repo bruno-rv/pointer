@@ -274,8 +274,10 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
                     guide.hideForDisplayLoss()
                 } else if pendingFirstUseAttempt,
                           !guideStateStore.hasDismissedFirstUseGuide {
-                    pendingDisplayLossRestore = shouldRestorePalette
-                    pendingFirstUseAttempt = false
+                    if shouldRestorePalette {
+                        pendingDisplayLossRestore = true
+                        pendingFirstUseAttempt = false
+                    }
                     guide.hideForDisplayLoss()
                 } else if guideStateStore.hasDismissedFirstUseGuide {
                     pendingFirstUseAttempt = false
@@ -309,7 +311,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
 
         if pendingDisplayLossRestore {
             guard palette.window.isVisible else {
-                pendingDisplayLossRestore = false
                 return
             }
             guard let context = currentGuideContext(for: display) else { return }

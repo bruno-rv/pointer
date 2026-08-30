@@ -317,6 +317,11 @@ Acceptance criteria:
   and clamped. B owns the `PointerSession.selectedDisplay` handoff that C
   consumes read-only for selection/style controls; ownership changes return to
   B.
+- If an unseen first-use attempt failed before the user manually hid the
+  palette, that first-use intent survives zero-display/reconnect while hidden
+  and is retried by explicit Show Palette. A failed display-loss restore also
+  survives temporary palette hiding until explicit Show Palette/Learn, a
+  successful or not-needed guide result, or application stop.
 - Explicit Learn Pointer/showGuide success supersedes pending first-use or
   display-loss intent only when `.shown` is actually visible or `.notNeeded`;
   failures remain pending. Ordinary retries obtain a fresh placement context

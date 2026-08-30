@@ -46,17 +46,26 @@ XCTAssertEqual failed: "Select a mark to delete" is not equal to
 "Annotation enabled · Shortcut: control-option-command-p"
 ```
 
-After the explicit Learn Pointer tests, fresh-context real-fixture test, shortcut
-precedence guard, and single tool-label source were implemented, the focused
-suite was rerun GREEN:
+The phase-review hidden-palette intent tests were then run RED:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'GuideIntegrationTests/testFailedFirstUseKeepsIntentWhenPaletteHiddenBeforeZeroDisplay|GuideIntegrationTests/testFailedRestoreKeepsIntentWhenPaletteIsHiddenBeforeExplicitShow'
+exit 1
+first-use explicit Show Palette: expected guide.showIfNeeded, got palette.show only
+display-loss explicit Show Palette: expected guide.restoreAfterDisplayLoss, got palette.show only
+```
+
+After the explicit Learn Pointer tests, fresh-context real-fixture test,
+hidden-palette intent preservation, shortcut precedence guard, and single
+tool-label source were implemented, the focused suite was rerun GREEN:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|GuideIntegrationTests|PaletteInteractionTests'
 exit 0
 CommandRouterTests: 18 passed
-GuideIntegrationTests: 35 passed
+GuideIntegrationTests: 37 passed
 PaletteInteractionTests: 35 passed
-total: 88 passed, 0 failed
+total: 90 passed, 0 failed
 ```
 
 The fresh-context test reuses the existing real `GuideControllerFixture` and
@@ -72,7 +81,10 @@ and keeps the assertion on production behavior.
   sync does not call `palette.show(on:)` or move a manually dragged palette.
   A palette hidden before the zero-display transition remains hidden; a
   visible palette is restored and clamped. Repeated zero-display notifications
-  preserve pending restore intent. Explicit Show Palette still repositions.
+  preserve pending restore intent. Failed first-use intent survives a manual
+  hide and is retried by explicit Show Palette; failed display-loss restore
+  intent survives temporary hiding until explicit Show Palette/Learn or a
+  documented terminal outcome. Explicit Show Palette still repositions.
 - `GuidePresentationResult` is `Equatable`/`Sendable`, and all guide
   presentation methods are `@discardableResult`. The controller clears pending
   first-use/restore intent only for `.shown` when `guide.isVisible` is true or
@@ -130,15 +142,15 @@ After the focused GREEN run:
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 127 passed, 0 failed
+C phase-wide filter: 129 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 252 passed, 0 failed
+PointerPackageTests.xctest: 254 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 252 passed, 0 failed
+full tests: 254 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

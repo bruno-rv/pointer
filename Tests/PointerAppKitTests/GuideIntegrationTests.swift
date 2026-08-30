@@ -102,6 +102,29 @@ final class GuideIntegrationTests: XCTestCase {
         XCTAssertTrue(fixture.guide.isVisible)
     }
 
+    func testFailedFirstUseKeepsIntentWhenPaletteHiddenBeforeZeroDisplay() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+        fixture.controller.start()
+        fixture.palette.hide()
+        fixture.events.removeAll()
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.hideForDisplayLoss"])
+        XCTAssertFalse(fixture.palette.window.isVisible)
+
+        fixture.guide.showIfNeededResult = .shown
+        fixture.events.removeAll()
+        fixture.controller.showPalette()
+
+        XCTAssertEqual(fixture.events, ["palette.show", "guide.showIfNeeded"])
+        XCTAssertTrue(fixture.guide.isVisible)
+    }
+
     func testSuccessfulLearnPointerConsumesFailedFirstUseAndDismissalStaysDismissed() {
         let fixture = GuideControllerFixture()
         fixture.guide.showIfNeededResult = .failed("panel unavailable")
@@ -200,6 +223,32 @@ final class GuideIntegrationTests: XCTestCase {
         fixture.postScreenChange()
 
         XCTAssertEqual(fixture.events, ["guide.restoreAfterDisplayLoss"])
+        XCTAssertTrue(fixture.guide.isVisible)
+    }
+
+    func testFailedRestoreKeepsIntentWhenPaletteIsHiddenBeforeExplicitShow() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.guide.restoreAfterDisplayLossResult = .failed("panel unavailable")
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        fixture.palette.hide()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+        fixture.guide.restoreAfterDisplayLossResult = .shown
+        fixture.controller.showPalette()
+
+        XCTAssertEqual(fixture.events, ["palette.show", "guide.restoreAfterDisplayLoss"])
+        XCTAssertEqual(
+            fixture.guide.lastContext?.paletteFrame,
+            DisplayFrame(fixture.palette.window.frame)
+        )
         XCTAssertTrue(fixture.guide.isVisible)
     }
 
