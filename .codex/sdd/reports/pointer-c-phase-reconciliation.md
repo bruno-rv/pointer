@@ -66,6 +66,15 @@ missing stable palette.overflow.tool.* identifiers, selected/not-selected
 accessibility values, and overflow rows in ControlMetadataInventory
 ```
 
+The canonical guide protocol-ownership test was then run RED before moving
+the state-store declaration:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter GuideIntegrationTests/testGuideProtocolOwnershipUsesCanonicalFilesWithoutDuplicates
+exit 1
+FirstUseGuideStateStoring.swift could not be opened because the file does not exist
+```
+
 After the explicit Learn Pointer tests, fresh-context real-fixture test,
 hidden-palette intent preservation, shortcut precedence guard, and single
 tool-label source were implemented, the focused suite was rerun GREEN:
@@ -74,10 +83,23 @@ tool-label source were implemented, the focused suite was rerun GREEN:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|GuideIntegrationTests|PaletteInteractionTests'
 exit 0
 CommandRouterTests: 18 passed
-GuideIntegrationTests: 37 passed
+GuideIntegrationTests: 38 passed
 PaletteInteractionTests: 36 passed
-total: 91 passed, 0 failed
+total: 92 passed, 0 failed
 ```
+
+The ownership split was then verified GREEN by the same source-contract test:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter GuideIntegrationTests/testGuideProtocolOwnershipUsesCanonicalFilesWithoutDuplicates
+exit 0
+exactly one state-store declaration, one presenting declaration, and zero
+duplicate declarations/extensions across Sources and Help files
+```
+
+The state-store protocol appears exactly once in its canonical file, the
+presenting protocol exactly once in its canonical file, and no other Help
+source redeclares or extends either protocol.
 
 The fresh-context test reuses the existing real `GuideControllerFixture` and
 `PalettePanel`: its placement provider suppresses only the context-request
@@ -124,11 +146,15 @@ and keeps the assertion on production behavior.
 - Shortcut-error suppression is durable across repeated refreshes while the
   router still holds the exact hidden feedback; changing or clearing that
   feedback releases suppression for the next status update.
+- `FirstUseGuideStateStoring` is a separate canonical public `@MainActor` seam
+  consumed by C and D, while `FirstUseGuidePresenting` remains the sole
+  presenting-protocol declaration. The source contract rejects duplicate
+  declarations or extensions in D Help sources.
 
 ## Current source context
 
-The reviewer revision was applied on top of `74d7276` (`fix: retain Pointer
-guide intent`), which contains the prior C phase implementation. This
+The reviewer revision was applied on top of `070e1c8` (`docs: record Pointer
+overflow contract`), which contains the prior C phase implementation. This
 handoff intentionally has no new commit; the coordinator owns commit grouping
 and publication.
 
@@ -142,6 +168,7 @@ Changed paths in this worker diff:
 - `Sources/PointerAppKit/Palette/ControlMetadataProvider.swift`
 - `Sources/PointerAppKit/Palette/PaletteViewController.swift`
 - `Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift`
+- `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift`
 - `Sources/PointerAppKit/PointerApplicationController.swift`
 - `Tests/PointerAppKitTests/CommandRouterTests.swift`
 - `Tests/PointerAppKitTests/GuideIntegrationTests.swift`
@@ -161,15 +188,15 @@ After the focused GREEN run:
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 130 passed, 0 failed
+C phase-wide filter: 131 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 255 passed, 0 failed
+PointerPackageTests.xctest: 256 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 255 passed, 0 failed
+full tests: 256 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

@@ -1,11 +1,5 @@
 import AppKit
 
-@MainActor
-public protocol FirstUseGuideStateStoring: AnyObject {
-    var hasDismissedFirstUseGuide: Bool { get }
-    func markFirstUseGuideDismissed()
-}
-
 public enum GuidePresentationResult: Equatable, Sendable {
     case shown
     case notNeeded

@@ -28,7 +28,7 @@
 - Local raster assets must compile through actool into Assets.car with CFBundleIconName=AppIcon; raw xcassets copying is not success.
 - Preserve normalized geometry, stroke/opacity, click-through, selection handles, one-spotlight behavior, and standby mark visibility. Persistent complexity must not increase and at least one persistent dimension must decrease.
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve unrelated dirty files and generated artifacts in /Users/bruno/Dev/pointer.
-- D owns Sources/PointerAppKit/Rendering/RenderPlan.swift, Sources/PointerAppKit/Rendering/HandleInventory.swift, MarkRenderer.swift, Bundle/Assets.xcassets/**, Bundle/AppIconIdentity.json, the five Help files listed below, RenderPlanTests.swift, FirstUseGuideTests.swift, and visual/accessibility snapshot tests/resources; it does not edit A's Support/** or Harness/** or other workstreams.
+- D owns Sources/PointerAppKit/Rendering/RenderPlan.swift, Sources/PointerAppKit/Rendering/HandleInventory.swift, MarkRenderer.swift, Bundle/Assets.xcassets/**, Bundle/AppIconIdentity.json, its concrete Help implementation/catalog files listed below, RenderPlanTests.swift, FirstUseGuideTests.swift, and visual/accessibility snapshot tests/resources; D consumes the C-predeclared `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift` seam and does not redeclare or extend it. It does not edit A's Support/** or Harness/** or other workstreams.
 
 ---
 
@@ -36,6 +36,8 @@
 
 D's public top-level RenderPlan and HandleInventory are consumed by B's CanvasView follow-up, not drawn only in a D test. After D accepts them, B wires CanvasView.renderPlan and the live draw sequence: session update or gesture boundary -> preview canvas/mode/selection/active draft -> RenderPlan.make(...) -> CanvasView.renderPlan -> CanvasView.draw(_:) -> MarkRenderer.draw(plan:in:context:). A's later Harness phase consumes the same values for deterministic inventory assertions; C and F consume only the guide protocol. D does not edit B's CanvasView.
 
+    // Existing C-predeclared seam consumed by D:
+    // Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift
     @MainActor
     public protocol FirstUseGuideStateStoring: AnyObject {
         var hasDismissedFirstUseGuide: Bool { get }
@@ -215,7 +217,7 @@ Handoff to the coordinator is the accepted public RenderPlan/HandleInventory sig
 
 **Files:**
 
-- Create: Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift
+- Existing/Consume: Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift
 - Create: Sources/PointerAppKit/Help/UserDefaultsFirstUseGuideStateStore.swift
 - Create: Sources/PointerAppKit/Help/FirstUseGuideController.swift
 - Create: Sources/PointerAppKit/Help/FirstUseGuideViewController.swift
@@ -250,9 +252,12 @@ FirstUseGuideController implements the C-owned FirstUseGuidePresenting protocol 
 The source-contract test resolves paths from #filePath and asserts exactly one
 FirstUseGuidePresenting protocol declaration in
 `Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift`, no protocol
-declaration or extension in D's Help sources, and `assetCatalog` appears only
-on the concrete D controller/catalog implementation—not on the protocol or C
-controller.
+declaration or extension in D's Help sources, exactly one
+FirstUseGuideStateStoring declaration in
+`Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift`, no state-store
+protocol declaration or extension in D's Help sources, and `assetCatalog`
+appears only on the concrete D controller/catalog implementation—not on either
+protocol or C controller.
 
 - [ ] **Step 4: Implement guide panel and accessible examples.**
 

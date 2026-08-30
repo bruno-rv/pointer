@@ -5,6 +5,69 @@ import XCTest
 
 @MainActor
 final class GuideIntegrationTests: XCTestCase {
+    func testGuideProtocolOwnershipUsesCanonicalFilesWithoutDuplicates() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let helpRoot = repositoryRoot
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("PointerAppKit")
+            .appendingPathComponent("Help")
+        let stateURL = helpRoot.appendingPathComponent("FirstUseGuideStateStoring.swift")
+        let presentingURL = helpRoot.appendingPathComponent("FirstUseGuidePresenting.swift")
+        let stateSource = try String(contentsOf: stateURL, encoding: .utf8)
+        let presentingSource = try String(contentsOf: presentingURL, encoding: .utf8)
+
+        XCTAssertEqual(stateSource.components(separatedBy: "protocol FirstUseGuideStateStoring").count - 1, 1)
+        XCTAssertEqual(presentingSource.components(separatedBy: "protocol FirstUseGuidePresenting").count - 1, 1)
+        XCTAssertEqual(presentingSource.components(separatedBy: "protocol FirstUseGuideStateStoring").count - 1, 0)
+
+        let sourceRoot = repositoryRoot.appendingPathComponent("Sources")
+        let sourceFiles = try FileManager.default
+            .subpathsOfDirectory(atPath: sourceRoot.path)
+            .filter { $0.hasSuffix(".swift") }
+        var stateDeclarationCount = 0
+        var presentingDeclarationCount = 0
+        var stateExtensionCount = 0
+        var presentingExtensionCount = 0
+        for relativePath in sourceFiles {
+            let source = try String(
+                contentsOf: sourceRoot.appendingPathComponent(relativePath),
+                encoding: .utf8
+            )
+            stateDeclarationCount += source
+                .components(separatedBy: "protocol FirstUseGuideStateStoring")
+                .count - 1
+            presentingDeclarationCount += source
+                .components(separatedBy: "protocol FirstUseGuidePresenting")
+                .count - 1
+            stateExtensionCount += source
+                .components(separatedBy: "extension FirstUseGuideStateStoring")
+                .count - 1
+            presentingExtensionCount += source
+                .components(separatedBy: "extension FirstUseGuidePresenting")
+                .count - 1
+        }
+        XCTAssertEqual(stateDeclarationCount, 1)
+        XCTAssertEqual(presentingDeclarationCount, 1)
+        XCTAssertEqual(stateExtensionCount, 0)
+        XCTAssertEqual(presentingExtensionCount, 0)
+
+        let helpFiles = try FileManager.default
+            .subpathsOfDirectory(atPath: helpRoot.path)
+            .filter { $0.hasSuffix(".swift") }
+        for relativePath in helpFiles {
+            let url = helpRoot.appendingPathComponent(relativePath)
+            if url == stateURL || url == presentingURL { continue }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertFalse(source.contains("protocol FirstUseGuideStateStoring"), url.path)
+            XCTAssertFalse(source.contains("protocol FirstUseGuidePresenting"), url.path)
+            XCTAssertFalse(source.contains("extension FirstUseGuideStateStoring"), url.path)
+            XCTAssertFalse(source.contains("extension FirstUseGuidePresenting"), url.path)
+        }
+    }
+
     func testOrdinaryConnectedDisplaySyncDoesNotReshowOrRepositionPalette() {
         let fixture = GuideControllerFixture()
         fixture.controller.start()

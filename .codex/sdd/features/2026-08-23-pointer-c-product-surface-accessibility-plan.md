@@ -22,7 +22,7 @@
 - `PointerSession.selectedDisplay` is a B-owned session handoff consumed read-only by C's palette selection/style surface; future changes to its ownership return to B. C does not recreate or infer a selected display.
 - Production shortcut/store/controller construction is dependency-injected; no production convenience initializer discovers global state.
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve unrelated dirty files and generated artifacts in /Users/bruno/Dev/pointer.
-- This workstream owns Sources/PointerAppKit/Palette/**, Sources/PointerAppKit/Palette/GuidePlacementContext.swift, Sources/PointerAppKit/Palette/GuidePlacementProvider.swift, Sources/PointerAppKit/Palette/ControlMetadataProvider.swift, CommandRouter.swift, MenuBarController.swift, PointerApplication.swift, PointerApplicationController.swift, Shortcuts/**, new Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift, and app-controller/palette/command/shortcut tests except A's Support/** and Harness/** and F's PointerCompositionTests.
+- This workstream owns Sources/PointerAppKit/Palette/**, Sources/PointerAppKit/Palette/GuidePlacementContext.swift, Sources/PointerAppKit/Palette/GuidePlacementProvider.swift, Sources/PointerAppKit/Palette/ControlMetadataProvider.swift, CommandRouter.swift, MenuBarController.swift, PointerApplication.swift, PointerApplicationController.swift, Shortcuts/**, new Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift, and app-controller/palette/command/shortcut tests except A's Support/** and Harness/** and F's PointerCompositionTests. C predeclares and consumes the canonical `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift` seam; D owns its concrete state-store implementation.
 - Do not edit D's concrete guide files/assets, F's composition/build files, B's lifecycle implementation, A's diagnostics, E's measurement files, or unrelated cleanup.
 
 ---
@@ -42,6 +42,12 @@ C consumes B's DisplaySyncResult, DisplayStopResult, DisplayCoordinator.onDispla
         case shown
         case notNeeded
         case failed(String)
+    }
+
+    @MainActor
+    public protocol FirstUseGuideStateStoring: AnyObject {
+        var hasDismissedFirstUseGuide: Bool { get }
+        func markFirstUseGuideDismissed()
     }
 
     @MainActor
@@ -372,6 +378,7 @@ Expected: PASS at wide and 420-point layouts, with stable identifiers, names, va
 **Files:**
 
 - Create: Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift
+- Consume: Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift
 - Modify: Sources/PointerAppKit/PointerApplicationController.swift
 - Modify: Sources/PointerAppKit/MenuBarController.swift
 - Modify: Sources/PointerAppKit/PointerApplication.swift
@@ -500,7 +507,7 @@ Expected: compilation fails because FirstUseGuidePresenting, injected PointerApp
 
 - [ ] **Step 3: Add the protocol and explicit dependency injection.**
 
-Create FirstUseGuidePresenting.swift with the exact placement-aware methods above. Remove the production no-argument PointerApplicationController initializer; require screenProvider, displayCoordinator, commandRouter, palette, menuBar, shortcutController, guide, guideStateStore, controlMetadataProvider, guidePlacementProvider, and notificationCenter. C depends only on the catalog-agnostic guide contract; D's concrete guide owns/exposes its injected asset catalog. Keep any test-only convenience construction under the existing PointerAppKitTests target and unavailable to the production target. Wire PointerApplication with:
+Create FirstUseGuidePresenting.swift with the exact placement-aware methods above; consume the already canonical `FirstUseGuideStateStoring.swift` declaration without redeclaring it. Remove the production no-argument PointerApplicationController initializer; require screenProvider, displayCoordinator, commandRouter, palette, menuBar, shortcutController, guide, guideStateStore, controlMetadataProvider, guidePlacementProvider, and notificationCenter. C depends only on the catalog-agnostic guide/state contracts; D's concrete guide owns/exposes its injected asset catalog and concrete state store. Keep any test-only convenience construction under the existing PointerAppKitTests target and unavailable to the production target. Wire PointerApplication with:
 
     public weak var commandRouter: CommandRouter?
     public weak var localKeyRouter: (any LocalKeyRouting)?
