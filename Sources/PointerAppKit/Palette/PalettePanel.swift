@@ -84,6 +84,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
     @discardableResult
     public func show(on display: DisplayDescriptor) -> PaletteShowResult {
         guard isValid(display.visibleFrame) else {
+            hide()
             return .noDisplay
         }
 
@@ -94,14 +95,14 @@ public final class PalettePanel: NSPanel, PalettePresenting {
             CGFloat(display.visibleFrame.width) - (Self.placementMargin * 2)
         )
         guard width.isFinite, width > 0, size.height.isFinite, size.height > 0 else {
-            orderOut(nil)
+            hide()
             return .failed("Palette layout produced an invalid size")
         }
         paletteViewController.applyLayout(for: width)
         guard width >= Self.minimumNativeWidth,
               CGFloat(display.visibleFrame.height) >= size.height + (Self.placementMargin * 2)
         else {
-            orderOut(nil)
+            hide()
             return .failed("Palette display is too small for native layout")
         }
         contentMinSize = NSSize(width: Self.minimumNativeWidth, height: size.height)
@@ -119,18 +120,14 @@ public final class PalettePanel: NSPanel, PalettePresenting {
                 height: display.visibleFrame.height
             )
         )
-        let restoresAppearanceObservation = paletteViewController.appearanceObserverCount == 0
-        if restoresAppearanceObservation {
+        if paletteViewController.appearanceObserverCount == 0 {
             paletteViewController.startAppearanceObservation()
         }
         setFrameOrigin(NSPoint(x: placement.x, y: placement.y))
         orderFrontRegardless()
 
         guard isVisible else {
-            orderOut(nil)
-            if restoresAppearanceObservation {
-                paletteViewController.stopAppearanceObservation()
-            }
+            hide()
             return .failed("Palette window did not become visible")
         }
         let paletteFrame = DisplayFrame(
@@ -143,10 +140,7 @@ public final class PalettePanel: NSPanel, PalettePresenting {
             for: display,
             paletteFrame: paletteFrame
         ) else {
-            orderOut(nil)
-            if restoresAppearanceObservation {
-                paletteViewController.stopAppearanceObservation()
-            }
+            hide()
             return .failed("Palette placement produced an invalid frame")
         }
         return .shown(context)
@@ -154,11 +148,11 @@ public final class PalettePanel: NSPanel, PalettePresenting {
 
     public func hide() {
         orderOut(nil)
+        stopAppearanceObservation()
     }
 
     public override func close() {
-        stopAppearanceObservation()
-        orderOut(nil)
+        hide()
         super.close()
     }
 

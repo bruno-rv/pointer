@@ -140,6 +140,79 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertEqual(palette.appearanceObserverCount, 0)
     }
 
+    func testEveryHiddenPalettePathStopsObservationAndAllowsReShow() {
+        let display = PaletteInteractionScreenProvider.descriptor()
+        let provider = PaletteInteractionScreenProvider(displays: [display])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let placementProvider = ObservingGuidePlacementProvider()
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: placementProvider
+        )
+        placementProvider.palette = palette
+        defer { palette.close() }
+
+        let invalid = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "invalid-hidden-path"),
+            frame: DisplayFrame(x: 0, y: 0, width: 0, height: 0),
+            visibleFrame: DisplayFrame(x: 0, y: 0, width: 0, height: 0),
+            scaleFactor: 1
+        )
+        let tiny = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "tiny-hidden-path"),
+            frame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            visibleFrame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            scaleFactor: 2
+        )
+
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected initial palette show")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+
+        XCTAssertEqual(palette.show(on: invalid), .noDisplay)
+        XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected re-show after no-display failure")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+
+        guard case .failed = palette.show(on: tiny) else {
+            return XCTFail("Expected too-small display failure")
+        }
+        XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected re-show after too-small failure")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+
+        placementProvider.shouldReturnContext = false
+        guard case .failed = palette.show(on: display) else {
+            return XCTFail("Expected nil placement failure")
+        }
+        XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
+        placementProvider.shouldReturnContext = true
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected re-show after placement failure")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+
+        palette.hide()
+        XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
+        guard case .shown = palette.show(on: display) else {
+            return XCTFail("Expected re-show after direct hide")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+    }
+
     func testPaletteFeedbackImmediatelyUpdatesVisibleStatusAndRefreshRestoresNormalStatus() {
         let provider = PaletteInteractionScreenProvider(displays: [])
         let coordinator = DisplayCoordinator(
@@ -1237,6 +1310,7 @@ private final class ObservingGuidePlacementProvider: GuidePlacementProviding {
 
     weak var palette: PalettePanel?
     var observations: [Observation] = []
+    var shouldReturnContext = true
     private let provider = GuidePlacementProvider()
 
     func context(
@@ -1247,6 +1321,7 @@ private final class ObservingGuidePlacementProvider: GuidePlacementProviding {
             isVisible: palette?.isVisible ?? false,
             refreshCount: palette?.paletteViewController.displayOptionsRefreshCount ?? 0
         ))
+        guard shouldReturnContext else { return nil }
         return provider.context(for: display, paletteFrame: paletteFrame)
     }
 }
