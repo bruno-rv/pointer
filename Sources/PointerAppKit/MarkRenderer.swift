@@ -26,6 +26,29 @@ public enum MarkRenderer {
     }
 
     public static func draw(
+        plan: RenderPlan,
+        in bounds: CGRect,
+        context: CGContext
+    ) {
+        draw(marks: plan.committedMarks, in: bounds, context: context)
+        if let activeDraft = plan.activeDraft {
+            draw(mark: activeDraft, in: bounds, context: context)
+        }
+        guard plan.handles.resize.isVisible,
+              let selectedID = plan.handles.selection.selectedMarkID,
+              let selectedMark = plan.committedMarks.first(where: { $0.id == selectedID })
+        else {
+            return
+        }
+        drawResizeHandles(
+            plan.handles.resize.handles,
+            for: selectedMark,
+            in: bounds,
+            context: context
+        )
+    }
+
+    public static func draw(
         canvas: Canvas,
         selectedID: Mark.ID? = nil,
         in bounds: CGRect,
@@ -192,6 +215,15 @@ public enum MarkRenderer {
         context: CGContext
     ) {
         let handles = visibleHandles(for: mark, selectedID: mark.id)
+        drawResizeHandles(handles, for: mark, in: bounds, context: context)
+    }
+
+    private static func drawResizeHandles(
+        _ handles: [ResizeHandle],
+        for mark: Mark,
+        in bounds: CGRect,
+        context: CGContext
+    ) {
         context.saveGState()
         context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
         context.setStrokeColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
