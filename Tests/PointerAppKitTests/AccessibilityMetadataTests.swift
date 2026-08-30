@@ -157,6 +157,8 @@ private final class AccessibilityShortcutStore: ShortcutStoring {
 
 @MainActor
 private final class AccessibilityShortcutScheduler: ShortcutScheduling {
+    var activeTimerCount: Int { 0 }
+
     @discardableResult
     func schedule(after interval: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {
         fatalError("A failed shortcut registration does not schedule a timer")

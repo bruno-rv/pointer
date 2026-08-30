@@ -196,7 +196,9 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(running.overlayCount, fixture.provider.displays.count)
         XCTAssertEqual(running.timerCount, 0)
         XCTAssertEqual(running.guideCount, 1)
-        XCTAssertGreaterThan(running.callbackCount, 0)
+        // Two router callbacks (state + annotation), one menu binding, one
+        // display-sync callback, and one shortcut-state callback.
+        XCTAssertEqual(running.callbackCount, 5)
 
         fixture.controller.stop()
         let stopped = fixture.controller.resourceCheckpoint
@@ -220,7 +222,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(restarted.overlayCount, fixture.provider.displays.count)
         XCTAssertEqual(restarted.timerCount, 0)
         XCTAssertEqual(restarted.guideCount, 1)
-        XCTAssertGreaterThan(restarted.callbackCount, 0)
+        XCTAssertEqual(restarted.callbackCount, 5)
     }
 
     func testPendingShortcutOwnsOneTimerAndStopClearsTimerAndStateCallback() throws {
@@ -228,19 +230,19 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.start()
         fixture.shortcutController.setShortcut(.controlOptionCommandO)
 
-        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 1)
+        XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 1)
         XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 1)
         XCTAssertNotNil(fixture.shortcutController.onStateChange)
 
         fixture.controller.stop()
 
-        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 0)
+        XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 0)
         XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
         XCTAssertNil(fixture.shortcutController.onStateChange)
         XCTAssertNil(fixture.shortcutController.pendingToken)
 
         fixture.controller.start()
-        XCTAssertEqual(fixture.shortcutController.pendingTimerCount, 0)
+        XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 0)
         XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
         XCTAssertNotNil(fixture.shortcutController.onStateChange)
 
@@ -253,6 +255,21 @@ final class PointerApplicationControllerTests: XCTestCase {
         let activeToken = try XCTUnwrap(fixture.shortcutController.activeToken)
         fixture.registrar.deliver(activeToken)
         XCTAssertEqual(statePublicationCount, 1)
+    }
+
+    func testStoppingCancelsPendingShortcutTimeoutBeforeLateActionCanPublish() {
+        let fixture = ControllerFixture()
+        fixture.controller.start()
+        fixture.shortcutController.setShortcut(.controlOptionCommandO)
+        XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 1)
+
+        fixture.controller.stop()
+        XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 0)
+
+        fixture.shortcutScheduler.fireAll()
+
+        XCTAssertNil(fixture.shortcutController.registrationError)
+        XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
     }
 
     func testStopStartRebindsClearAllCallbackExactlyOnce() throws {

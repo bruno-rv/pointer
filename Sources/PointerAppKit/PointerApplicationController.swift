@@ -1,6 +1,13 @@
 import AppKit
 import PointerCore
 
+/// A snapshot of active resources owned by a started application controller.
+///
+/// Counts describe bounded lifecycle resources that `stop()` must release:
+/// visible windows and guides, status items, notification observers, bound
+/// lifecycle callbacks, scheduled timer actions, and active overlays. They
+/// intentionally exclude permanent object-lifetime wiring such as the
+/// palette's feedback closure and the coordinator's session-update closure.
 public struct PointerResourceCheckpoint: Equatable, Sendable {
     public let paletteCount: Int
     public let menuCount: Int
@@ -57,7 +64,6 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public var resourceCheckpoint: PointerResourceCheckpoint {
         let commandCallbackCount = [
             commandRouter.onStateChange != nil,
-            commandRouter.onClearAllRequested != nil,
             commandRouter.onAnnotationEntry != nil,
         ].filter { $0 }.count
         let displayCallbackCount = displayCoordinator.onDisplaySync == nil ? 0 : 1
@@ -73,7 +79,7 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
                 + (menuBar?.callbackBindingCount ?? 0)
                 + displayCallbackCount
                 + (shortcutController.onStateChange == nil ? 0 : 1),
-            timerCount: shortcutController.pendingTimerCount,
+            timerCount: shortcutController.scheduler.activeTimerCount,
             guideCount: guide.isVisible ? 1 : 0
         )
     }

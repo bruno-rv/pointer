@@ -10,6 +10,9 @@ public struct ShortcutScheduleToken: Hashable, Sendable {
 
 @MainActor
 public protocol ShortcutScheduling: AnyObject {
+    /// Number of scheduled actions that can still execute or be cancelled.
+    var activeTimerCount: Int { get }
+
     @discardableResult
     func schedule(after interval: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken
     func cancel(_ token: ShortcutScheduleToken)
@@ -21,6 +24,10 @@ public final class DispatchShortcutScheduler: ShortcutScheduling {
     private var workItems: [ShortcutScheduleToken: DispatchWorkItem] = [:]
 
     public init() {}
+
+    public var activeTimerCount: Int {
+        workItems.count
+    }
 
     @discardableResult
     public func schedule(

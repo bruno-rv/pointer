@@ -250,6 +250,7 @@ private final class ShortcutTestScheduler: ShortcutScheduling {
     private var actions: [ShortcutScheduleToken: () -> Void] = [:]
 
     var pendingCount: Int { actions.count }
+    var activeTimerCount: Int { actions.count }
 
     @discardableResult
     func schedule(after _: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {

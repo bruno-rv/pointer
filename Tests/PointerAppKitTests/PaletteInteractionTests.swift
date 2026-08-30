@@ -881,7 +881,7 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertEqual(controller.displayOptionsRefreshCount, initialRefreshCount + 1)
         XCTAssertTrue(controller.isVisualEffectHidden)
         XCTAssertEqual(controller.appliedBorderWidth, 2)
-        XCTAssertTrue(controller.hasOpaqueBackground)
+        XCTAssertEqual(controller.view.layer?.backgroundColor?.alpha ?? 0, 1, accuracy: 0.001)
         XCTAssertEqual(controller.view.frame, originalFrame)
 
         options = PaletteViewController.DisplayOptions(
@@ -895,7 +895,74 @@ final class PaletteInteractionTests: XCTestCase {
 
         XCTAssertFalse(controller.isVisualEffectHidden)
         XCTAssertEqual(controller.appliedBorderWidth, 1)
-        XCTAssertFalse(controller.hasOpaqueBackground)
+        XCTAssertEqual(controller.view.layer?.backgroundColor?.alpha ?? 0, 0.84, accuracy: 0.001)
+    }
+
+    func testRestartingAppearanceObservationAppliesOptionsChangedWhileStopped() {
+        var options = PaletteViewController.DisplayOptions(
+            reduceTransparency: false,
+            increaseContrast: false
+        )
+        let controller = PaletteViewController(
+            router: makeRouter(),
+            displayOptionsProvider: { options }
+        )
+        controller.loadViewIfNeeded()
+        controller.stopAppearanceObservation()
+
+        options = PaletteViewController.DisplayOptions(
+            reduceTransparency: true,
+            increaseContrast: true
+        )
+        controller.startAppearanceObservation()
+
+        XCTAssertEqual(controller.appliedDisplayOptions, options)
+        XCTAssertTrue(controller.isVisualEffectHidden)
+        XCTAssertEqual(controller.view.layer?.backgroundColor?.alpha ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(controller.appliedBorderWidth, 2)
+        XCTAssertEqual(controller.appearanceObserverCount, 1)
+    }
+
+    func testClosingAndShowingPaletteRestartsAppearanceObservation() throws {
+        let fixture = acceptedFixture()
+        let placementProvider = ObservingGuidePlacementProvider()
+        let palette = PalettePanel(
+            router: fixture.router,
+            guidePlacementProvider: placementProvider
+        )
+        placementProvider.palette = palette
+        defer { palette.close() }
+
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to be shown")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+        let refreshCount = palette.paletteViewController.displayOptionsRefreshCount
+
+        placementProvider.observations.removeAll()
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to remain shown")
+        }
+        XCTAssertEqual(palette.paletteViewController.displayOptionsRefreshCount, refreshCount)
+        XCTAssertEqual(placementProvider.observations.last?.refreshCount, refreshCount)
+
+        palette.close()
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
+        let refreshCountBeforeReshow = palette.paletteViewController.displayOptionsRefreshCount
+
+        placementProvider.observations.removeAll()
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to be shown after close")
+        }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
+        XCTAssertEqual(
+            palette.paletteViewController.displayOptionsRefreshCount,
+            refreshCountBeforeReshow + 1
+        )
+        XCTAssertEqual(
+            placementProvider.observations.last?.refreshCount,
+            refreshCountBeforeReshow + 1
+        )
     }
 
     func testFeedbackDoesNotStealFocusOrMovePalette() throws {
@@ -1128,5 +1195,28 @@ private final class NilGuidePlacementProvider: GuidePlacementProviding {
         paletteFrame: DisplayFrame
     ) -> GuidePlacementContext? {
         nil
+    }
+}
+
+@MainActor
+private final class ObservingGuidePlacementProvider: GuidePlacementProviding {
+    struct Observation {
+        let isVisible: Bool
+        let refreshCount: Int
+    }
+
+    weak var palette: PalettePanel?
+    var observations: [Observation] = []
+    private let provider = GuidePlacementProvider()
+
+    func context(
+        for display: DisplayDescriptor,
+        paletteFrame: DisplayFrame
+    ) -> GuidePlacementContext? {
+        observations.append(Observation(
+            isVisible: palette?.isVisible ?? false,
+            refreshCount: palette?.paletteViewController.displayOptionsRefreshCount ?? 0
+        ))
+        return provider.context(for: display, paletteFrame: paletteFrame)
     }
 }

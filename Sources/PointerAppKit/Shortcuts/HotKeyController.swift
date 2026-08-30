@@ -35,10 +35,6 @@ public final class HotKeyController {
         activeToken != nil
     }
 
-    public var pendingTimerCount: Int {
-        timeoutToken == nil ? 0 : 1
-    }
-
     public func start() {
         guard !started else { return }
         started = true

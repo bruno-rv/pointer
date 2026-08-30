@@ -239,10 +239,6 @@ public final class PaletteViewController: NSViewController {
         viewIfLoaded?.layer?.borderWidth ?? 0
     }
 
-    public var hasOpaqueBackground: Bool {
-        appliedDisplayOptions.reduceTransparency
-    }
-
     public var appearanceObserverCount: Int {
         displayOptionsObserver == nil ? 0 : 1
     }
@@ -252,6 +248,7 @@ public final class PaletteViewController: NSViewController {
             loadViewIfNeeded()
             return
         }
+        applyDisplayOptions()
         installDisplayOptionsObserver()
     }
 

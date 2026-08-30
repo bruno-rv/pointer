@@ -616,7 +616,7 @@ Expected: PASS with old-shortcut preservation, candidate delivery, timeout, late
 - Every palette/menu control has a stable identifier, accessible name, help, role/value where relevant, enabled/selected state, keyboard route, and visible focus ring.
 - VoiceOver-relevant order is mode, tool controls, relevant style controls, actions, status/shortcut error; no state relies on color alone.
 - Reduce Transparency hides the visual effect and supplies an opaque background; Increase Contrast increases border/focus contrast; error/disabled/selected states have non-color cues.
-- Lifecycle checkpoints assert running, stopped, and restarted bounded resources independently: one palette, one menu item, one screen observer, one shortcut wiring, one overlay per connected display, zero normal timers; stop has zero owned windows/overlays/timers/callbacks/observers; restart rebuilds one of each without duplicates.
+- Lifecycle checkpoints assert running, stopped, and restarted bounded resources independently: one palette, one menu item, one screen observer, one shortcut wiring, one overlay per connected display, zero normal timers; stop has zero active controller-owned lifecycle windows/overlays/timers/callbacks/observers (permanent object-lifetime wiring is not an active resource); restart rebuilds one of each without duplicates.
 - CommandRouter.clearCallbacks()/bindCallbacks(...) and MenuBarController.clearCallbacks()/bindCallbacks() are the only callback lifecycle APIs. The stop/start tests assert callback binding count one after restart and one Clear All confirmation/command for one menu action.
 
 - [ ] **Step 1: Add failing accessibility and checkpoint tests.**

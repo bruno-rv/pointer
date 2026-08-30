@@ -193,6 +193,7 @@ private final class FakeShortcutScheduler: ShortcutScheduling {
     private(set) var intervals: [TimeInterval] = []
 
     var pendingCount: Int { actions.count }
+    var activeTimerCount: Int { actions.count }
 
     @discardableResult
     func schedule(after interval: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {

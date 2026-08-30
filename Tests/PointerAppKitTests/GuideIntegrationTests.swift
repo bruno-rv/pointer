@@ -692,15 +692,27 @@ final class GuideTestShortcutStore: ShortcutStoring {
 @MainActor
 final class GuideTestShortcutScheduler: ShortcutScheduling {
     private var nextToken: UInt64 = 1
+    private var actions: [ShortcutScheduleToken: () -> Void] = [:]
+
+    var activeTimerCount: Int { actions.count }
 
     @discardableResult
     func schedule(after interval: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {
         let token = ShortcutScheduleToken(rawValue: nextToken)
         nextToken += 1
+        actions[token] = action
         return token
     }
 
-    func cancel(_ token: ShortcutScheduleToken) {}
+    func cancel(_ token: ShortcutScheduleToken) {
+        actions.removeValue(forKey: token)
+    }
+
+    func fireAll() {
+        let pending = Array(actions.values)
+        actions.removeAll()
+        pending.forEach { $0() }
+    }
 }
 
 private func keyDown(keyCode: UInt16) -> NSEvent {

@@ -119,11 +119,18 @@ public final class PalettePanel: NSPanel, PalettePresenting {
                 height: display.visibleFrame.height
             )
         )
+        let restoresAppearanceObservation = paletteViewController.appearanceObserverCount == 0
+        if restoresAppearanceObservation {
+            paletteViewController.startAppearanceObservation()
+        }
         setFrameOrigin(NSPoint(x: placement.x, y: placement.y))
         orderFrontRegardless()
 
         guard isVisible else {
             orderOut(nil)
+            if restoresAppearanceObservation {
+                paletteViewController.stopAppearanceObservation()
+            }
             return .failed("Palette window did not become visible")
         }
         let paletteFrame = DisplayFrame(
@@ -137,6 +144,9 @@ public final class PalettePanel: NSPanel, PalettePresenting {
             paletteFrame: paletteFrame
         ) else {
             orderOut(nil)
+            if restoresAppearanceObservation {
+                paletteViewController.stopAppearanceObservation()
+            }
             return .failed("Palette placement produced an invalid frame")
         }
         return .shown(context)
