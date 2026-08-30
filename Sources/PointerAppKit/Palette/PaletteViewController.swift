@@ -592,6 +592,7 @@ public final class PaletteViewController: NSViewController {
             "More · \(overflowActiveTitle(for: $0))"
         } ?? "More Tools"
         let header = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
+        header.identifier = NSUserInterfaceItemIdentifier("palette.overflow.header")
         header.setAccessibilityElement(true)
         header.setAccessibilityLabel(
             activeTool.map {
@@ -609,11 +610,16 @@ public final class PaletteViewController: NSViewController {
                 keyEquivalent: ""
             )
             item.target = self
+            item.identifier = NSUserInterfaceItemIdentifier(
+                "palette.overflow.tool.\(tool.identifier)"
+            )
             item.representedObject = tool.identifier
             item.state = activeTool == tool ? .on : .off
             item.setAccessibilityElement(true)
             item.setAccessibilityLabel(tool.displayName)
             item.setAccessibilityHelp("Select the \(tool.displayName) annotation tool")
+            item.setAccessibilityValue(activeTool == tool ? "Selected" : "Not selected")
+            item.setAccessibilityRoleDescription("menu item")
             overflowButton.menu?.addItem(item)
         }
         overflowButton.selectItem(at: 0)

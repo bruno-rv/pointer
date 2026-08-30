@@ -30,7 +30,13 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
         var rows: [ControlMetadata] = []
         if let palette {
             palette.paletteViewController.loadViewIfNeeded()
-            rows.append(contentsOf: palette.paletteViewController.controls.map(metadata(for:)))
+            for control in palette.paletteViewController.controls {
+                rows.append(metadata(for: control))
+                guard control.identifier?.rawValue == "palette.tools.overflow",
+                      let overflow = control as? NSPopUpButton,
+                      let menu = overflow.menu else { continue }
+                append(menu.items, to: &rows)
+            }
         }
         if let menuBar {
             if let button = menuBar.statusItem?.button {

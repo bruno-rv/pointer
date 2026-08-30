@@ -938,6 +938,110 @@ final class PaletteInteractionTests: XCTestCase {
         }
     }
 
+    func testOverflowToolItemsExposeStableAccessibilityMetadataAndInventory() throws {
+        let fixture = acceptedFixture()
+        let palette = PalettePanel(
+            router: fixture.router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+        guard case .shown = palette.show(on: fixture.display) else {
+            return XCTFail("Expected palette to be shown")
+        }
+
+        let controller = palette.paletteViewController
+        controller.loadViewIfNeeded()
+        for width in [420.0, 760.0] {
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+            let overflowTools = controller.layoutPlan.overflowTools
+            XCTAssertFalse(overflowTools.isEmpty)
+            let activeTool = try XCTUnwrap(overflowTools.last)
+            var session = fixture.router.session
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(activeTool))
+            controller.refresh(session: session)
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+
+            let overflow = try XCTUnwrap(
+                controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton
+            )
+            let items = Array(try XCTUnwrap(overflow.menu?.items).dropFirst())
+            XCTAssertEqual(items.count, overflowTools.count)
+            XCTAssertEqual(
+                Set(items.compactMap { $0.identifier?.rawValue }).count,
+                items.count
+            )
+            XCTAssertEqual(
+                Set(items.compactMap { $0.identifier?.rawValue }),
+                Set(overflowTools.map { "palette.overflow.tool.\(toolIdentifier($0))" })
+            )
+
+            for (item, tool) in zip(items, overflowTools) {
+                XCTAssertEqual(
+                    item.identifier?.rawValue,
+                    "palette.overflow.tool.\(toolIdentifier(tool))"
+                )
+                XCTAssertEqual(item.accessibilityLabel(), tool.displayName)
+                XCTAssertFalse(item.accessibilityHelp()?.isEmpty ?? true)
+                XCTAssertEqual(
+                    item.accessibilityValue() as? String,
+                    tool == activeTool ? "Selected" : "Not selected"
+                )
+                XCTAssertEqual(item.isEnabled, true)
+                XCTAssertEqual(item.accessibilityRole()?.rawValue, "AXMenuItem")
+
+                XCTAssertTrue(NSApp.sendAction(item.action!, to: item.target, from: item))
+                XCTAssertEqual(fixture.router.session.toolState.tool, tool)
+            }
+
+            controller.refresh(session: fixture.router.session)
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+            let inventory = ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
+            let overflowRows = inventory.filter {
+                $0.identifier.hasPrefix("palette.overflow.tool.")
+            }
+            XCTAssertEqual(
+                Set(inventory.map(\.identifier)).count,
+                inventory.count
+            )
+            XCTAssertEqual(overflowRows.count, overflowTools.count)
+            XCTAssertEqual(
+                Set(overflowRows.map(\.identifier)).count,
+                overflowRows.count
+            )
+            XCTAssertEqual(
+                Set(overflowRows.map(\.identifier)),
+                Set(overflowTools.map { "palette.overflow.tool.\(toolIdentifier($0))" })
+            )
+            XCTAssertTrue(overflowRows.allSatisfy {
+                !$0.accessibleName.isEmpty
+                    && !$0.help!.isEmpty
+                    && $0.value != nil
+                    && !$0.role.isEmpty
+                    && $0.isEnabled
+                    && $0.isKeyboardReachable
+            })
+            let parentIndex = try XCTUnwrap(
+                inventory.firstIndex { $0.identifier == "palette.tools.overflow" }
+            )
+            let firstItemIndex = try XCTUnwrap(
+                inventory.firstIndex { $0.identifier.hasPrefix("palette.overflow.tool.") }
+            )
+            XCTAssertGreaterThan(firstItemIndex, parentIndex)
+
+            controller.refresh(session: fixture.router.session)
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(
+                inventory,
+                ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
+            )
+        }
+    }
+
     func testNativeKeyViewTraversalMatchesReachableMetadataAtWideAndOverflowWidths() throws {
         for width in [420.0, PaletteLayout.minimumAllToolsWidth] {
             let fixture = acceptedFixture()
@@ -966,6 +1070,7 @@ final class PaletteInteractionTests: XCTestCase {
                 menuBar: nil
             ).metadata()
             .filter(\.isKeyboardReachable)
+            .filter { !$0.identifier.hasPrefix("palette.overflow.tool.") }
             .map(\.identifier)
             let start = palette.paletteViewController.control(identifier: "palette.mode")
             XCTAssertTrue(palette.makeFirstResponder(start))

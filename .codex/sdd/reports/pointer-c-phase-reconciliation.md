@@ -55,6 +55,17 @@ first-use explicit Show Palette: expected guide.showIfNeeded, got palette.show o
 display-loss explicit Show Palette: expected guide.restoreAfterDisplayLoss, got palette.show only
 ```
 
+The overflow accessibility/inventory test was then run RED before adding the
+menu-item contract:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PaletteInteractionTests/testOverflowToolItemsExposeStableAccessibilityMetadataAndInventory
+exit 1
+XCTAssertEqual failed: "1" is not equal to "6"
+missing stable palette.overflow.tool.* identifiers, selected/not-selected
+accessibility values, and overflow rows in ControlMetadataInventory
+```
+
 After the explicit Learn Pointer tests, fresh-context real-fixture test,
 hidden-palette intent preservation, shortcut precedence guard, and single
 tool-label source were implemented, the focused suite was rerun GREEN:
@@ -64,8 +75,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'Co
 exit 0
 CommandRouterTests: 18 passed
 GuideIntegrationTests: 37 passed
-PaletteInteractionTests: 35 passed
-total: 90 passed, 0 failed
+PaletteInteractionTests: 36 passed
+total: 91 passed, 0 failed
 ```
 
 The fresh-context test reuses the existing real `GuideControllerFixture` and
@@ -100,6 +111,12 @@ and keeps the assertion on production behavior.
   `No presentation display connected` message after an accepted valid pointer
   display. Unrelated feedback survives, and the palette status returns to its
   normal mode message after refresh.
+- Overflow tool menu items have stable unique identifiers, accessible
+  label/help/value/role, and are included immediately after the parent popup
+  in deterministic metadata inventory without duplicating hidden tool buttons.
+  Rebuilding at 420 and 760 points preserves item count, IDs, selected state,
+  and routed actions. Emoji presets remain one native value popup rather than a
+  separate action hierarchy, so no additional popup contract was introduced.
 - Palette status gives shortcut registration errors precedence over immediate
   success and no-op feedback, preserves frame/focus, and returns to the current
   normal mode/shortcut status after the error resolves. The module-internal
@@ -110,8 +127,8 @@ and keeps the assertion on production behavior.
 
 ## Current source context
 
-The reviewer revision was applied on top of `433a943` (`fix: reconcile Pointer
-product surface`), which contains the prior C phase implementation. This
+The reviewer revision was applied on top of `74d7276` (`fix: retain Pointer
+guide intent`), which contains the prior C phase implementation. This
 handoff intentionally has no new commit; the coordinator owns commit grouping
 and publication.
 
@@ -122,6 +139,8 @@ Changed paths in this worker diff:
 - `.codex/sdd/features/2026-08-23-pointer-six-month-quality-design.md`
 - `Sources/Pointer/main.swift`
 - `Sources/PointerAppKit/CommandRouter.swift`
+- `Sources/PointerAppKit/Palette/ControlMetadataProvider.swift`
+- `Sources/PointerAppKit/Palette/PaletteViewController.swift`
 - `Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift`
 - `Sources/PointerAppKit/PointerApplicationController.swift`
 - `Tests/PointerAppKitTests/CommandRouterTests.swift`
@@ -142,15 +161,15 @@ After the focused GREEN run:
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 129 passed, 0 failed
+C phase-wide filter: 130 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 254 passed, 0 failed
+PointerPackageTests.xctest: 255 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 254 passed, 0 failed
+full tests: 255 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh
