@@ -42,7 +42,78 @@ final class RenderPlanTests: XCTestCase {
         XCTAssertEqual(annotation.handles.hover, HoverInventory(hoveredMarkID: mark.id, isVisible: true))
         XCTAssertFalse(annotation.handles.resize.handles.isEmpty)
         XCTAssertTrue(annotation.handles.resize.isVisible)
-        XCTAssertFalse(annotation.handles.contextualDeleteVisible)
+        XCTAssertTrue(annotation.handles.contextualDeleteVisible)
+    }
+
+    func testAnnotationInventoryFailsClosedForUnknownSelectionAndHover() {
+        let unknownSelectionID = UUID(uuidString: "00000000-0000-0000-0000-000000000202")!
+        let unknownHoverID = UUID(uuidString: "00000000-0000-0000-0000-000000000203")!
+        let plan = RenderPlan.make(
+            canvas: VisualFixtures.canonicalCanvas(),
+            mode: .annotation,
+            selectedID: unknownSelectionID,
+            activeDraft: nil,
+            hover: HoverInventory(hoveredMarkID: unknownHoverID, isVisible: true)
+        )
+
+        XCTAssertNil(plan.handles.selection.selectedMarkID)
+        XCTAssertFalse(plan.handles.selection.isVisible)
+        XCTAssertNil(plan.handles.hover.hoveredMarkID)
+        XCTAssertFalse(plan.handles.hover.isVisible)
+        XCTAssertTrue(plan.handles.resize.handles.isEmpty)
+        XCTAssertFalse(plan.handles.resize.isVisible)
+        XCTAssertFalse(plan.handles.contextualDeleteVisible)
+    }
+
+    func testOffscreenAnnotationPixelsDrawCommittedThenDraftThenVisibleHandles() throws {
+        let width = 512
+        let height = 512
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try XCTUnwrap(CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let committed = VisualFixtures.canonicalMark()
+        let draft = Mark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000204")!,
+            geometry: committed.geometry,
+            style: MarkStyle(
+                color: RGBAColor(red: 0, green: 0, blue: 1),
+                strokeWidth: 8,
+                opacity: 0.5
+            )
+        )
+        let plan = RenderPlan.make(
+            canvas: VisualFixtures.canonicalCanvas(),
+            mode: .annotation,
+            selectedID: committed.id,
+            activeDraft: draft,
+            hover: HoverInventory(hoveredMarkID: committed.id, isVisible: true)
+        )
+
+        XCTAssertEqual(plan.activeDraft, draft)
+        MarkRenderer.draw(plan: plan, in: bounds, context: context)
+
+        let edge = pixel(in: pixels, width: width, x: 200, y: 128)
+        XCTAssertGreaterThan(edge.alpha, 0)
+        XCTAssertGreaterThan(edge.red, 40)
+        XCTAssertLessThan(edge.red, 220)
+        XCTAssertLessThan(edge.green, 80)
+        XCTAssertGreaterThan(edge.blue, 40)
+        XCTAssertLessThan(edge.blue, 220)
+
+        let handleCenter = pixel(in: pixels, width: width, x: 128, y: 128)
+        XCTAssertGreaterThanOrEqual(handleCenter.red, 250)
+        XCTAssertGreaterThanOrEqual(handleCenter.green, 250)
+        XCTAssertGreaterThanOrEqual(handleCenter.blue, 250)
+        XCTAssertGreaterThanOrEqual(handleCenter.alpha, 250)
     }
 
     func testOffscreenStandbyPixelsContainMarkButNoHandleSentinel() throws {
@@ -97,6 +168,11 @@ final class RenderPlanTests: XCTestCase {
 
     private func alpha(in pixels: [UInt8], width: Int, x: Int, y: Int) -> UInt8 {
         pixels[(y * width + x) * 4 + 3]
+    }
+
+    private func pixel(in pixels: [UInt8], width: Int, x: Int, y: Int) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8) {
+        let offset = (y * width + x) * 4
+        return (pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3])
     }
 
     private func containsOpaqueWhiteOrBlack(

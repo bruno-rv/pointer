@@ -31,23 +31,29 @@ public struct RenderPlan: Equatable, Sendable {
             )
         }
 
-        let resizeHandles = canvas.marks
-            .first(where: { $0.id == selectedID })
-            .map { ResizeGeometry.handles(for: $0.geometry) } ?? []
+        let selectedMark = canvas.marks.first(where: { $0.id == selectedID })
+        let validSelectedID = selectedMark?.id
+        let resizeHandles = selectedMark.map { ResizeGeometry.handles(for: $0.geometry) } ?? []
+        let validHoveredID = canvas.marks
+            .first(where: { $0.id == hover.hoveredMarkID })
+            .map(\.id)
         return RenderPlan(
             committedMarks: canvas.marks,
             activeDraft: activeDraft,
             handles: HandleInventory(
                 selection: SelectionInventory(
-                    selectedMarkID: selectedID,
-                    isVisible: selectedID != nil
+                    selectedMarkID: validSelectedID,
+                    isVisible: validSelectedID != nil
                 ),
-                hover: hover,
+                hover: HoverInventory(
+                    hoveredMarkID: validHoveredID,
+                    isVisible: validHoveredID != nil && hover.isVisible
+                ),
                 resize: ResizeInventory(
                     handles: resizeHandles,
                     isVisible: !resizeHandles.isEmpty
                 ),
-                contextualDeleteVisible: false
+                contextualDeleteVisible: validSelectedID != nil
             )
         )
     }
