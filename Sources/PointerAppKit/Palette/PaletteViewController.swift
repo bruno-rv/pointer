@@ -1,6 +1,16 @@
 import AppKit
 import PointerCore
 
+@MainActor
+final class PaletteRootView: NSView {
+    var onEffectiveAppearanceChange: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onEffectiveAppearanceChange?()
+    }
+}
+
 private final class PaletteStyleScrollView: NSScrollView {
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 42)
@@ -112,7 +122,7 @@ public final class PaletteViewController: NSViewController {
     }
 
     public override func loadView() {
-        let root = NSView(
+        let root = PaletteRootView(
             frame: NSRect(
                 x: 0,
                 y: 0,
@@ -132,6 +142,9 @@ public final class PaletteViewController: NSViewController {
         visualEffectView.blendingMode = .withinWindow
         visualEffectView.state = .active
         root.addSubview(visualEffectView, positioned: .below, relativeTo: nil)
+        root.onEffectiveAppearanceChange = { [weak self] in
+            self?.applyDisplayOptions()
+        }
 
         buildControls()
         layoutControls()
@@ -800,15 +813,17 @@ public final class PaletteViewController: NSViewController {
         let options = displayOptionsProvider()
         appliedDisplayOptions = options
         displayOptionsRefreshCount += 1
-        if options.reduceTransparency {
-            visualEffectView.isHidden = true
-            view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        } else {
-            visualEffectView.isHidden = false
-            view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.84).cgColor
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            if options.reduceTransparency {
+                visualEffectView.isHidden = true
+                view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+            } else {
+                visualEffectView.isHidden = false
+                view.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.84).cgColor
+            }
+            view.layer?.borderWidth = options.increaseContrast ? 2 : 1
+            view.layer?.borderColor = (options.increaseContrast ? NSColor.labelColor : NSColor.separatorColor).cgColor
         }
-        view.layer?.borderWidth = options.increaseContrast ? 2 : 1
-        view.layer?.borderColor = (options.increaseContrast ? NSColor.labelColor : NSColor.separatorColor).cgColor
     }
 
     private func showFeedback(_ message: String) {

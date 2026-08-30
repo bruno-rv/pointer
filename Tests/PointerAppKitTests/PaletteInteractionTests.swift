@@ -1001,6 +1001,49 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertEqual(controller.view.layer?.backgroundColor?.alpha ?? 0, 0.84, accuracy: 0.001)
     }
 
+    func testEffectiveAppearanceReappliesResolvedColorsWithoutChangingFrameFocusOrObserver() throws {
+        let fixture = acceptedFixture()
+        let controller = PaletteViewController(
+            router: fixture.router,
+            displayOptionsProvider: {
+                PaletteViewController.DisplayOptions(
+                    reduceTransparency: false,
+                    increaseContrast: true
+                )
+            }
+        )
+        controller.loadViewIfNeeded()
+        controller.startAppearanceObservation()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = controller.view
+        let focusedControl = controller.control(identifier: "palette.mode")
+        XCTAssertTrue(window.makeFirstResponder(focusedControl))
+        let root = try XCTUnwrap(controller.view as? PaletteRootView)
+        let originalFrame = controller.view.frame
+        let observerCount = controller.appearanceObserverCount
+
+        root.appearance = NSAppearance(named: .aqua)
+        root.viewDidChangeEffectiveAppearance()
+        let aquaBackground = controller.view.layer?.backgroundColor?.components
+        let aquaBorder = controller.view.layer?.borderColor?.components
+
+        root.appearance = NSAppearance(named: .darkAqua)
+        root.viewDidChangeEffectiveAppearance()
+        let darkBackground = controller.view.layer?.backgroundColor?.components
+        let darkBorder = controller.view.layer?.borderColor?.components
+
+        XCTAssertNotEqual(aquaBackground, darkBackground)
+        XCTAssertNotEqual(aquaBorder, darkBorder)
+        XCTAssertEqual(controller.view.frame, originalFrame)
+        XCTAssertTrue(window.firstResponder === focusedControl)
+        XCTAssertEqual(controller.appearanceObserverCount, observerCount)
+    }
+
     func testRestartingAppearanceObservationAppliesOptionsChangedWhileStopped() {
         var options = PaletteViewController.DisplayOptions(
             reduceTransparency: false,

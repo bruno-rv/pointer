@@ -693,6 +693,7 @@ final class GuideTestShortcutStore: ShortcutStoring {
 final class GuideTestShortcutScheduler: ShortcutScheduling {
     private var nextToken: UInt64 = 1
     private var actions: [ShortcutScheduleToken: () -> Void] = [:]
+    private var canceledActions: [ShortcutScheduleToken: () -> Void] = [:]
 
     var activeTimerCount: Int { actions.count }
 
@@ -705,13 +706,21 @@ final class GuideTestShortcutScheduler: ShortcutScheduling {
     }
 
     func cancel(_ token: ShortcutScheduleToken) {
-        actions.removeValue(forKey: token)
+        if let action = actions.removeValue(forKey: token) {
+            canceledActions[token] = action
+        }
     }
 
     func fireAll() {
         let pending = Array(actions.values)
         actions.removeAll()
         pending.forEach { $0() }
+    }
+
+    func fireCanceled() {
+        let canceled = Array(canceledActions.values)
+        canceledActions.removeAll()
+        canceled.forEach { $0() }
     }
 }
 

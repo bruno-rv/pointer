@@ -265,10 +265,15 @@ final class PointerApplicationControllerTests: XCTestCase {
 
         fixture.controller.stop()
         XCTAssertEqual(fixture.shortcutScheduler.activeTimerCount, 0)
+        let activePresetAfterStop = fixture.shortcutController.activePreset
+        let pendingPresetAfterStop = fixture.shortcutController.pendingPreset
+        let registrationErrorAfterStop = fixture.shortcutController.registrationError
 
-        fixture.shortcutScheduler.fireAll()
+        fixture.shortcutScheduler.fireCanceled()
 
-        XCTAssertNil(fixture.shortcutController.registrationError)
+        XCTAssertEqual(fixture.shortcutController.activePreset, activePresetAfterStop)
+        XCTAssertEqual(fixture.shortcutController.pendingPreset, pendingPresetAfterStop)
+        XCTAssertEqual(fixture.shortcutController.registrationError, registrationErrorAfterStop)
         XCTAssertEqual(fixture.controller.resourceCheckpoint.timerCount, 0)
     }
 
