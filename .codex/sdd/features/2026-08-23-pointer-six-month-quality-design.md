@@ -345,9 +345,11 @@ Acceptance criteria:
   actual palette frame, and avoidance frames for the palette, menu/guide, and
   presentation-safe regions. `GuidePlacementProvider` computes it from the
   current display and palette frame; `ControlMetadataProvider` supplies the
-  deterministic menu/palette metadata inventory. C's tests assert that guide
-  show/restore receives the same display, palette frame, and avoidance frames
-  that placement computed, and that the guide never overlaps those frames.
+  deterministic menu/palette metadata inventory, including the real overflow
+  tool items immediately after their parent popup with stable identifiers,
+  values, and keyboard reachability. C's tests assert that guide show/restore
+  receives the same display, palette frame, and avoidance frames that
+  placement computed, and that the guide never overlaps those frames.
 
   The public placement contract is equivalent to:
 

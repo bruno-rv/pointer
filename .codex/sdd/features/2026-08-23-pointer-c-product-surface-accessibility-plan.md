@@ -314,7 +314,7 @@ Expected: PASS, with no-display rejection, explicit PaletteShowResult, contextua
 - Tool controls use native SF Symbols paired with visible canonical titles: Select, Arrow, Rectangle, Ellipse, Pen, Eraser, Emoji, Spotlight. The symbol is never the only accessible name.
 - PaletteViewController.refresh(session:) updates selected tool, mode, style values, shortcut status, contextual visibility/enabled state, and status feedback without moving the window or stealing focus.
 - PaletteLayout.plan(availableWidth:) keeps every tool reachable at width 420, gives overflow an obvious “More Tools” label, and never returns a zero-width tool.
-- ControlMetadataInventory in Palette/ControlMetadataProvider.swift conforms to ControlMetadataProviding, accepts the real PalettePanel and MenuBarController hierarchy, and returns one deterministic ControlMetadata row per palette/menu control in keyboard order through metadata(). It has no mutation API and never exposes NSControl instances.
+- ControlMetadataInventory in Palette/ControlMetadataProvider.swift conforms to ControlMetadataProviding, accepts the real PalettePanel and MenuBarController hierarchy, and returns one deterministic ControlMetadata row per palette/menu control in keyboard order through metadata(). The overflow popup contributes its real header/tool menu items immediately after the parent popup; each tool item has a stable `palette.overflow.tool.<tool>` identifier, accessible value, and honest enabled/keyboard state, without duplicating hidden `palette.tool.<tool>` controls. It has no mutation API and never exposes NSControl instances.
 
 - [ ] **Step 1: Write failing layout, enabled-state, and focus-order tests.**
 
