@@ -34,6 +34,7 @@ public final class CommandRouter {
     private var acceptedDisplayState: DisplaySyncResult?
     private var lastObservedSession: PointerSession?
     private var pendingSelectionClearID: Mark.ID?
+    private static let noDisplayFeedback = "No presentation display connected"
 
     public init(
         coordinator: DisplayCoordinator,
@@ -104,6 +105,10 @@ public final class CommandRouter {
         if acceptedPointerDisplay == nil {
             pendingSelectionClearID = nil
         }
+        if acceptedPointerDisplay != nil,
+           feedbackMessage == Self.noDisplayFeedback {
+            feedbackMessage = nil
+        }
     }
 
     public func route(_ command: Command) {
@@ -146,11 +151,16 @@ public final class CommandRouter {
             coordinator.apply(.undoClearAll)
         case let .setTool(tool):
             guard requirePointerDisplayForAnnotation() else { return }
-            clearFeedback()
+            let entersAnnotation = session.mode != .annotation
             coordinator.apply(.setTool(tool))
-            if session.mode != .annotation {
+            if entersAnnotation {
                 coordinator.apply(.setMode(.annotation))
             }
+            publishFeedback(
+                entersAnnotation
+                    ? "Annotation enabled · \(toolName(tool)) tool selected"
+                    : "\(toolName(tool)) tool selected"
+            )
             onAnnotationEntry?()
         case let .setStyle(style):
             clearFeedback()
@@ -164,23 +174,23 @@ public final class CommandRouter {
         case let .setMode(mode):
             if mode == .annotation {
                 guard requirePointerDisplayForAnnotation() else { return }
-                clearFeedback()
                 coordinator.apply(.setMode(mode))
+                publishFeedback("Annotation enabled")
                 onAnnotationEntry?()
             } else {
-                clearFeedback()
                 coordinator.apply(.setMode(mode))
+                publishFeedback("Standby — overlays are click-through")
             }
         case .toggleMode:
             let nextMode: PointerMode = session.mode == .annotation ? .standby : .annotation
             if nextMode == .annotation {
                 guard requirePointerDisplayForAnnotation() else { return }
-                clearFeedback()
                 coordinator.apply(.setMode(nextMode))
+                publishFeedback("Annotation enabled")
                 onAnnotationEntry?()
             } else {
-                clearFeedback()
                 coordinator.apply(.setMode(nextMode))
+                publishFeedback("Standby — overlays are click-through")
             }
         case let .setShortcut(preset):
             clearFeedback()
@@ -222,7 +232,7 @@ public final class CommandRouter {
     private func requirePointerDisplayForAnnotation() -> Bool {
         guard acceptedPointerDisplay != nil
         else {
-            publishFeedback("No presentation display connected")
+            publishFeedback(Self.noDisplayFeedback)
             return false
         }
         return true
@@ -235,6 +245,19 @@ public final class CommandRouter {
 
     private func clearFeedback() {
         feedbackMessage = nil
+    }
+
+    private func toolName(_ tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "Select"
+        case .arrow: return "Arrow"
+        case .rectangle: return "Rectangle"
+        case .ellipse: return "Ellipse"
+        case .pen: return "Pen"
+        case .eraser: return "Eraser"
+        case .emoji: return "Emoji"
+        case .spotlight: return "Spotlight"
+        }
     }
 
     private var acceptedPointerDisplay: DisplayUUID? {

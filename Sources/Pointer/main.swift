@@ -19,11 +19,14 @@ private final class LauncherFirstUseGuide: FirstUseGuidePresenting {
 
     var isVisible: Bool { false }
 
-    func showIfNeeded(in _: GuidePlacementContext) {}
-    func show(in _: GuidePlacementContext) {}
+    @discardableResult
+    func showIfNeeded(in _: GuidePlacementContext) -> GuidePresentationResult { .notNeeded }
+    @discardableResult
+    func show(in _: GuidePlacementContext) -> GuidePresentationResult { .notNeeded }
     func dismiss() {}
     func hideForDisplayLoss() {}
-    func restoreAfterDisplayLoss(in _: GuidePlacementContext) {}
+    @discardableResult
+    func restoreAfterDisplayLoss(in _: GuidePlacementContext) -> GuidePresentationResult { .notNeeded }
     func hideForApplicationStop() {}
 
     func consumeEscape() -> Bool { false }

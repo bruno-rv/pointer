@@ -14,6 +14,11 @@
 
 - The campaign improves the current annotation product. It does not broaden the product into a document or distribution platform.
 - D implements the guide against C's FirstUseGuidePresenting interface and never imports or edits C's composition/controller code.
+- D implements the guide against C's `GuidePresentationResult` return contract:
+  `.shown` is returned only after the panel is visible, `.notNeeded` when no
+  presentation is required, and `.failed(String)` when a request cannot be
+  fulfilled. C retains pending intent on failures, so D must not report
+  `.shown` for an order-front request that remains hidden.
 - The guide appears once after successful palette show, reopens from Learn Pointer, dismisses with Close/Done or Escape, and never changes mode, tool, selection, or canvas.
 - Display-loss hiding is non-committing; application-stop cleanup clears restoration intent without marking the guide seen.
 - Informative icons/examples have accessible names and descriptions; decorative art is hidden; focus order teaches the task.
@@ -237,7 +242,7 @@ Expected: missing protocol, state store, controller, view controller, and test p
 
 - [ ] **Step 3: Implement the minimal state machine.**
 
-FirstUseGuideController implements the C-owned FirstUseGuidePresenting protocol without redeclaring or extending it. It requires the injected GuideAssetCatalogProviding and exposes that catalog only through its concrete read-only assetCatalog property; C's protocol remains catalog-agnostic. It resolves every example image only through assetCatalog.image(for:variant:), and never performs a named-image lookup, bundle fallback, UserDefaults lookup, or default catalog construction. It consumes the C-owned GuidePlacementProviding identity and exposes it through placementProvider. showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:) receive GuidePlacementContext containing visibleFrame, paletteFrame, and avoidanceFrames; the C-owned failable provider has already computed the clamped position beside the palette while avoiding every supplied frame. The controller requests a panel and marks the store only after the panel is visible/order-front. dismiss clears transient intent and orders out. hideForDisplayLoss records visible/pending intent without committing; restore restores exactly once; hideForApplicationStop clears that intent and does not commit.
+FirstUseGuideController implements the C-owned FirstUseGuidePresenting protocol without redeclaring or extending it. It requires the injected GuideAssetCatalogProviding and exposes that catalog only through its concrete read-only assetCatalog property; C's protocol remains catalog-agnostic. It resolves every example image only through assetCatalog.image(for:variant:), and never performs a named-image lookup, bundle fallback, UserDefaults lookup, or default catalog construction. It consumes the C-owned GuidePlacementProviding identity and exposes it through placementProvider. showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:) receive GuidePlacementContext containing visibleFrame, paletteFrame, and avoidanceFrames; D positions the panel inside the supplied visibleFrame while avoiding every supplied frame, without requiring C to supply a list of future guide obstacles or known guide frames. The controller requests a panel and marks the store only after the panel is visible/order-front, returning `.shown` only then and `.failed(String)` otherwise. dismiss clears transient intent and orders out. hideForDisplayLoss records visible/pending intent without committing; restore restores exactly once; hideForApplicationStop clears that intent and does not commit.
 
 The source-contract test resolves paths from #filePath and asserts exactly one
 FirstUseGuidePresenting protocol declaration in

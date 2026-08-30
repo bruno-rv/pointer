@@ -5,6 +5,57 @@ import XCTest
 
 @MainActor
 final class CommandRouterTests: XCTestCase {
+    func testModeAndToolMutationsPublishExplicitSuccessFeedback() {
+        let fixture = makeFixture()
+        _ = fixture.coordinator.synchronize()
+        var feedback: [String] = []
+        fixture.router.onFeedback = { feedback.append($0) }
+
+        fixture.router.route(.setMode(.annotation))
+        XCTAssertEqual(feedback, ["Annotation enabled"])
+
+        fixture.router.route(.setMode(.standby))
+        XCTAssertEqual(feedback.last, "Standby — overlays are click-through")
+
+        fixture.router.route(.setTool(.spotlight))
+        XCTAssertEqual(feedback.last, "Annotation enabled · Spotlight tool selected")
+
+        for tool in PointerTool.allCases {
+            fixture.router.route(.setTool(tool))
+            XCTAssertEqual(feedback.last, "\(toolName(tool)) tool selected")
+        }
+    }
+
+    func testValidDisplaySyncClearsOnlyStaleNoDisplayFeedback() {
+        let fixture = makeFixture()
+        fixture.router.route(.setMode(.annotation))
+        XCTAssertEqual(fixture.router.feedbackMessage, "No presentation display connected")
+
+        fixture.router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [fixture.uuid],
+            addedUUIDs: [fixture.uuid],
+            removedUUIDs: [],
+            pointerDisplay: fixture.uuid,
+            hasConnectedDisplays: true,
+            enteredZeroDisplayState: false,
+            reconnected: true
+        ))
+        XCTAssertNil(fixture.router.feedbackMessage)
+
+        fixture.router.route(.delete)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Select a mark to delete")
+        fixture.router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [fixture.uuid],
+            addedUUIDs: [],
+            removedUUIDs: [],
+            pointerDisplay: fixture.uuid,
+            hasConnectedDisplays: true,
+            enteredZeroDisplayState: false,
+            reconnected: false
+        ))
+        XCTAssertEqual(fixture.router.feedbackMessage, "Select a mark to delete")
+    }
+
     func testNoDisplayRejectsAnnotationEntryWithoutMutatingModeOrTool() {
         let provider = RouterTestScreenProvider(displays: [])
         let coordinator = DisplayCoordinator(
@@ -182,7 +233,7 @@ final class CommandRouterTests: XCTestCase {
 
         overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
         XCTAssertTrue(feedback.isEmpty)
-        XCTAssertNil(router.feedbackMessage)
+        XCTAssertEqual(router.feedbackMessage, "Select tool selected")
         overlay.canvasView.endGesture()
 
         XCTAssertNil(router.session.selection)
@@ -222,12 +273,12 @@ final class CommandRouterTests: XCTestCase {
 
         overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
         XCTAssertTrue(feedback.isEmpty)
-        XCTAssertNil(router.feedbackMessage)
+        XCTAssertEqual(router.feedbackMessage, "Select tool selected")
         overlay.canvasView.cancelGesture()
 
         XCTAssertEqual(router.session.selection, mark.id)
         XCTAssertTrue(feedback.isEmpty)
-        XCTAssertNil(router.feedbackMessage)
+        XCTAssertEqual(router.feedbackMessage, "Select tool selected")
 
         overlay.canvasView.beginGesture(at: NSPoint(x: 10, y: 10))
         XCTAssertTrue(feedback.isEmpty)
@@ -242,7 +293,7 @@ final class CommandRouterTests: XCTestCase {
         ))
         overlay.canvasView.endGesture()
         XCTAssertTrue(feedback.isEmpty)
-        XCTAssertNil(router.feedbackMessage)
+        XCTAssertEqual(router.feedbackMessage, "Select tool selected")
     }
 
     func testSelectionClearedFeedbackIsNotPublishedForStandbyDeleteOrClear() throws {
@@ -431,6 +482,19 @@ final class CommandRouterTests: XCTestCase {
 
     private func makeFixture() -> RouterFixture {
         RouterFixture()
+    }
+
+    private func toolName(_ tool: PointerTool) -> String {
+        switch tool {
+        case .select: return "Select"
+        case .arrow: return "Arrow"
+        case .rectangle: return "Rectangle"
+        case .ellipse: return "Ellipse"
+        case .pen: return "Pen"
+        case .eraser: return "Eraser"
+        case .emoji: return "Emoji"
+        case .spotlight: return "Spotlight"
+        }
     }
 }
 

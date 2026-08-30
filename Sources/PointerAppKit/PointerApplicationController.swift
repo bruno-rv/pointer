@@ -85,8 +85,12 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     }
 
     private var started = false
+    private var pendingInitialPalettePresentation = false
     private var pendingFirstUseAttempt = false
+    private var pendingPaletteRestore = false
     private var pendingDisplayLossRestore = false
+    private var paletteEverPresented = false
+    private var lastPaletteContext: GuidePlacementContext?
     private var screenParametersObserver: NSObjectProtocol?
 
     public init(
@@ -130,8 +134,12 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
     public func start() {
         guard !started else { return }
         started = true
+        pendingInitialPalettePresentation = true
         pendingFirstUseAttempt = !guideStateStore.hasDismissedFirstUseGuide
+        pendingPaletteRestore = false
         pendingDisplayLossRestore = false
+        paletteEverPresented = false
+        lastPaletteContext = nil
 
         palette.startAppearanceObservation()
 
@@ -207,6 +215,9 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         palette.hide()
         guide.hideForApplicationStop()
         menuBar?.remove()
+        pendingInitialPalettePresentation = false
+        pendingPaletteRestore = false
+        lastPaletteContext = nil
         pendingFirstUseAttempt = false
         pendingDisplayLossRestore = false
     }
@@ -220,13 +231,23 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
             palette.hide()
             return
         }
-        _ = palette.show(on: display)
+        guard case let .shown(context) = palette.show(on: display) else { return }
+        paletteEverPresented = true
+        pendingInitialPalettePresentation = false
+        pendingPaletteRestore = false
+        lastPaletteContext = context
+        consumePendingGuide(in: context)
     }
 
-    public func showGuide() {
-        guard let display = currentPointerDisplay() else { return }
-        guard case let .shown(context) = palette.show(on: display) else { return }
-        guide.show(in: context)
+    @discardableResult
+    public func showGuide() -> GuidePresentationResult? {
+        guard let display = currentPointerDisplay() else { return nil }
+        guard case let .shown(context) = palette.show(on: display) else { return nil }
+        paletteEverPresented = true
+        pendingInitialPalettePresentation = false
+        pendingPaletteRestore = false
+        lastPaletteContext = context
+        return guide.show(in: context)
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -243,16 +264,24 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
         refresh()
 
         guard result.hasConnectedDisplays else {
-            if result.enteredZeroDisplayState, guide.isVisible {
-                pendingDisplayLossRestore = true
-                pendingFirstUseAttempt = false
-                guide.hideForDisplayLoss()
-            } else if result.enteredZeroDisplayState,
-                      pendingFirstUseAttempt,
-                      !guideStateStore.hasDismissedFirstUseGuide {
-                pendingDisplayLossRestore = true
-                pendingFirstUseAttempt = false
-                guide.hideForDisplayLoss()
+            if result.enteredZeroDisplayState {
+                let shouldRestorePalette = palette.window.isVisible
+                    || (pendingInitialPalettePresentation && !paletteEverPresented)
+                pendingPaletteRestore = shouldRestorePalette
+                if guide.isVisible {
+                    pendingDisplayLossRestore = shouldRestorePalette
+                    pendingFirstUseAttempt = false
+                    guide.hideForDisplayLoss()
+                } else if pendingFirstUseAttempt,
+                          !guideStateStore.hasDismissedFirstUseGuide {
+                    pendingDisplayLossRestore = shouldRestorePalette
+                    pendingFirstUseAttempt = false
+                    guide.hideForDisplayLoss()
+                } else if guideStateStore.hasDismissedFirstUseGuide {
+                    pendingFirstUseAttempt = false
+                }
+            } else if pendingInitialPalettePresentation && !paletteEverPresented {
+                pendingPaletteRestore = true
             } else if guideStateStore.hasDismissedFirstUseGuide {
                 pendingFirstUseAttempt = false
             }
@@ -266,31 +295,58 @@ public final class PointerApplicationController: NSObject, NSApplicationDelegate
 
         guard let display = display(for: result.pointerDisplay) else {
             palette.hide()
-            pendingFirstUseAttempt = true
+            return
+        }
+
+        if pendingInitialPalettePresentation || pendingPaletteRestore {
+            guard case let .shown(context) = palette.show(on: display) else { return }
+            paletteEverPresented = true
+            pendingInitialPalettePresentation = false
+            pendingPaletteRestore = false
+            lastPaletteContext = context
+            consumePendingGuide(in: context)
             return
         }
 
         if pendingDisplayLossRestore {
-            switch palette.show(on: display) {
-            case let .shown(context):
-                guide.restoreAfterDisplayLoss(in: context)
-                pendingFirstUseAttempt = false
+            guard palette.window.isVisible, let context = lastPaletteContext else {
                 pendingDisplayLossRestore = false
-            case .noDisplay, .failed:
-                break
+                return
+            }
+            consumePendingGuide(in: context)
+            return
+        }
+
+        if pendingFirstUseAttempt {
+            guard palette.window.isVisible, let context = lastPaletteContext else { return }
+            consumePendingGuide(in: context)
+        }
+    }
+
+    private func consumePendingGuide(in context: GuidePlacementContext) {
+        if pendingDisplayLossRestore {
+            let result = guide.restoreAfterDisplayLoss(in: context)
+            if guideResultConsumed(result) {
+                pendingDisplayLossRestore = false
             }
             return
         }
 
-        switch palette.show(on: display) {
-        case let .shown(context):
-            if pendingFirstUseAttempt {
-                guide.showIfNeeded(in: context)
-                pendingFirstUseAttempt = false
-            }
-        case .noDisplay, .failed:
-            pendingFirstUseAttempt = !guideStateStore.hasDismissedFirstUseGuide
-                && !guide.isVisible
+        guard pendingFirstUseAttempt else { return }
+        let result = guide.showIfNeeded(in: context)
+        if guideResultConsumed(result) {
+            pendingFirstUseAttempt = false
+        }
+    }
+
+    private func guideResultConsumed(_ result: GuidePresentationResult) -> Bool {
+        switch result {
+        case .notNeeded:
+            return true
+        case .shown:
+            return guide.isVisible
+        case .failed:
+            return false
         }
     }
 

@@ -262,6 +262,43 @@ final class PaletteInteractionTests: XCTestCase {
         )
     }
 
+    func testValidReconnectClearsOnlyStaleNoDisplayStatus() {
+        let provider = PaletteInteractionScreenProvider(displays: [])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        palette.paletteViewController.loadViewIfNeeded()
+
+        router.route(.setTool(.spotlight))
+        XCTAssertEqual(
+            palette.paletteViewController.statusMessage,
+            "No presentation display connected"
+        )
+
+        let uuid = DisplayUUID(rawValue: "reconnected-display")
+        router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [uuid],
+            addedUUIDs: [uuid],
+            removedUUIDs: [],
+            pointerDisplay: uuid,
+            hasConnectedDisplays: true,
+            enteredZeroDisplayState: false,
+            reconnected: true
+        ))
+        palette.refresh(session: router.session)
+
+        XCTAssertEqual(
+            palette.paletteViewController.statusMessage,
+            "Standby — overlays are click-through"
+        )
+    }
+
     func testOverflowRefreshKeepsMenuIdentityAndFocusForContinuousStateUpdates() throws {
         let descriptor = DisplayDescriptor(
             uuid: DisplayUUID(rawValue: "overflow-stability"),

@@ -17,7 +17,9 @@
 - The palette communicates one clear current mode and one clear selected tool; momentary actions look and behave like actions, not persistent selections.
 - Icon-only controls never carry the sole meaning; every control retains an accessible name, help, stable identifier, enabled state, keyboard route, and visible focus state.
 - On no connected displays, keep session/menu-bar/shortcut controls alive, reject annotation-entry commands with actionable “No presentation display connected” feedback, and do not mutate mode or selected tool.
-- Guide timing is ordered and retryable: palette show must return shown before first-use show or reconnect restore; failed/hidden palette show cannot advance guide state.
+- Guide timing is ordered and retryable: palette show must return shown before first-use show or reconnect restore; failed/hidden palette show cannot advance guide state. `GuidePresentationResult.shown` is valid only when the concrete guide is actually visible; the controller clears pending first-use/display-loss intent only for `.shown` or `.notNeeded`, and retries `.failed` or hidden results.
+- The initial-palette state is explicit and separate from guide state. A valid first connection consumes the pending presentation and caches its placement context; an initial zero-display connection keeps that presentation pending. Ordinary connected-display sync refreshes state without calling `palette.show(on:)`, preserving a manual drag. A palette hidden before zero-display remains hidden on reconnect; a palette visible at the transition is restored and clamped. Explicit Show Palette always repositions and may consume pending guide intent from its successful context.
+- `PointerSession.selectedDisplay` is a B-owned session handoff consumed read-only by C's palette selection/style surface; future changes to its ownership return to B. C does not recreate or infer a selected display.
 - Production shortcut/store/controller construction is dependency-injected; no production convenience initializer discovers global state.
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve unrelated dirty files and generated artifacts in /Users/bruno/Dev/pointer.
 - This workstream owns Sources/PointerAppKit/Palette/**, Sources/PointerAppKit/Palette/GuidePlacementContext.swift, Sources/PointerAppKit/Palette/GuidePlacementProvider.swift, Sources/PointerAppKit/Palette/ControlMetadataProvider.swift, CommandRouter.swift, MenuBarController.swift, PointerApplication.swift, PointerApplicationController.swift, Shortcuts/**, new Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift, and app-controller/palette/command/shortcut tests except A's Support/** and Harness/** and F's PointerCompositionTests.
@@ -33,6 +35,12 @@ C consumes B's DisplaySyncResult, DisplayStopResult, DisplayCoordinator.onDispla
     public enum PaletteShowResult: Equatable, Sendable {
         case shown(GuidePlacementContext)
         case noDisplay
+        case failed(String)
+    }
+
+    public enum GuidePresentationResult: Equatable, Sendable {
+        case shown
+        case notNeeded
         case failed(String)
     }
 
@@ -95,11 +103,14 @@ C consumes B's DisplaySyncResult, DisplayStopResult, DisplayCoordinator.onDispla
     public protocol FirstUseGuidePresenting: AnyObject {
         var isVisible: Bool { get }
         var placementProvider: any GuidePlacementProviding { get }
-        func showIfNeeded(in context: GuidePlacementContext)
-        func show(in context: GuidePlacementContext)
+        @discardableResult
+        func showIfNeeded(in context: GuidePlacementContext) -> GuidePresentationResult
+        @discardableResult
+        func show(in context: GuidePlacementContext) -> GuidePresentationResult
         func dismiss()
         func hideForDisplayLoss()
-        func restoreAfterDisplayLoss(in context: GuidePlacementContext)
+        @discardableResult
+        func restoreAfterDisplayLoss(in context: GuidePlacementContext) -> GuidePresentationResult
         func hideForApplicationStop()
         func consumeEscape() -> Bool
     }
@@ -370,9 +381,9 @@ Expected: PASS at wide and 420-point layouts, with stable identifiers, names, va
 **Interfaces:**
 
 - FirstUseGuidePresenting is exactly the protocol in this plan's dependency contract and receives GuidePlacementContext for first-use/show/restore placement.
-- PointerApplicationController owns pending-first-use and display-loss intent flags; it never persists guide state itself.
+- PointerApplicationController owns pending-initial-palette, pending-first-use, and display-loss intent flags; it never persists guide state itself. It preserves the last successful palette placement context for retries without repositioning.
 - PointerApplicationController exposes public let guide: any FirstUseGuidePresenting, public let controlMetadataProvider: any ControlMetadataProviding, and public let guidePlacementProvider: any GuidePlacementProviding. It converts the current palette.window.frame to DisplayFrame and asks the C provider for a failable context(for:paletteFrame:) before every guide show/restore.
-- PointerApplicationController exposes public func showGuide(), which calls guide.show(in:) with the associated GuidePlacementContext from a successful palette show result.
+- PointerApplicationController exposes public func showGuide(), which calls guide.show(in:) with the associated GuidePlacementContext from a successful palette show result and returns the guide's `GuidePresentationResult` when a display is available.
 - PointerApplicationController exposes public let shortcutController: HotKeyController (nonoptional) and its production initializer requires that concrete controller; tests pass a real HotKeyController built with fake registrar/store/scheduler collaborators.
 - The source declaration is exactly public let shortcutController: HotKeyController, never an optional. PointerApplicationControllerTests constructs the controller with a nonnil fake-backed HotKeyController and asserts the property identity before and after stop/start.
 - PointerApplication exposes injectable LocalKeyRouting and FirstUseGuidePresenting references; sendEvent asks guide.consumeEscape() before the injected router's routeLocalKeyEvent(event). CommandRouter conforms to LocalKeyRouting, so tests use the real final router and observe lastHandledCommand rather than subclassing it.
@@ -505,7 +516,7 @@ Create FirstUseGuidePresenting.swift with the exact placement-aware methods abov
 
 On start, bind CommandRouter.bindCallbacks(...) and MenuBarController.bindCallbacks() exactly once, bind the coordinator's onDisplaySync callback once, synchronize, call commandRouter.updateDisplayState(result), refresh, and call palette.show(on:). The .shown(context) associated value is passed directly to guide.showIfNeeded(in:). At zero displays, first apply the standby command through DisplayCoordinator before emitting DisplaySyncResult, call commandRouter.updateDisplayState(result), record a pending first-use attempt without showing or marking the guide, hide the palette, and reject annotation entry without mutating mode/tool. On a later hasConnectedDisplays result with a valid pointer UUID, show the palette first; pass its .shown(context) directly to guide.restoreAfterDisplayLoss(in:).
 
-The onAnnotationEntry hook dismisses the guide for tool selection, explicit mode entry, menu mode entry, and shortcut toggles into annotation. CanvasView.beginGesture/continueGesture/endGesture never calls this hook. stop() calls CommandRouter.clearCallbacks(), MenuBarController.clearCallbacks(), and sets displayCoordinator.onDisplaySync = nil; start() rebinds the display-sync callback once and rebinds command/menu callbacks once. The controller tests assert the callback is nil while stopped and nonnil exactly once after restart; the clear-all callback is tested across stop/start so one Clear All request produces one confirmation and one command.
+The onAnnotationEntry hook dismisses the guide for tool selection, explicit mode entry, menu mode entry, and shortcut toggles into annotation. CanvasView.beginGesture/continueGesture/endGesture never calls this hook. stop() calls CommandRouter.clearCallbacks(), MenuBarController.clearCallbacks(), and sets displayCoordinator.onDisplaySync = nil; start() rebinds the display-sync callback once and rebinds command/menu callbacks once. The controller tests assert the callback is nil while stopped and nonnil exactly once after restart; the clear-all callback is tested across stop/start so one Clear All request produces one confirmation and one command. On a normal connected sync, the controller does not re-show or reposition an already-present palette; it only consumes a pending initial/reconnect presentation or retries a guide from the cached successful context.
 
 - [ ] **Step 5: Add menu Learn Pointer and run GREEN tests.**
 
@@ -693,5 +704,5 @@ Return every finding to the smallest C-owned path, rerun RED/GREEN tests, obtain
 ## Plan self-check
 
 - Palette result, no-display behavior, contextual Delete, style relevance, narrow layout, keyboard routing, guide protocol/order, Escape precedence, shortcut transactions, accessibility metadata, appearance, and running/stopped/restarted checkpoints map to Tasks 1–5.
-- Names are consistent: PaletteShowResult.shown(GuidePlacementContext), PalettePresenting.show(on:), FirstUseGuidePresenting.showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:), GuidePlacementContext/GuidePlacementProviding, ControlMetadata/ControlMetadataProviding, CommandRouter.activeShortcutID/shortcutError/onAnnotationEntry/updateDisplayState/clearCallbacks/bindCallbacks, DisplaySyncResult, DisplayStopResult, nonoptional shortcutController, and the explicit controller initializer.
+- Names are consistent: PaletteShowResult.shown(GuidePlacementContext), PalettePresenting.show(on:), GuidePresentationResult.shown/notNeeded/failed, FirstUseGuidePresenting.showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:), GuidePlacementContext/GuidePlacementProviding, B-owned PointerSession.selectedDisplay, ControlMetadata/ControlMetadataProviding, CommandRouter.activeShortcutID/shortcutError/onAnnotationEntry/updateDisplayState/clearCallbacks/bindCallbacks, DisplaySyncResult, DisplayStopResult, nonoptional shortcutController, and the explicit controller initializer.
 - No task modifies D's guide implementation, F's composition root, B's lifecycle source, A's diagnostics, or E's performance harness; no commit instruction is included.

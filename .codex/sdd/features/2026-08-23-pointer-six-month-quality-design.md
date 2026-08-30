@@ -291,6 +291,11 @@ Acceptance criteria:
   cycle. C owns only its app-controller/palette/command/shortcut tests;
   `Tests/PointerCompositionTests/PointerCompositionRootTests.swift` is
   exclusively F-owned.
+- The presentation methods return the explicit `GuidePresentationResult` enum
+  (`.shown`, `.notNeeded`, or `.failed(String)`). `.shown` means the guide is
+  actually visible, not merely requested. The controller clears pending
+  first-use or reconnect intent only for `.shown` or `.notNeeded`, retains it
+  for `.failed`, and never advances it when the palette is hidden.
 - C owns the `DisplaySyncResult` callback consumer. On
   `hasConnectedDisplays == false` it hides the palette, keeps the session and
   menu-bar/shortcut controls alive, and rejects every annotation-entry command
@@ -304,6 +309,14 @@ Acceptance criteria:
   `guide.hideForDisplayLoss()` on the zero-display branch; on reconnect it
   calls `guide.restoreAfterDisplayLoss(in:)` only after `palette.show(on:)`
   returns `.shown`.
+- C tracks initial palette presentation independently of guide dismissal:
+  zero-display startup leaves the initial presentation pending, while an
+  ordinary connected-display sync never calls `palette.show(on:)` and keeps a
+  manual drag. A palette that was hidden before the zero-display transition
+  stays hidden on reconnect; a palette visible at the transition is restored
+  and clamped. B owns the `PointerSession.selectedDisplay` handoff that C
+  consumes read-only for selection/style controls; ownership changes return to
+  B.
 - C's public `PalettePresenting.show(on:)` returns a `PaletteShowResult` with
   `.shown(GuidePlacementContext)`, `.noDisplay`, or `.failed` rather than
   silently ordering a window; the guide timing and zero-display retry logic

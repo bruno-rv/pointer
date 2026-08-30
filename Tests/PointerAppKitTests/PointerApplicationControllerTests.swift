@@ -177,7 +177,17 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.start()
         try fixture.selectAndClear()
 
-        XCTAssertEqual(feedback, ["Selection cleared", "Selection cleared"])
+        XCTAssertEqual(
+            feedback,
+            [
+                "Annotation enabled",
+                "Select tool selected",
+                "Selection cleared",
+                "Annotation enabled",
+                "Select tool selected",
+                "Selection cleared",
+            ]
+        )
     }
 
     func testRunningStoppedAndRestartedResourceCheckpointsAreSeparate() throws {

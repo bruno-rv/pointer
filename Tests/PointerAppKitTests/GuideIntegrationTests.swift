@@ -5,6 +5,162 @@ import XCTest
 
 @MainActor
 final class GuideIntegrationTests: XCTestCase {
+    func testOrdinaryConnectedDisplaySyncDoesNotReshowOrRepositionPalette() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.palette.window.setFrameOrigin(NSPoint(x: 240, y: 180))
+        let manualOrigin = fixture.palette.window.frame.origin
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+        XCTAssertEqual(fixture.palette.window.frame.origin, manualOrigin)
+    }
+
+    func testManuallyHiddenPaletteStaysHiddenAcrossSyncAndZeroDisplayReconnect() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.palette.hide()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.hideForDisplayLoss"])
+        XCTAssertFalse(fixture.palette.window.isVisible)
+        XCTAssertEqual(fixture.palette.appearanceObserverCount, 0)
+    }
+
+    func testVisiblePaletteRestoresAndClampsAfterZeroDisplayReconnect() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.palette.window.setFrameOrigin(NSPoint(x: 1_800, y: 900))
+        fixture.events.removeAll()
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(
+            fixture.events,
+            ["guide.hideForDisplayLoss", "palette.show", "guide.restoreAfterDisplayLoss"]
+        )
+        XCTAssertLessThanOrEqual(
+            fixture.palette.window.frame.maxX,
+            fixture.display.visibleFrame.cgRect.maxX
+        )
+        XCTAssertLessThanOrEqual(
+            fixture.palette.window.frame.maxY,
+            fixture.display.visibleFrame.cgRect.maxY
+        )
+    }
+
+    func testPendingPaletteRestoreSurvivesRepeatedZeroDisplaySync() {
+        let fixture = GuideControllerFixture(displays: [])
+        fixture.controller.start()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["palette.show", "guide.showIfNeeded"])
+    }
+
+    func testPendingFirstUseDisplayLossRestoreDoesNotRepeatFirstUseAfterSuccess() {
+        let fixture = GuideControllerFixture(
+            displays: [GuideTestScreenProvider.narrowDisplay]
+        )
+        fixture.controller.start()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+    }
+
+    func testFailedFirstUseGuidePresentationRetriesOnLaterSyncWithoutReshowingPalette() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.guide.showIfNeededResult = .shown
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.showIfNeeded"])
+        XCTAssertTrue(fixture.guide.isVisible)
+    }
+
+    func testFailedDisplayLossRestoreRetriesOnLaterSyncWithoutReshowingPalette() {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        fixture.guide.restoreAfterDisplayLossResult = .failed("panel unavailable")
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+
+        fixture.events.removeAll()
+        fixture.guide.restoreAfterDisplayLossResult = .shown
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.restoreAfterDisplayLoss"])
+        XCTAssertTrue(fixture.guide.isVisible)
+    }
+
+    func testGuideNotNeededResultClearsPendingPresentationAfterOneAttempt() {
+        let fixture = GuideControllerFixture(displays: [])
+        fixture.guide.showIfNeededResult = .notNeeded
+        fixture.controller.start()
+        fixture.provider.displays = [fixture.display]
+        fixture.postScreenChange()
+        fixture.events.removeAll()
+
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, [])
+    }
+
+    func testShownGuideResultMustAlsoReportVisibleBeforePendingIsCleared() {
+        let fixture = GuideControllerFixture()
+        fixture.guide.leavesVisibleAfterShownResult = false
+
+        fixture.controller.start()
+        fixture.events.removeAll()
+        fixture.guide.leavesVisibleAfterShownResult = true
+        fixture.postScreenChange()
+
+        XCTAssertEqual(fixture.events, ["guide.showIfNeeded"])
+        XCTAssertTrue(fixture.guide.isVisible)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 1)
+    }
+
+    func testFailedFirstUseGuidePresentationDoesNotMutateSessionOrDismissalState() {
+        let fixture = GuideControllerFixture()
+        fixture.coordinator.synchronize()
+        fixture.router.route(.setMode(.annotation))
+        fixture.router.route(.setTool(.spotlight))
+        let before = fixture.router.session
+        fixture.guide.showIfNeededResult = .failed("panel unavailable")
+
+        fixture.controller.start()
+
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+        XCTAssertFalse(fixture.guide.isVisible)
+    }
+
     func testStartupShowsPaletteBeforeFirstUseGuide() {
         let fixture = GuideControllerFixture()
 
@@ -499,6 +655,10 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
     var consumeEscapeCount = 0
     var dismissCount = 0
     var lastContext: GuidePlacementContext?
+    var showIfNeededResult: GuidePresentationResult = .shown
+    var showResult: GuidePresentationResult = .shown
+    var restoreAfterDisplayLossResult: GuidePresentationResult = .shown
+    var leavesVisibleAfterShownResult = true
 
     init(
         placementProvider: any GuidePlacementProviding,
@@ -518,16 +678,24 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
         )
     }
 
-    func showIfNeeded(in context: GuidePlacementContext) {
+    @discardableResult
+    func showIfNeeded(in context: GuidePlacementContext) -> GuidePresentationResult {
         eventLog?.values.append("guide.showIfNeeded")
         lastContext = context
-        isVisible = true
-        onVisible?()
+        if showIfNeededResult == .shown, leavesVisibleAfterShownResult {
+            isVisible = true
+            onVisible?()
+        }
+        return showIfNeededResult
     }
 
-    func show(in context: GuidePlacementContext) {
+    @discardableResult
+    func show(in context: GuidePlacementContext) -> GuidePresentationResult {
         lastContext = context
-        isVisible = true
+        if showResult == .shown, leavesVisibleAfterShownResult {
+            isVisible = true
+        }
+        return showResult
     }
 
     func dismiss() {
@@ -540,10 +708,14 @@ final class GuideTestSpyGuide: FirstUseGuidePresenting {
         isVisible = false
     }
 
-    func restoreAfterDisplayLoss(in context: GuidePlacementContext) {
+    @discardableResult
+    func restoreAfterDisplayLoss(in context: GuidePlacementContext) -> GuidePresentationResult {
         eventLog?.values.append("guide.restoreAfterDisplayLoss")
         lastContext = context
-        isVisible = true
+        if restoreAfterDisplayLossResult == .shown, leavesVisibleAfterShownResult {
+            isVisible = true
+        }
+        return restoreAfterDisplayLossResult
     }
 
     func hideForApplicationStop() {
