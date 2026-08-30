@@ -66,6 +66,7 @@ D's public top-level RenderPlan and HandleInventory are consumed by B's CanvasVi
 
     public struct GuideAssetCatalogEnvelope: Codable, Equatable, Sendable {
         public let schemaVersion: Int
+        public let catalogIdentifier: String
         public let entries: [GuideAssetDescriptor]
     }
 
@@ -285,13 +286,13 @@ Expected: all controller, focus-order, metadata, failure, display-loss, stop, Cl
 
     func testAppIconIdentityNamesExactAssetAndRasterPolicy()
     func testGuideAssetsHaveCanonicalIdentifiersAndTrackedFiles()
-    func testEveryGuideExampleLoadsItsMappedRasterWithNSImageNamed()
+    func testEveryGuideExampleResolvesItsMappedRasterThroughInjectedCatalog()
 
-Expected: missing asset catalog/identity manifest, GuideAssetCatalog entries/mapping, or direct source-PNG loads fail.
+Expected: missing asset catalog/identity manifest, GuideAssetCatalog entries/mapping, source-PNG mapping, or injected catalog resolution fails. Tests never bypass the catalog with `NSImage(named:)` or another default lookup.
 
 - [ ] **Step 2: Create raster assets with exact manifest fields.**
 
-AppIconIdentity.json must name AppIcon, SHA-256 every source PNG, canonical dimensions, sRGB color space, straight-alpha policy, marker pixel coordinate/RGBA, and expected resolved-icon digest. GuideAssetCatalog.swift and Bundle/GuideAssetIdentity.json use the GuideAssetCatalogEnvelope schemaVersion/entries envelope and define every example entry with GuideAssetDescriptor.id/accessibleName/accessibleDescription/isDecorative/variants. Every descriptor has exactly light, dark, and highContrast GuideAssetVariantDescriptor entries with variant/assetIdentifier/sourceSHA256 only. Source paths and dimensions are derived by the deterministic GuideAssetSourceMapping for each assetIdentifier/variant and inspected from the source PNG, never serialized in the JSON envelope. The catalog's tracked source mapping must equal the local PNGs below Bundle/Assets.xcassets/FirstUseGuide; guide assets must have no SVG or network reference.
+AppIconIdentity.json must name AppIcon, SHA-256 every source PNG, canonical dimensions, sRGB color space, straight-alpha policy, marker pixel coordinate/RGBA, and expected resolved-icon digest. GuideAssetCatalog.swift and Bundle/GuideAssetIdentity.json use the exact GuideAssetCatalogEnvelope `schemaVersion`/`catalogIdentifier`/`entries` envelope and define every example entry with GuideAssetDescriptor.id/accessibleName/accessibleDescription/isDecorative/variants. `catalogIdentifier` is the stable nonempty value `pointer.first-use-guide.v1`. Every descriptor has exactly light, dark, and highContrast GuideAssetVariantDescriptor entries with variant/assetIdentifier/sourceSHA256 only. Source paths and dimensions are derived by the deterministic GuideAssetSourceMapping for each assetIdentifier/variant and inspected from the source PNG, never serialized in the JSON envelope. The catalog's tracked source mapping must equal the local PNGs below Bundle/Assets.xcassets/FirstUseGuide; guide assets must have no SVG or network reference. Asset candidates are generated as real raster images through the image-generation workflow, reviewed visually, then wired into the catalog; SVG or code-drawn substitutes do not satisfy this task.
 
 - [ ] **Step 3: Run asset tests and inspect catalogs.**
 
@@ -307,6 +308,13 @@ Expected: PASS for tracked files, dimensions, color space, alpha policy, canonic
 - Modify: Tests/PointerAppKitTests/FirstUseGuideTests.swift
 - Create: Tests/PointerAppKitTests/ChromeFrictionTests.swift
 
+Task 4 is an inventory and routing gate. It does not silently edit C-owned
+palette production files. If the RED inventory proves a production deletion is
+required, the coordinator returns that exact finding to a C-owned worker and
+re-runs C review/adversarial reconciliation before D continues. If the accepted
+C surface already supplies the required decrease against the recorded baseline,
+Task 4 records that evidence without manufacturing another deletion.
+
 - [ ] **Step 1: Write failing inventory tests.**
 
     func testCandidatePersistentChromeDoesNotIncreaseAndOneDimensionDecreases()
@@ -318,7 +326,7 @@ Inventory always-visible control count, palette rows, status elements, focus sto
 
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter ChromeFrictionTests
 
-Remove redundant permanent labels/status/chrome where contextual state or a tooltip does the job; retain accessible names and relevant feedback. Do not hide essential keyboard controls merely to lower counts.
+If the inventory is RED, report the smallest concrete redundant label/status/chrome finding to the coordinator for C-owned implementation; retain accessible names and relevant feedback. Do not hide essential keyboard controls merely to lower counts, and do not edit `PaletteViewController.swift` from the D worker.
 
 - [ ] **Step 3: Run GREEN and hand inventory to F.**
 
