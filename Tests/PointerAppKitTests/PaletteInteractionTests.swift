@@ -28,11 +28,13 @@ final class PaletteInteractionTests: XCTestCase {
             scaleFactor: 1
         )
         XCTAssertEqual(palette.show(on: invalid), .noDisplay)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
 
         let descriptor = PaletteInteractionScreenProvider.descriptor()
         guard case .shown = palette.show(on: descriptor) else {
             return XCTFail("Expected shown(GuidePlacementContext)")
         }
+        XCTAssertEqual(palette.appearanceObserverCount, 1)
     }
 
     func testPaletteShowFailureAfterOrderingOrdersPaletteOut() {
@@ -53,6 +55,7 @@ final class PaletteInteractionTests: XCTestCase {
             return XCTFail("Expected injected provider failure")
         }
         XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
     }
 
     func testPaletteShowFailsAndStaysHiddenWhenPositiveFrameCannotFitNativeLayout() {
@@ -109,6 +112,32 @@ final class PaletteInteractionTests: XCTestCase {
             return XCTFail("Expected supported narrow display")
         }
         XCTAssertTrue(palette.isVisible)
+    }
+
+    func testTooSmallDirectShowDoesNotLeaveAppearanceObserverOnHiddenPalette() {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "tiny-fresh"),
+            frame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            visibleFrame: DisplayFrame(x: 0, y: 0, width: 10, height: 10),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        defer { palette.close() }
+
+        guard case .failed = palette.show(on: descriptor) else {
+            return XCTFail("Expected native layout failure")
+        }
+        XCTAssertFalse(palette.isVisible)
+        XCTAssertEqual(palette.appearanceObserverCount, 0)
     }
 
     func testPaletteFeedbackImmediatelyUpdatesVisibleStatusAndRefreshRestoresNormalStatus() {
@@ -866,6 +895,7 @@ final class PaletteInteractionTests: XCTestCase {
             displayOptionsProvider: { options }
         )
         controller.loadViewIfNeeded()
+        controller.startAppearanceObservation()
         let initialRefreshCount = controller.displayOptionsRefreshCount
         let originalFrame = controller.view.frame
 

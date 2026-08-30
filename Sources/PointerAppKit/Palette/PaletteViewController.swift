@@ -137,7 +137,6 @@ public final class PaletteViewController: NSViewController {
         layoutControls()
         refresh(session: currentSession)
         applyDisplayOptions()
-        installDisplayOptionsObserver()
     }
 
     private func installDisplayOptionsObserver() {
@@ -244,9 +243,8 @@ public final class PaletteViewController: NSViewController {
     }
 
     public func startAppearanceObservation() {
-        guard isViewLoaded else {
+        if !isViewLoaded {
             loadViewIfNeeded()
-            return
         }
         applyDisplayOptions()
         installDisplayOptionsObserver()
