@@ -125,6 +125,19 @@ were looked up from the top-level menu
 after fixture-only corrections: 3 passed, 0 failed
 ```
 
+The final precedence regression was added RED before changing the palette
+status ordering:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PaletteInteractionTests/testPendingShortcutGuidanceOutranksTransientFeedbackThroughDelivery|PaletteInteractionTests/testPendingShortcutGuidanceKeepsPriorityUntilTimeoutError'
+exit 1
+pending guidance was replaced by Nothing to undo, Nothing to clear, and
+Select a mark to delete in visible and accessibility status; timeout branch
+was similarly replaced by Select a mark to delete
+after the palette captured the exact transient feedback while pending:
+2 passed, 0 failed
+```
+
 The fresh-context test reuses the existing real `GuideControllerFixture` and
 `PalettePanel`: its placement provider suppresses only the context-request
 label after startup, while the manually dragged real window provides the
@@ -170,9 +183,12 @@ and keeps the assertion on production behavior.
   without confirmation; the menu item exposes `Available` or
   `Unavailable — no marks to clear` and preserves Undo Clear All.
 - Palette status gives shortcut registration errors precedence over immediate
-  success and no-op feedback, preserves frame/focus, and returns to the current
-  normal mode/shortcut status after the error resolves. The module-internal
-  `PointerTool.displayName` is the single source for tool labels.
+  feedback, pending shortcut guidance precedence over transient no-op feedback,
+  and normal mode status lowest priority. It preserves frame/focus, captures
+  the exact suppressed feedback while pending, and returns to the current
+  normal mode/shortcut status after delivery or error resolution without
+  replaying stale feedback. The module-internal `PointerTool.displayName` is
+  the single source for tool labels.
 - Pending shortcut state is read-only through `CommandRouter.pendingShortcutDisplayName`
   and `pendingShortcutGuidance`, derived from `HotKeyController.pendingPreset`.
   The palette, shortcut parent, status item, and candidate menu action share the
@@ -228,20 +244,20 @@ bootstrap until F replaces it with the final composition root.
 
 ## Verification evidence
 
-After the focused GREEN run:
+After the final focused GREEN run, including pending-guidance precedence:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 136 passed, 0 failed
+C phase-wide filter: 138 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 261 passed, 0 failed
+PointerPackageTests.xctest: 263 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 261 passed, 0 failed
+full tests: 263 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

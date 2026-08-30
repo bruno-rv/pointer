@@ -5,6 +5,93 @@ import XCTest
 
 @MainActor
 final class PaletteInteractionTests: XCTestCase {
+    func testPendingShortcutGuidanceOutranksTransientFeedbackThroughDelivery() throws {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        let menuBar = MenuBarController(
+            router: fixture.router,
+            shortcutController: fixture.shortcutController,
+            terminate: {}
+        )
+        menuBar.install()
+        defer {
+            menuBar.remove()
+            fixture.controller.stop()
+        }
+
+        fixture.router.route(.setShortcut(.controlOptionCommandO))
+        let guidance = "Press Control-Option-Command-O within 5 seconds to confirm"
+        let status = fixture.palette.paletteViewController.control(identifier: "palette.status")
+        let focusedControl = fixture.palette.paletteViewController.control(identifier: "palette.mode")
+        XCTAssertTrue(fixture.palette.makeFirstResponder(focusedControl))
+        let origin = fixture.palette.frame.origin
+        let firstResponder = fixture.palette.firstResponder
+        let shortcutParent = try XCTUnwrap(menuBar.menu?.items.first {
+            $0.identifier?.rawValue == "menu.shortcut"
+        })
+        let statusButton = try XCTUnwrap(menuBar.statusItem?.button)
+
+        for command in [
+            CommandRouter.Command.undo,
+            .clear,
+            .delete,
+        ] {
+            fixture.router.route(command)
+            menuBar.refresh(session: fixture.router.session)
+
+            XCTAssertEqual(fixture.palette.paletteViewController.statusMessage, guidance)
+            XCTAssertEqual(status.accessibilityValue() as? String, guidance)
+            XCTAssertEqual(shortcutParent.accessibilityValue() as? String, guidance)
+            XCTAssertEqual(statusButton.accessibilityValue() as? String, guidance)
+            XCTAssertEqual(fixture.palette.frame.origin, origin)
+            XCTAssertTrue(fixture.palette.firstResponder === firstResponder)
+        }
+
+        let pendingToken = try XCTUnwrap(fixture.shortcutController.pendingToken)
+        fixture.registrar.deliver(pendingToken)
+        fixture.palette.paletteViewController.refresh(session: fixture.router.session)
+        menuBar.refresh(session: fixture.router.session)
+        fixture.palette.paletteViewController.refresh(session: fixture.router.session)
+        menuBar.refresh(session: fixture.router.session)
+
+        XCTAssertFalse(fixture.palette.paletteViewController.statusMessage.contains("Nothing to undo"))
+        XCTAssertFalse(fixture.palette.paletteViewController.statusMessage.contains("Nothing to clear"))
+        XCTAssertFalse(fixture.palette.paletteViewController.statusMessage.contains("Select a mark"))
+        XCTAssertEqual(fixture.palette.frame.origin, origin)
+        XCTAssertTrue(fixture.palette.firstResponder === firstResponder)
+    }
+
+    func testPendingShortcutGuidanceKeepsPriorityUntilTimeoutError() throws {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        let menuBar = MenuBarController(
+            router: fixture.router,
+            shortcutController: fixture.shortcutController,
+            terminate: {}
+        )
+        menuBar.install()
+        defer {
+            menuBar.remove()
+            fixture.controller.stop()
+        }
+
+        fixture.router.route(.setShortcut(.controlOptionCommandO))
+        fixture.router.route(.delete)
+        let guidance = "Press Control-Option-Command-O within 5 seconds to confirm"
+        let status = fixture.palette.paletteViewController.control(identifier: "palette.status")
+        XCTAssertEqual(fixture.palette.paletteViewController.statusMessage, guidance)
+        XCTAssertEqual(status.accessibilityValue() as? String, guidance)
+
+        fixture.shortcutScheduler.fireAll()
+        fixture.palette.paletteViewController.refresh(session: fixture.router.session)
+        menuBar.refresh(session: fixture.router.session)
+
+        XCTAssertNil(fixture.router.pendingShortcutDisplayName)
+        XCTAssertTrue(fixture.router.shortcutError?.contains("Control-Option-Command-O") == true)
+        XCTAssertTrue(fixture.palette.paletteViewController.statusMessage.hasPrefix("Shortcut unavailable:"))
+        XCTAssertTrue((status.accessibilityValue() as? String)?.hasPrefix("Shortcut unavailable:") == true)
+    }
+
     func testPendingShortcutGuidanceIsSharedByPaletteAndMenuThroughDelivery() throws {
         let fixture = GuideControllerFixture()
         fixture.controller.start()

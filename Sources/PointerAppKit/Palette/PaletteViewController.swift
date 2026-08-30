@@ -225,6 +225,14 @@ public final class PaletteViewController: NSViewController {
                 shortcutSuppressedFeedback = feedback
             }
             statusLabel.stringValue = "Shortcut unavailable: \(error)"
+        } else if let guidance = router.pendingShortcutGuidance {
+            shortcutErrorWasDisplayed = false
+            if let feedback = router.feedbackMessage {
+                shortcutSuppressedFeedback = feedback
+            } else {
+                shortcutSuppressedFeedback = nil
+            }
+            statusLabel.stringValue = guidance
         } else if shortcutErrorWasDisplayed {
             shortcutErrorWasDisplayed = false
             statusLabel.stringValue = shouldSuppressCurrentFeedback()
@@ -849,6 +857,13 @@ public final class PaletteViewController: NSViewController {
             shortcutSuppressedFeedback = message
             statusLabel.stringValue = "Shortcut unavailable: \(error)"
             statusLabel.setAccessibilityValue(statusLabel.stringValue)
+            return
+        }
+        if let guidance = router.pendingShortcutGuidance {
+            shortcutErrorWasDisplayed = false
+            shortcutSuppressedFeedback = message
+            statusLabel.stringValue = guidance
+            statusLabel.setAccessibilityValue(guidance)
             return
         }
         if shortcutSuppressedFeedback == message {
