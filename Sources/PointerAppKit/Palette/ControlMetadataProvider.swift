@@ -30,7 +30,25 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
         var rows: [ControlMetadata] = []
         if let palette {
             palette.paletteViewController.loadViewIfNeeded()
+            let overflowMenu = palette.paletteViewController.controls
+                .first { $0.identifier?.rawValue == "palette.tools.overflow" }
+                .flatMap { ($0 as? NSPopUpButton)?.menu }
+            let overflowToolIDs = Set(
+                overflowMenu?.items
+                    .compactMap { $0.identifier?.rawValue }
+                    .filter { $0.hasPrefix("palette.overflow.tool.") }
+                    ?? []
+            )
             for control in palette.paletteViewController.controls {
+                guard let rawIdentifier = control.identifier?.rawValue,
+                      !(control.isHidden && rawIdentifier.hasPrefix("palette.tool.")
+                          && overflowToolIDs.contains(
+                              "palette.overflow.tool."
+                                  + rawIdentifier.dropFirst("palette.tool.".count)
+                          ))
+                else {
+                    continue
+                }
                 rows.append(metadata(for: control))
                 guard control.identifier?.rawValue == "palette.tools.overflow",
                       let overflow = control as? NSPopUpButton,

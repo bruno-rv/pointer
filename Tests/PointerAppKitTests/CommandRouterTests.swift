@@ -443,6 +443,16 @@ final class CommandRouterTests: XCTestCase {
         let clearAllOverlay = try XCTUnwrap(
             clearAllFixture.coordinator.overlays[clearAllFixture.uuid] as? RouterTestOverlay
         )
+        clearAllFixture.coordinator.apply(.append(
+            Mark(
+                geometry: .arrow(
+                    start: NormalizedPoint(x: 0.1, y: 0.1),
+                    end: NormalizedPoint(x: 0.8, y: 0.8)
+                ),
+                style: .default
+            ),
+            to: clearAllFixture.uuid
+        ))
         clearAllOverlay.beginDraft()
         clearAllFixture.router.confirmClearAll()
         clearAllOverlay.finishDraft()

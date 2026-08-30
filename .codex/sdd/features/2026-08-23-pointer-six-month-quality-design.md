@@ -350,9 +350,12 @@ Acceptance criteria:
   current display and palette frame; `ControlMetadataProvider` supplies the
   deterministic menu/palette metadata inventory, including the real overflow
   tool items immediately after their parent popup with stable identifiers,
-  values, and keyboard reachability. C's tests assert that guide show/restore
-  receives the same display, palette frame, and avoidance frames that
-  placement computed, and that the guide never overlaps those frames.
+  values, and keyboard reachability. Overflow action rows replace their
+  matching hidden direct tool rows, while all-tools layouts retain only the
+  direct rows, so each tool has exactly one semantic action row. C's tests
+  assert that guide show/restore receives the same display, palette frame, and
+  avoidance frames that placement computed, and that the guide never overlaps
+  those frames.
 
   The public placement contract is equivalent to:
 
@@ -453,8 +456,11 @@ Acceptance criteria:
   state, keyboard route, and visible focus state.
 - Undo, Clear, and other momentary actions look and behave like actions, not
   persistent selections. No-op actions are disabled or clearly explained.
-  Clear All remains a menu-bar command with confirmation and a reversible Undo
-  Clear All state.
+  `CommandRouter.canClearAll` derives from accepted connected display UUIDs and
+  nonempty canvases; the Clear All menu item is disabled with an unavailable
+  value until true, and direct routes guard before confirmation. Clear All
+  remains a menu-bar command with confirmation and a reversible Undo Clear All
+  state.
 - Selection has an explicit escape route and delete affordance. Clicking empty
   canvas clears selection and produces brief nonmodal feedback; while a mark is
   selected, a contextual `Delete` action is visible and routes to the same

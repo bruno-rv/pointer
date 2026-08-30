@@ -84,8 +84,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'Co
 exit 0
 CommandRouterTests: 18 passed
 GuideIntegrationTests: 38 passed
-PaletteInteractionTests: 36 passed
-total: 92 passed, 0 failed
+PaletteInteractionTests: 38 passed
+total: 94 passed, 0 failed
 ```
 
 The ownership split was then verified GREEN by the same source-contract test:
@@ -100,6 +100,16 @@ duplicate declarations/extensions across Sources and Help files
 The state-store protocol appears exactly once in its canonical file, the
 presenting protocol exactly once in its canonical file, and no other Help
 source redeclares or extends either protocol.
+
+The final Clear All and semantic-tool-row tests were run RED before the router,
+menu, and inventory guards:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PaletteInteractionTests/testClearAllMenuItemAndRouteStayDisabledUntilAcceptedMarksExist|PaletteInteractionTests/testMetadataReplacesHiddenToolRowsWithOverflowActionsAtSupportedWidths'
+exit 1
+empty Clear All still invoked confirmation and overflow layouts exposed both
+palette.tool.* and palette.overflow.tool.* semantic rows
+```
 
 The fresh-context test reuses the existing real `GuideControllerFixture` and
 `PalettePanel`: its placement provider suppresses only the context-request
@@ -137,8 +147,14 @@ and keeps the assertion on production behavior.
   label/help/value/role, and are included immediately after the parent popup
   in deterministic metadata inventory without duplicating hidden tool buttons.
   Rebuilding at 420 and 760 points preserves item count, IDs, selected state,
-  and routed actions. Emoji presets remain one native value popup rather than a
-  separate action hierarchy, so no additional popup contract was introduced.
+  and routed actions. At overflow widths hidden direct tool rows are replaced
+  by their overflow rows; all-tools layouts retain direct rows only. Emoji
+  presets remain one native value popup rather than a separate action
+  hierarchy, so no additional popup contract was introduced.
+- `CommandRouter.canClearAll` now derives from accepted connected display UUIDs
+  and nonempty canvases. Direct Clear All no-ops publish `Nothing to clear`
+  without confirmation; the menu item exposes `Available` or
+  `Unavailable — no marks to clear` and preserves Undo Clear All.
 - Palette status gives shortcut registration errors precedence over immediate
   success and no-op feedback, preserves frame/focus, and returns to the current
   normal mode/shortcut status after the error resolves. The module-internal
@@ -153,8 +169,9 @@ and keeps the assertion on production behavior.
 
 ## Current source context
 
-The reviewer revision was applied on top of `070e1c8` (`docs: record Pointer
-overflow contract`), which contains the prior C phase implementation. This
+The reviewer revision was applied on top of `1f6df3a` (`refactor: separate
+Pointer guide state seam`), which contains the prior C phase implementation.
+This
 handoff intentionally has no new commit; the coordinator owns commit grouping
 and publication.
 
@@ -188,15 +205,15 @@ After the focused GREEN run:
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 131 passed, 0 failed
+C phase-wide filter: 133 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 256 passed, 0 failed
+PointerPackageTests.xctest: 258 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 256 passed, 0 failed
+full tests: 258 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

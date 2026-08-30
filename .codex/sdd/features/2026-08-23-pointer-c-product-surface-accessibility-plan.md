@@ -294,7 +294,7 @@ Validate the descriptor's visible frame before changing window state. In Command
 
 - [ ] **Step 4: Add contextual Delete and no-op enablement.**
 
-Add a stable palette.delete control that is enabled only when session.mode == .annotation && session.selection != nil; route it to the same .delete command as Delete/Backspace. Disable Undo when no per-display undo is available and Clear when the pointer display is absent or empty. Keep Clear All in MenuBarController with confirmation and Undo Clear All. Clear selection on empty-canvas click via B's session route; emit brief nonmodal feedback through onFeedback.
+Add a stable palette.delete control that is enabled only when session.mode == .annotation && session.selection != nil; route it to the same .delete command as Delete/Backspace. Disable Undo when no per-display undo is available and Clear when the pointer display is absent or empty. Derive `CommandRouter.canClearAll` from the accepted connected display UUIDs and nonempty canvases; keep the Clear All menu item disabled with an actionable unavailable value until true, and guard direct routes before confirmation. Keep Clear All in MenuBarController with confirmation and Undo Clear All. Clear selection on empty-canvas click via B's session route; emit brief nonmodal feedback through onFeedback.
 
 - [ ] **Step 5: Run focused tests and verify GREEN.**
 
@@ -320,7 +320,7 @@ Expected: PASS, with no-display rejection, explicit PaletteShowResult, contextua
 - Tool controls use native SF Symbols paired with visible canonical titles: Select, Arrow, Rectangle, Ellipse, Pen, Eraser, Emoji, Spotlight. The symbol is never the only accessible name.
 - PaletteViewController.refresh(session:) updates selected tool, mode, style values, shortcut status, contextual visibility/enabled state, and status feedback without moving the window or stealing focus.
 - PaletteLayout.plan(availableWidth:) keeps every tool reachable at width 420, gives overflow an obvious “More Tools” label, and never returns a zero-width tool.
-- ControlMetadataInventory in Palette/ControlMetadataProvider.swift conforms to ControlMetadataProviding, accepts the real PalettePanel and MenuBarController hierarchy, and returns one deterministic ControlMetadata row per palette/menu control in keyboard order through metadata(). The overflow popup contributes its real header/tool menu items immediately after the parent popup; each tool item has a stable `palette.overflow.tool.<tool>` identifier, accessible value, and honest enabled/keyboard state, without duplicating hidden `palette.tool.<tool>` controls. It has no mutation API and never exposes NSControl instances.
+- ControlMetadataInventory in Palette/ControlMetadataProvider.swift conforms to ControlMetadataProviding, accepts the real PalettePanel and MenuBarController hierarchy, and returns one deterministic ControlMetadata row per semantic palette/menu action in keyboard order through metadata(). The overflow popup contributes its real header/tool menu items immediately after the parent popup; each tool item has a stable `palette.overflow.tool.<tool>` identifier, accessible value, and honest enabled/keyboard state. At overflow widths it replaces the matching hidden `palette.tool.<tool>` row; at all-tools width it contributes no overflow action rows. It has no mutation API and never exposes NSControl instances.
 
 - [ ] **Step 1: Write failing layout, enabled-state, and focus-order tests.**
 

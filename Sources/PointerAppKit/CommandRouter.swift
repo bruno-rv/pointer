@@ -68,6 +68,19 @@ public final class CommandRouter {
         coordinator.session.canUndoClearAll
     }
 
+    public var canClearAll: Bool {
+        guard let acceptedDisplayState,
+              acceptedDisplayState.hasConnectedDisplays,
+              !acceptedDisplayState.connectedUUIDs.isEmpty,
+              !acceptedDisplayState.connectedUUIDs.contains(where: { $0.rawValue.isEmpty })
+        else {
+            return false
+        }
+        return acceptedDisplayState.connectedUUIDs.contains {
+            !session.canvas(for: $0).marks.isEmpty
+        }
+    }
+
     public var pointerDisplay: DisplayUUID? {
         acceptedPointerDisplay
     }
@@ -143,6 +156,10 @@ public final class CommandRouter {
             clearFeedback()
             coordinator.apply(.clear(display))
         case .clearAll:
+            guard canClearAll else {
+                publishFeedback("Nothing to clear")
+                return
+            }
             clearFeedback()
             onClearAllRequested?()
         case .undoClearAll:
@@ -199,6 +216,10 @@ public final class CommandRouter {
     }
 
     public func confirmClearAll() {
+        guard canClearAll else {
+            publishFeedback("Nothing to clear")
+            return
+        }
         clearFeedback()
         coordinator.apply(.clearAll)
     }

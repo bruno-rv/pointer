@@ -147,6 +147,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         let menuBar = try XCTUnwrap(fixture.menuBar as? ControllerTestMenuBar)
 
         fixture.controller.start()
+        fixture.coordinator.apply(.append(testMark(), to: fixture.provider.displays[0].uuid))
         menuBar.requestClearAll()
         XCTAssertEqual(menuBar.confirmationCount, 1)
         XCTAssertEqual(menuBar.commandCount, 1)
@@ -157,6 +158,7 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(menuBar.commandCount, 1)
 
         fixture.controller.start()
+        fixture.coordinator.apply(.append(testMark(), to: fixture.provider.displays[0].uuid))
         menuBar.requestClearAll()
         XCTAssertEqual(menuBar.confirmationCount, 2)
         XCTAssertEqual(menuBar.commandCount, 2)
@@ -296,10 +298,21 @@ final class PointerApplicationControllerTests: XCTestCase {
         fixture.controller.start()
         fixture.controller.stop()
         fixture.controller.start()
+        fixture.coordinator.apply(.append(testMark(), to: fixture.provider.displays[0].uuid))
         XCTAssertEqual(menuBar.bindCount, 2)
         menuBar.requestClearAll()
         XCTAssertEqual(menuBar.confirmationCount, 1)
         XCTAssertEqual(menuBar.commandCount, 1)
+    }
+
+    private func testMark() -> Mark {
+        Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
     }
 
     func testStopClearsDisplaySyncCallbackAndRestartBindsExactlyOnce() throws {

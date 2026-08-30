@@ -632,6 +632,62 @@ final class PaletteInteractionTests: XCTestCase {
         })
     }
 
+    func testClearAllMenuItemAndRouteStayDisabledUntilAcceptedMarksExist() throws {
+        let fixture = acceptedFixture()
+        let menuBar = MenuBarController(router: fixture.router, terminate: {})
+        menuBar.install()
+        defer { menuBar.remove() }
+        let clearAll = try XCTUnwrap(menuBar.menu?.items.first {
+            $0.identifier?.rawValue == "menu.clear-all"
+        })
+        var confirmationRequests = 0
+        fixture.router.onClearAllRequested = { confirmationRequests += 1 }
+
+        menuBar.refresh(session: fixture.router.session)
+        XCTAssertFalse(clearAll.isEnabled)
+        XCTAssertEqual(
+            clearAll.accessibilityValue() as? String,
+            "Unavailable — no marks to clear"
+        )
+        XCTAssertTrue((clearAll.accessibilityHelp() ?? "").contains("no marks"))
+        fixture.router.route(.clearAll)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to clear")
+        XCTAssertEqual(confirmationRequests, 0)
+
+        let mark = Mark(
+            geometry: .arrow(
+                start: NormalizedPoint(x: 0.1, y: 0.1),
+                end: NormalizedPoint(x: 0.8, y: 0.8)
+            ),
+            style: .default
+        )
+        fixture.coordinator.apply(.append(mark, to: fixture.display.uuid))
+        menuBar.refresh(session: fixture.router.session)
+        XCTAssertTrue(clearAll.isEnabled)
+        XCTAssertEqual(clearAll.accessibilityValue() as? String, "Available")
+
+        fixture.router.confirmClearAll()
+        menuBar.refresh(session: fixture.router.session)
+        XCTAssertFalse(clearAll.isEnabled)
+        XCTAssertEqual(clearAll.accessibilityValue() as? String, "Unavailable — no marks to clear")
+        XCTAssertEqual(confirmationRequests, 0)
+
+        fixture.router.updateDisplayState(DisplaySyncResult(
+            connectedUUIDs: [],
+            addedUUIDs: [],
+            removedUUIDs: [fixture.display.uuid],
+            pointerDisplay: nil,
+            hasConnectedDisplays: false,
+            enteredZeroDisplayState: true,
+            reconnected: false
+        ))
+        menuBar.refresh(session: fixture.router.session)
+        XCTAssertFalse(clearAll.isEnabled)
+        fixture.router.route(.clearAll)
+        XCTAssertEqual(fixture.router.feedbackMessage, "Nothing to clear")
+        XCTAssertEqual(confirmationRequests, 0)
+    }
+
     func testMetadataUsesHonestKeyboardReachabilityForDisabledAndHiddenControls() {
         let router = makeRouter()
         let palette = PalettePanel(
@@ -1039,6 +1095,62 @@ final class PaletteInteractionTests: XCTestCase {
                 inventory,
                 ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
             )
+        }
+    }
+
+    func testMetadataReplacesHiddenToolRowsWithOverflowActionsAtSupportedWidths() throws {
+        for width in [420.0, 760.0, PaletteLayout.minimumAllToolsWidth] {
+            let fixture = acceptedFixture()
+            let display = DisplayDescriptor(
+                uuid: DisplayUUID(rawValue: "metadata-\(Int(width))"),
+                frame: DisplayFrame(x: 0, y: 0, width: width + 32, height: 1_080),
+                visibleFrame: DisplayFrame(x: 0, y: 24, width: width + 32, height: 1_056),
+                scaleFactor: 2
+            )
+            let palette = PalettePanel(
+                router: fixture.router,
+                guidePlacementProvider: GuidePlacementProvider()
+            )
+            defer { palette.close() }
+            guard case .shown = palette.show(on: display) else {
+                return XCTFail("Expected palette at \(width)")
+            }
+
+            let controller = palette.paletteViewController
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+            let activeTool = controller.layoutPlan.overflowTools.last ?? .spotlight
+            var session = fixture.router.session
+            session.apply(.setMode(.annotation))
+            session.apply(.setTool(activeTool))
+            palette.refresh(session: session)
+            controller.applyLayout(for: width)
+            controller.view.layoutSubtreeIfNeeded()
+
+            let metadata = ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
+            let toolRows = metadata.filter {
+                $0.identifier.hasPrefix("palette.tool.")
+                    || $0.identifier.hasPrefix("palette.overflow.tool.")
+            }
+            let expectedIDs: [String] = controller.layoutPlan.rows
+                .flatMap { $0 }
+                .compactMap { item in
+                    guard case let .tool(tool) = item else { return nil }
+                    return "palette.tool.\(toolIdentifier(tool))"
+                } + controller.layoutPlan.overflowTools.map {
+                    "palette.overflow.tool.\(toolIdentifier($0))"
+                }
+
+            XCTAssertEqual(toolRows.map(\.identifier), expectedIDs)
+            XCTAssertEqual(toolRows.count, PointerTool.allCases.count)
+            XCTAssertEqual(Set(toolRows.map(\.identifier)).count, toolRows.count)
+            XCTAssertEqual(
+                toolRows.filter { $0.value == "Selected" }.map(\.accessibleName),
+                [activeTool.displayName]
+            )
+
+            let rebuilt = ControlMetadataInventory(palette: palette, menuBar: nil).metadata()
+            XCTAssertEqual(rebuilt, metadata)
         }
     }
 

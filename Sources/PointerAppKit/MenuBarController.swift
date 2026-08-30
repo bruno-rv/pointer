@@ -32,6 +32,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     private weak var shortcutController: HotKeyController?
     private let terminate: () -> Void
     private var modeItem: NSMenuItem?
+    private var clearAllItem: NSMenuItem?
     private var undoClearAllItem: NSMenuItem?
     private var shortcutItems: [ShortcutPreset: NSMenuItem] = [:]
     private var callbacksBound = false
@@ -116,7 +117,12 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         menu.addItem(shortcuts)
 
         menu.addItem(.separator())
-        menu.addItem(itemWithTitle("Clear All Displays…", action: #selector(clearAll), identifier: "menu.clear-all"))
+        clearAllItem = itemWithTitle(
+            "Clear All Displays…",
+            action: #selector(clearAll),
+            identifier: "menu.clear-all"
+        )
+        menu.addItem(clearAllItem!)
         undoClearAllItem = itemWithTitle(
             "Undo Clear All",
             action: #selector(undoClearAll),
@@ -139,6 +145,16 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
             modeItem.setAccessibilityHelp("Toggle annotation mode")
             modeItem.setAccessibilityValue(session.mode == .annotation ? "Selected" : "Not selected")
         }
+        let canClearAll = router.canClearAll
+        clearAllItem?.isEnabled = canClearAll
+        clearAllItem?.setAccessibilityValue(
+            canClearAll ? "Available" : "Unavailable — no marks to clear"
+        )
+        clearAllItem?.setAccessibilityHelp(
+            canClearAll
+                ? "Clear all marks on connected displays"
+                : "Unavailable — no marks to clear"
+        )
         undoClearAllItem?.isEnabled = router.canUndoClearAll
         undoClearAllItem?.setAccessibilityValue(router.canUndoClearAll ? "Available" : "Unavailable")
         for preset in ShortcutPreset.allCases {
