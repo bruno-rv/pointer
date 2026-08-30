@@ -450,6 +450,16 @@ Acceptance criteria:
   the mode control is not visually confused with a tool. The current tool,
   active style, pending shortcut, and shortcut error are visible without
   opening a second settings flow.
+- Pending shortcut guidance is transient and shared across palette and menu:
+  `CommandRouter.pendingShortcutGuidance` uses the canonical
+  `ShortcutPreset.displayName`, tells the user to deliver the candidate within
+  five seconds, marks only the candidate as pending while the old active
+  shortcut stays selected, and switches to the delivered active item or
+  actionable timeout/registration error. At zero displays, the hidden-palette
+  menu remains the fallback: annotation mode is disabled with an exact
+  unavailable help/value and the status item presents a native warning
+  affordance with `No presentation display connected`; reconnect restores
+  normal status without replaying stale feedback.
 - Tool controls use coherent native SF Symbols or equivalent icons paired with
   canonical labels/tooltips. Icon-only controls never carry the sole meaning;
   every control retains an accessible name, help, stable identifier, enabled

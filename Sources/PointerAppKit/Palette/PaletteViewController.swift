@@ -234,6 +234,8 @@ public final class PaletteViewController: NSViewController {
             statusLabel.stringValue = normalStatusMessage(for: session)
         } else if let feedback = router.feedbackMessage {
             statusLabel.stringValue = feedback
+        } else if let guidance = router.pendingShortcutGuidance {
+            statusLabel.stringValue = guidance
         } else {
             statusLabel.stringValue = normalStatusMessage(for: session)
         }

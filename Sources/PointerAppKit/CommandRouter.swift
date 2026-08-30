@@ -93,6 +93,16 @@ public final class CommandRouter {
         shortcutController?.registrationError
     }
 
+    public var pendingShortcutDisplayName: String? {
+        shortcutController?.pendingPreset?.displayName
+    }
+
+    public var pendingShortcutGuidance: String? {
+        pendingShortcutDisplayName.map {
+            "Press \($0) within 5 seconds to confirm"
+        }
+    }
+
     @discardableResult
     public func bindCallbacks(
         onStateChange: ((PointerSession) -> Void)?,
@@ -262,6 +272,9 @@ public final class CommandRouter {
     private func publishFeedback(_ message: String) {
         feedbackMessage = message
         onFeedback?(message)
+        if acceptedPointerDisplay == nil {
+            onStateChange?(session)
+        }
     }
 
     private func clearFeedback() {

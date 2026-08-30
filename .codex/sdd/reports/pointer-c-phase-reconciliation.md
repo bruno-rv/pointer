@@ -111,6 +111,20 @@ empty Clear All still invoked confirmation and overflow layouts exposed both
 palette.tool.* and palette.overflow.tool.* semantic rows
 ```
 
+The final pending-shortcut/no-display tests were authored before their seams
+were implemented. The first invocation with the host's default developer
+directory could not load XCTest; rerunning with the repository's Xcode toolchain
+exposed and corrected the test-only fixture conformance/lookup errors before
+the production behavior was accepted:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PaletteInteractionTests/testPendingShortcutGuidanceIsSharedByPaletteAndMenuThroughDelivery|PaletteInteractionTests/testPendingShortcutReplacementTimeoutAndRegistrationFailureStayActionable|PointerApplicationControllerTests/testZeroDisplayKeepsMenuFallbackActionableAndHotkeyFeedbackVisible'
+initial compile: PendingShortcutScheduler missing activeTimerCount;
+PendingShortcutUIFixture used a non-existent controller; nested shortcut items
+were looked up from the top-level menu
+after fixture-only corrections: 3 passed, 0 failed
+```
+
 The fresh-context test reuses the existing real `GuideControllerFixture` and
 `PalettePanel`: its placement provider suppresses only the context-request
 label after startup, while the manually dragged real window provides the
@@ -159,6 +173,20 @@ and keeps the assertion on production behavior.
   success and no-op feedback, preserves frame/focus, and returns to the current
   normal mode/shortcut status after the error resolves. The module-internal
   `PointerTool.displayName` is the single source for tool labels.
+- Pending shortcut state is read-only through `CommandRouter.pendingShortcutDisplayName`
+  and `pendingShortcutGuidance`, derived from `HotKeyController.pendingPreset`.
+  The palette, shortcut parent, status item, and candidate menu action share the
+  same canonical display name/guidance; candidate state is non-color `Pending`
+  while the old active item remains selected until delivery. Timeout and
+  registration failure retain actionable errors, and successful delivery updates
+  the active item.
+- When no accepted pointer display exists, the menu bar remains visible and
+  actionable while the palette is hidden: annotation mode is disabled with the
+  exact unavailable help/value, the status item presents a native warning image
+  and `No presentation display connected`, and no-display hotkey rejection
+  refreshes that warning without mutating mode/tool. Reconnect restores the
+  normal status affordance; Show Palette, Learn, shortcut settings, and Quit
+  remain enabled.
 - Shortcut-error suppression is durable across repeated refreshes while the
   router still holds the exact hidden feedback; changing or clearing that
   feedback releases suppression for the next status update.
@@ -205,15 +233,15 @@ After the focused GREEN run:
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CommandRouterTests|PaletteLayoutTests|PaletteInteractionTests|GuideIntegrationTests|HotKeyControllerTests|ShortcutLifecycleTests|AccessibilityMetadataTests|PointerApplicationControllerTests'
 exit 0
-C phase-wide filter: 133 passed, 0 failed
+C phase-wide filter: 136 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 258 passed, 0 failed
+PointerPackageTests.xctest: 261 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
 exit 0
-full tests: 258 passed, 0 failed
+full tests: 261 passed, 0 failed
 Info.plist: OK; codesign: OK; arm64 bundle: OK; smoke contract: passed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-gestures.sh

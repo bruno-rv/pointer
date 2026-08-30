@@ -86,6 +86,74 @@ final class PointerApplicationControllerTests: XCTestCase {
         XCTAssertEqual(overlay.display, changed)
     }
 
+    func testZeroDisplayKeepsMenuFallbackActionableAndHotkeyFeedbackVisible() throws {
+        let fixture = ControllerFixture { router in
+            MenuBarController(router: router, terminate: {})
+        }
+        let menuBar = try XCTUnwrap(fixture.menuBar as? MenuBarController)
+        let connectedDisplay = fixture.provider.displays[0]
+
+        fixture.controller.start()
+        fixture.provider.displays = []
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
+        let modeItem = try XCTUnwrap(menuBar.menu?.items.first {
+            $0.identifier?.rawValue == "menu.toggle-mode"
+        })
+        let statusButton = try XCTUnwrap(menuBar.statusItem?.button)
+        XCTAssertFalse(fixture.palette.window.isVisible)
+        XCTAssertFalse(modeItem.isEnabled)
+        XCTAssertEqual(
+            modeItem.accessibilityHelp(),
+            "Unavailable — no presentation display connected"
+        )
+        XCTAssertEqual(
+            modeItem.accessibilityValue() as? String,
+            "Unavailable — no presentation display connected"
+        )
+        XCTAssertEqual(
+            statusButton.accessibilityValue() as? String,
+            "No presentation display connected"
+        )
+        XCTAssertEqual(statusButton.toolTip, "No presentation display connected")
+        XCTAssertTrue(statusButton.image?.accessibilityDescription == "No presentation display connected")
+
+        for identifier in [
+            "menu.show-palette",
+            "menu.learn-pointer",
+            "menu.shortcut",
+            "menu.quit",
+        ] {
+            XCTAssertTrue(menuBar.menu?.items.first {
+                $0.identifier?.rawValue == identifier
+            }?.isEnabled == true, identifier)
+        }
+
+        let before = fixture.router.session
+        let activeToken = try XCTUnwrap(fixture.shortcutController.activeToken)
+        fixture.registrar.deliver(activeToken)
+        XCTAssertEqual(fixture.router.session, before)
+        XCTAssertEqual(fixture.router.feedbackMessage, "No presentation display connected")
+        XCTAssertEqual(
+            statusButton.accessibilityValue() as? String,
+            "No presentation display connected"
+        )
+
+        fixture.provider.displays = [connectedDisplay]
+        fixture.notificationCenter.post(
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
+        XCTAssertTrue(modeItem.isEnabled)
+        XCTAssertEqual(statusButton.title, "◉")
+        XCTAssertNil(statusButton.image)
+        XCTAssertEqual(statusButton.accessibilityValue() as? String, "Pointer controls")
+    }
+
     func testStopClearsControllerCallbacksAndRestartRebindsEachOnce() {
         let fixture = ControllerFixture()
 

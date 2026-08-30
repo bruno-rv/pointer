@@ -31,9 +31,12 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
     private let router: CommandRouter
     private weak var shortcutController: HotKeyController?
     private let terminate: () -> Void
+    private static let noDisplayFeedback = "No presentation display connected"
+    private static let noDisplayUnavailable = "Unavailable — no presentation display connected"
     private var modeItem: NSMenuItem?
     private var clearAllItem: NSMenuItem?
     private var undoClearAllItem: NSMenuItem?
+    private var shortcutMenuItem: NSMenuItem?
     private var shortcutItems: [ShortcutPreset: NSMenuItem] = [:]
     private var callbacksBound = false
 
@@ -115,6 +118,7 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         }
         shortcuts.submenu = shortcutMenu
         menu.addItem(shortcuts)
+        shortcutMenuItem = shortcuts
 
         menu.addItem(.separator())
         clearAllItem = itemWithTitle(
@@ -140,10 +144,19 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
 
     public func refresh(session: PointerSession) {
         if let modeItem {
-            modeItem.title = session.mode == .annotation ? "Exit Annotation" : "Enter Annotation"
+            let hasDisplay = router.pointerDisplay != nil
+            modeItem.isEnabled = hasDisplay
+            modeItem.title = hasDisplay && session.mode == .annotation
+                ? "Exit Annotation"
+                : "Enter Annotation"
             modeItem.setAccessibilityLabel(modeItem.title)
-            modeItem.setAccessibilityHelp("Toggle annotation mode")
-            modeItem.setAccessibilityValue(session.mode == .annotation ? "Selected" : "Not selected")
+            if hasDisplay {
+                modeItem.setAccessibilityHelp("Toggle annotation mode")
+                modeItem.setAccessibilityValue(session.mode == .annotation ? "Selected" : "Not selected")
+            } else {
+                modeItem.setAccessibilityHelp(Self.noDisplayUnavailable)
+                modeItem.setAccessibilityValue(Self.noDisplayUnavailable)
+            }
         }
         let canClearAll = router.canClearAll
         clearAllItem?.isEnabled = canClearAll
@@ -159,14 +172,58 @@ public final class MenuBarController: NSObject, MenuBarPresenting {
         undoClearAllItem?.setAccessibilityValue(router.canUndoClearAll ? "Available" : "Unavailable")
         for preset in ShortcutPreset.allCases {
             let isSelected = shortcutController?.activePreset == preset
-            shortcutItems[preset]?.state = isSelected ? .on : .off
-            shortcutItems[preset]?.setAccessibilityValue(isSelected ? "Selected" : "Not selected")
+            let isPending = shortcutController?.pendingPreset == preset
+            shortcutItems[preset]?.state = isSelected ? .on : (isPending ? .mixed : .off)
+            shortcutItems[preset]?.setAccessibilityValue(
+                isSelected ? "Selected" : (isPending ? "Pending" : "Not selected")
+            )
+            if isPending, let guidance = router.pendingShortcutGuidance {
+                shortcutItems[preset]?.setAccessibilityHelp(guidance)
+            } else {
+                shortcutItems[preset]?.setAccessibilityHelp("Pointer command: \(preset.displayName)")
+            }
         }
-        if let error = shortcutController?.registrationError {
-            statusItem?.button?.toolTip = "Pointer shortcut unavailable: \(error)"
-            statusItem?.button?.setAccessibilityValue("Shortcut unavailable: \(error)")
+        if let guidance = router.pendingShortcutGuidance {
+            shortcutMenuItem?.setAccessibilityHelp(guidance)
+            shortcutMenuItem?.setAccessibilityValue(guidance)
+        } else if let error = shortcutController?.registrationError {
+            let message = "Shortcut unavailable: \(error)"
+            shortcutMenuItem?.setAccessibilityHelp(message)
+            shortcutMenuItem?.setAccessibilityValue(message)
         } else {
+            shortcutMenuItem?.setAccessibilityHelp("Choose the active global shortcut preset")
+            shortcutMenuItem?.setAccessibilityValue(
+                shortcutController?.activePreset.map { "Active: \($0.displayName)" }
+                    ?? "No active shortcut"
+            )
+        }
+        if router.pointerDisplay == nil {
+            let button = statusItem?.button
+            button?.title = ""
+            button?.image = NSImage(
+                systemSymbolName: "exclamationmark.triangle.fill",
+                accessibilityDescription: Self.noDisplayFeedback
+            )
+            button?.toolTip = Self.noDisplayFeedback
+            button?.setAccessibilityHelp(Self.noDisplayFeedback)
+            button?.setAccessibilityValue(Self.noDisplayFeedback)
+        } else if let error = shortcutController?.registrationError {
+            statusItem?.button?.title = "◉"
+            statusItem?.button?.image = nil
+            statusItem?.button?.toolTip = "Pointer shortcut unavailable: \(error)"
+            statusItem?.button?.setAccessibilityHelp("Pointer shortcut unavailable: \(error)")
+            statusItem?.button?.setAccessibilityValue("Shortcut unavailable: \(error)")
+        } else if let guidance = router.pendingShortcutGuidance {
+            statusItem?.button?.title = "◉"
+            statusItem?.button?.image = nil
+            statusItem?.button?.toolTip = guidance
+            statusItem?.button?.setAccessibilityHelp(guidance)
+            statusItem?.button?.setAccessibilityValue(guidance)
+        } else {
+            statusItem?.button?.title = "◉"
+            statusItem?.button?.image = nil
             statusItem?.button?.toolTip = "Pointer controls"
+            statusItem?.button?.setAccessibilityHelp("Open Pointer controls")
             statusItem?.button?.setAccessibilityValue("Pointer controls")
         }
     }

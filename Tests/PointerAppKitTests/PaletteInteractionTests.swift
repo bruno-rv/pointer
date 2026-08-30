@@ -5,6 +5,104 @@ import XCTest
 
 @MainActor
 final class PaletteInteractionTests: XCTestCase {
+    func testPendingShortcutGuidanceIsSharedByPaletteAndMenuThroughDelivery() throws {
+        let fixture = GuideControllerFixture()
+        fixture.controller.start()
+        let menuBar = MenuBarController(
+            router: fixture.router,
+            shortcutController: fixture.shortcutController,
+            terminate: {}
+        )
+        menuBar.install()
+        defer {
+            menuBar.remove()
+            fixture.controller.stop()
+        }
+
+        fixture.router.route(.setShortcut(.controlOptionCommandO))
+        fixture.palette.refresh(session: fixture.router.session)
+        menuBar.refresh(session: fixture.router.session)
+
+        let guidance = "Press Control-Option-Command-O within 5 seconds to confirm"
+        XCTAssertEqual(fixture.router.pendingShortcutDisplayName, "Control-Option-Command-O")
+        XCTAssertEqual(fixture.palette.paletteViewController.statusMessage, guidance)
+        let shortcutParent = try XCTUnwrap(menuBar.menu?.items.first {
+            $0.identifier?.rawValue == "menu.shortcut"
+        })
+        XCTAssertEqual(shortcutParent.accessibilityValue() as? String, guidance)
+        XCTAssertEqual(shortcutParent.accessibilityHelp() ?? "", guidance)
+        let statusButton = try XCTUnwrap(menuBar.statusItem?.button)
+        XCTAssertEqual(statusButton.accessibilityValue() as? String, guidance)
+        let candidate = try XCTUnwrap(shortcutParent.submenu?.items
+            .first { $0.identifier?.rawValue == "menu.shortcut.control-option-command-o" })
+        XCTAssertEqual(candidate.state, .mixed)
+        XCTAssertEqual(candidate.accessibilityValue() as? String, "Pending")
+        let active = try XCTUnwrap(shortcutParent.submenu?.items
+            .first { $0.identifier?.rawValue == "menu.shortcut.control-option-command-p" })
+        XCTAssertEqual(active.state, .on)
+        XCTAssertEqual(active.accessibilityValue() as? String, "Selected")
+
+        let pendingToken = try XCTUnwrap(fixture.shortcutController.pendingToken)
+        fixture.registrar.deliver(pendingToken)
+        fixture.palette.refresh(session: fixture.router.session)
+        menuBar.refresh(session: fixture.router.session)
+
+        XCTAssertNil(fixture.router.pendingShortcutDisplayName)
+        XCTAssertEqual(
+            fixture.router.activeShortcutID,
+            ShortcutPreset.controlOptionCommandO.rawValue
+        )
+        XCTAssertFalse(
+            (shortcutParent.accessibilityValue() as? String)?.contains("within 5 seconds") == true
+        )
+        XCTAssertEqual(candidate.state, .on)
+        XCTAssertEqual(candidate.accessibilityValue() as? String, "Selected")
+        XCTAssertEqual(active.state, .off)
+        XCTAssertEqual(active.accessibilityValue() as? String, "Not selected")
+        XCTAssertFalse((statusButton.accessibilityValue() as? String)?.contains("within 5 seconds") == true)
+    }
+
+    func testPendingShortcutReplacementTimeoutAndRegistrationFailureStayActionable() throws {
+        let fixture = PendingShortcutUIFixture()
+        defer { fixture.menuBar.remove() }
+        fixture.shortcutController.start()
+        fixture.registrar.failures.removeAll()
+
+        fixture.router.route(.setShortcut(.controlOptionCommandO))
+        fixture.router.route(.setShortcut(.controlOptionCommandP))
+        fixture.refreshUI()
+
+        XCTAssertEqual(fixture.router.pendingShortcutDisplayName, "Control-Option-Command-P")
+        let shortcutParent = try XCTUnwrap(fixture.menuBar.menu?.items.first {
+            $0.identifier?.rawValue == "menu.shortcut"
+        })
+        let replaced = try XCTUnwrap(shortcutParent.submenu?.items.first {
+            $0.identifier?.rawValue == "menu.shortcut.control-option-command-p"
+        })
+        XCTAssertEqual(replaced.state, .mixed)
+        XCTAssertEqual(replaced.accessibilityValue() as? String, "Pending")
+        let replacementGuidance = "Press Control-Option-Command-P within 5 seconds to confirm"
+        XCTAssertEqual(fixture.palette.paletteViewController.statusMessage, replacementGuidance)
+        XCTAssertEqual(shortcutParent.accessibilityValue() as? String, replacementGuidance)
+        XCTAssertEqual(fixture.menuBar.statusItem?.button?.accessibilityValue() as? String, replacementGuidance)
+
+        fixture.scheduler.fireAll()
+        fixture.refreshUI()
+        XCTAssertNil(fixture.router.pendingShortcutDisplayName)
+        XCTAssertTrue(fixture.router.shortcutError?.contains("Control-Option-Command-P") == true)
+        XCTAssertTrue(fixture.palette.paletteViewController.statusMessage.hasPrefix("Shortcut unavailable:"))
+        XCTAssertTrue((shortcutParent.accessibilityValue() as? String)?.hasPrefix("Shortcut unavailable:") == true)
+        XCTAssertTrue((fixture.menuBar.statusItem?.button?.accessibilityValue() as? String)?.hasPrefix("Shortcut unavailable:") == true)
+
+        fixture.registrar.failures = [.controlOptionCommandO]
+        fixture.router.route(.setShortcut(.controlOptionCommandO))
+        fixture.refreshUI()
+        XCTAssertNil(fixture.router.pendingShortcutDisplayName)
+        XCTAssertTrue(fixture.router.shortcutError?.contains("Control-Option-Command-O") == true)
+        XCTAssertEqual(replaced.accessibilityValue() as? String, "Not selected")
+        XCTAssertTrue((shortcutParent.accessibilityValue() as? String)?.contains("Control-Option-Command-O") == true)
+    }
+
     func testPaletteShowReturnsExplicitNoDisplayOrShown() {
         let provider = PaletteInteractionScreenProvider(displays: [])
         let coordinator = DisplayCoordinator(
@@ -1590,6 +1688,115 @@ final class PaletteInteractionTests: XCTestCase {
 
     private func toolIdentifier(forTitle title: String) -> String? {
         PointerTool.allCases.first { $0.displayName == title }.map(toolIdentifier)
+    }
+}
+
+@MainActor
+private final class PendingShortcutUIFixture {
+    let display = PaletteInteractionScreenProvider.descriptor()
+    let provider: PaletteInteractionScreenProvider
+    let coordinator: DisplayCoordinator
+    let router: CommandRouter
+    let registrar: PendingShortcutRegistrar
+    let store: PendingShortcutStore
+    let scheduler: PendingShortcutScheduler
+    let shortcutController: HotKeyController
+    let palette: PalettePanel
+    let menuBar: MenuBarController
+
+    init() {
+        provider = PaletteInteractionScreenProvider(displays: [display])
+        coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { PaletteInteractionOverlay(display: $0) }
+        )
+        registrar = PendingShortcutRegistrar(failures: Set(ShortcutPreset.allCases))
+        store = PendingShortcutStore()
+        scheduler = PendingShortcutScheduler()
+        shortcutController = HotKeyController(
+            registrar: registrar,
+            store: store,
+            scheduler: scheduler
+        )
+        router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
+        palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        menuBar = MenuBarController(
+            router: router,
+            shortcutController: shortcutController,
+            terminate: {}
+        )
+        _ = coordinator.synchronize()
+        palette.paletteViewController.loadViewIfNeeded()
+        menuBar.install()
+    }
+
+    func refreshUI() {
+        palette.paletteViewController.refresh(session: router.session)
+        menuBar.refresh(session: router.session)
+    }
+}
+
+@MainActor
+private final class PendingShortcutRegistrar: HotKeyRegistering {
+    var onEvent: ((HotKeyToken) -> Void)?
+    var failures: Set<ShortcutPreset>
+    private var nextToken: UInt64 = 1
+
+    init(failures: Set<ShortcutPreset>) {
+        self.failures = failures
+    }
+
+    func register(_ preset: ShortcutPreset) throws -> HotKeyToken {
+        if failures.contains(preset) {
+            throw PendingShortcutError.registrationFailed
+        }
+        defer { nextToken += 1 }
+        return HotKeyToken(rawValue: nextToken)
+    }
+
+    func unregister(_ token: HotKeyToken) {}
+}
+
+private enum PendingShortcutError: Error {
+    case registrationFailed
+}
+
+@MainActor
+private final class PendingShortcutStore: ShortcutStoring {
+    func load() -> ShortcutPreset? { nil }
+    func save(_ preset: ShortcutPreset) {}
+}
+
+@MainActor
+private final class PendingShortcutScheduler: ShortcutScheduling {
+    private var nextToken: UInt64 = 1
+    private var actions: [ShortcutScheduleToken: () -> Void] = [:]
+
+    var activeTimerCount: Int { actions.count }
+
+    @discardableResult
+    func schedule(after _: TimeInterval, _ action: @escaping () -> Void) -> ShortcutScheduleToken {
+        defer { nextToken += 1 }
+        let token = ShortcutScheduleToken(rawValue: nextToken)
+        actions[token] = action
+        return token
+    }
+
+    func cancel(_ token: ShortcutScheduleToken) {
+        actions.removeValue(forKey: token)
+    }
+
+    func fireAll() {
+        let pending = Array(actions.values)
+        actions.removeAll()
+        pending.forEach { $0() }
     }
 }
 
