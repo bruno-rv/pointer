@@ -478,6 +478,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateBuildProvenance: BuildProvenance
         public let baselineRunProvenance: PerformanceRunProvenance
         public let candidateRunProvenance: PerformanceRunProvenance
+        public let baselineMeasurementIdentity: MeasurementIdentity
+        public let candidateMeasurementIdentity: MeasurementIdentity
         public let pairEligibility: PerformancePairEligibility
         public let baselineID: String
         public let candidateID: String
@@ -572,9 +574,15 @@ contains measured comparisons only. Its structural validator requires
 schema/harness/foundation/build-contract versions, matching host/fixture,
 both typed `BuildProvenance` values, matching baseline/candidate
 `PerformanceRunProvenance` values including their accepted-foundation SHA and
-`buildConfiguration`, one `MetricComparison` for every
-`PerformanceMetricID`, equal-length paired arrays, valid `BootstrapInterval`
-values, and the conditional manual-evidence rule. A manual metric requires
+`buildConfiguration`, and full `baselineMeasurementIdentity` and
+`candidateMeasurementIdentity` values. The two measurement identities must
+match exactly for host model, macOS, Xcode, developerDirectory, power state,
+display state, and buildConfiguration; their clean source commit identities
+must be distinct, and each must match its run/build provenance. It requires
+one `MetricComparison` for every `PerformanceMetricID`, nonempty ratio/delta
+arrays with exactly `configuration.totalPairs` (`pairsPerOrder * 2`) entries
+for every metric, equal-length paired sample arrays, valid
+`BootstrapInterval` values, and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
 steps, result, and evidence path); a deterministic metric must have nil manual
 evidence. Deterministic comparisons require at least 30 samples. Its
@@ -763,6 +771,7 @@ Expected: complete schema round-trip and rejection tests pass.
     func testMeasurementCLIRejectsBothOrNeitherSourceIdentity()
     func testDirectComparisonHarnessCannotBypassPairEligibility()
     func testComparisonCLIRequiresReportPathsAndPairEligibilityFile()
+    func testComparisonCarriesFullMeasurementIdentitiesAndExactPairArrays()
     func testBootstrapIntervalOnlyClaimsImprovementWhenUpperBoundIsBelowZero()
     func testBudgetRegressionAndMissingMetricDispositionIsRevise()
     func testResilienceReportCoversModeToolsMarksClearUndoDisplayChurnAndShortcutTimeout()
@@ -772,6 +781,11 @@ Assert `PerformanceComparisonReport` contains `reportKind == .comparison`,
 immutable baselineID/candidateID, one `MetricComparison` for every
 `PerformanceMetricID`, paired baseline/candidate samples, ratios/deltas,
 `BootstrapInterval` seed 48271/10,000 resamples, and per-metric dispositions.
+Also assert full `baselineMeasurementIdentity` and
+`candidateMeasurementIdentity` fields, exact equality for host model, macOS,
+Xcode, developerDirectory, power/display state, and buildConfiguration, with
+distinct source commits matching each run/build provenance. Require nonempty
+ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
 Also assert source/content identities, host/build/fixture fields, five
 warmups, `pairsPerOrder == 15`, derived `totalPairs == 30`, exactly 15
 baseline-first plus 15 candidate-first pairs, ratio

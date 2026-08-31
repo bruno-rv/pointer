@@ -26,6 +26,7 @@ claim that E/F implementation or physical evidence exists.
 | Clean clone | Canonical input cleanliness is captured before any source-root write, excluding generated reports/build products and the final evidence output; temporary evidence stays under `$fixture`. The script validates `checkpointCommitSHA` and foundation/current manifests, build provenance, then tests, directly invokes the built executable with `--smoke --format json`, and runs `verify.sh`; it atomically publishes final `CleanCloneIdentity.md` on success or failure, and an immediate rerun must remain reproducible. |
 | Chrome friction | F reruns the authoritative `ChromeFrictionReport` against the final F candidate and records the full immutable E baseline hash. D's Chrome checkpoint is historical provenance only and is never silently relabeled as final evidence. |
 | Pair eligibility | E defines typed `PerformancePairEligibility`/validated foundation provenance arguments. The CLI/script constructs eligibility only after root/ref/clean/head/ancestry/foundation checks and exact `pairsPerOrder == 15`/derived `totalPairs == 30`; the harness revalidates report/provenance equality and direct fabricated eligibility cannot bypass it. |
+| Measurement identities | `PerformanceComparisonReport` carries full `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values. Pair preflight requires exact equality for host model, macOS, Xcode, developerDirectory, power/display state, and buildConfiguration; source commits remain distinct and provenance-matched. Every metric has nonempty ratio/delta arrays of exactly `totalPairs` entries. |
 | Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies typed eligibility from the shell's roots/refs/foundation checks and then rejects any failed/unmeasured required input before constructing or writing a comparison; the CLI consumes only `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`, `--manual-evidence-dir`, and `--output-dir`, and persisted comparison reports contain measured comparisons only. |
 | Required prerequisites | F-final requires accepted A-harness real-guide lifecycle evidence from `pointer-a-harness-lifecycle-report.md` and `pointer-a-harness-phase-report.md`, where the real `FirstUseGuideController`/panel is injected through controller start/stop/restart, plus the canonical 420-point narrow-display evidence. A static guide/catalog test or stale narrow-display report cannot substitute for either prerequisite. |
 
@@ -80,7 +81,8 @@ claim that E/F implementation or physical evidence exists.
   provenance and E's run/pair provenance now have separate owners, and the
   pair count is `pairsPerOrder == 15` with derived `totalPairs == 30`; build
   provenance has no portable filesystem path. Added the v1 post-warmup
-  least-squares RSS slope field and completion tolerance rule.
+  least-squares RSS slope field and completion tolerance rule, plus full paired
+  measurement identities, environment equality, and exact nonempty arrays.
 
 ### F integration plan
 

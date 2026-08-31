@@ -558,7 +558,12 @@ never relabeled as the final report. CompletionMatrix links
 `measurements/baseline.json` and `candidate.json`,
 `comparisons/paired-comparison.json`, and `resilience/resilience.json` to the
 authoritative E evidence; it maps every original requirement to authoritative
-proof and marks missing/indirect/unsupported rows incomplete. The report also
+proof and marks missing/indirect/unsupported rows incomplete. It validates the
+comparison's full `baselineMeasurementIdentity` and
+`candidateMeasurementIdentity`, exact host/macOS/Xcode/developerDirectory/
+power/display/buildConfiguration equality, distinct source commits matching
+run/build provenance, and nonempty ratio/delta arrays of exactly
+`totalPairs == pairsPerOrder * 2`. The report also
 links the canonical 420-point narrow-display evidence and accepted A-harness
 real-guide evidence before marking F-final complete.
 

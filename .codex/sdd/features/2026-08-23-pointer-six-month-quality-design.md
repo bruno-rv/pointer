@@ -898,7 +898,8 @@ Acceptance criteria:
   `PerformanceMeasurementReport` files and emits a versioned
   `PerformanceComparisonReport` under
   `.codex/sdd/reports/quality-campaign/performance/comparisons/**` with
-  a typed `reportKind: .comparison`, baseline/candidate measurement identities,
+  a typed `reportKind: .comparison`, full
+  `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values,
   paired ratios, bootstrap intervals, budget results, and an unambiguous
   disposition. `Pointer --quality-performance --format json` emits one
   `PerformanceMeasurementReport`, and `Pointer --quality-compare --format
@@ -911,6 +912,12 @@ Acceptance criteria:
   persisted `PerformanceComparisonReport` contains measured comparisons only;
   `validateCompletion()` never turns a rejected input into a persisted status
   or claims completion from one.
+  Pair preflight requires exact equality of host model, macOS, Xcode,
+  developerDirectory, power/display state, and buildConfiguration across the
+  two measurement identities; source commits remain distinct and each matches
+  its run/build provenance. Every metric has nonempty ratio/delta arrays with
+  exactly `totalPairs == pairsPerOrder * 2` entries; empty arrays never pass
+  schema validation.
   No unsuffixed generic performance-report type is a valid schema or output.
 - Model, renderer, compositor, launch, and memory are separate actual harness
   runs exposed by `PerformanceHarness` and covered by
@@ -1354,7 +1361,7 @@ The audit must show:
 | Make first-use support safe and reversible | Fresh-defaults manual matrix proves guide show only after successful palette show, first-display retry after zero-display startup, visible-panel-before-seen marking, non-committing display-loss hide and reconnect restore after palette show, distinct application-stop intent clearing with normal seen/unseen restart rules, no orphan panel/seen mutation/mode-tool mutation, Close/Done, reopen, Escape, annotation-triggered dismissal, no automatic reappearance, no CanvasView interference, deterministic guide metadata, and live VoiceOver evidence |
 | Add delight while removing more than adding | User-facing diff review showing contextual feedback or micro-details with a clear job, removal/collapse of redundant chrome, and no net increase to common-path friction |
 | Keep iterating until meaningful improvements are hard to find | Worker/reviewer/Codex reconciliation records plus a final adversarial pass with no unresolved meaningful finding; remaining lower-severity items are explicit and bounded |
-| Prove performance and resource health | Model-only `GestureBenchmark.Result` from `--benchmark-gestures --format json`, plus typed variant `PerformanceMeasurementReport` and paired `PerformanceComparisonReport` from the separate `--quality-performance`/`--quality-compare` commands, immutable commit/content-manifest identities with mutually exclusive 40/64-hex flags, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, baseline eligibility after the F foundation checkpoint, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
+| Prove performance and resource health | Model-only `GestureBenchmark.Result` from `--benchmark-gestures --format json`, plus typed variant `PerformanceMeasurementReport` and paired `PerformanceComparisonReport` from the separate `--quality-performance`/`--quality-compare` commands, full `baselineMeasurementIdentity`/`candidateMeasurementIdentity` fields with exact environment equality and distinct source commits matching run/build provenance, nonempty ratio/delta arrays of exactly `totalPairs == pairsPerOrder * 2`, immutable commit/content-manifest identities with mutually exclusive 40/64-hex flags, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, baseline eligibility after the F foundation checkpoint, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
 | Complete supported physical evidence | A capable-host preflight and mandatory host/date/steps/result/evidence ledger covers every supported physical case; any capable but untested or failed case keeps the goal active |
 | Preserve validation, security, accessibility, architecture, and scope | Full verifier, Release bundle, clean-clone, manual, keyboard/VoiceOver, appearance, permission, performance, and boundary checks; no new forbidden dependency, permission, or production import |
 | Preserve project boundaries | Stable-app-only diff, untouched primary dirty README/`graphify-out`, no unapproved commit/push/publication, and a clean final status for the campaign-owned paths |
