@@ -5,7 +5,7 @@ public struct RenderPlan: Equatable, Sendable {
     public let activeDraft: Mark?
     public let handles: HandleInventory
 
-    public init(committedMarks: [Mark], activeDraft: Mark?, handles: HandleInventory) {
+    init(committedMarks: [Mark], activeDraft: Mark?, handles: HandleInventory) {
         self.committedMarks = committedMarks
         self.activeDraft = activeDraft
         self.handles = handles
@@ -31,14 +31,17 @@ public struct RenderPlan: Equatable, Sendable {
             )
         }
 
-        let selectedMark = canvas.marks.first(where: { $0.id == selectedID })
+        let committedMarks = activeDraft.map { draft in
+            canvas.marks.filter { $0.id != draft.id }
+        } ?? canvas.marks
+        let selectedMark = committedMarks.first(where: { $0.id == selectedID })
         let validSelectedID = selectedMark?.id
         let resizeHandles = selectedMark.map { ResizeGeometry.handles(for: $0.geometry) } ?? []
-        let validHoveredID = canvas.marks
+        let validHoveredID = committedMarks
             .first(where: { $0.id == hover.hoveredMarkID })
             .map(\.id)
         return RenderPlan(
-            committedMarks: canvas.marks,
+            committedMarks: committedMarks,
             activeDraft: activeDraft,
             handles: HandleInventory(
                 selection: SelectionInventory(

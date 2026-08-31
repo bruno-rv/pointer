@@ -34,7 +34,8 @@ public enum MarkRenderer {
         if let activeDraft = plan.activeDraft {
             draw(mark: activeDraft, in: bounds, context: context)
         }
-        guard plan.handles.resize.isVisible,
+        guard plan.handles.selection.isVisible,
+              plan.handles.resize.isVisible,
               let selectedID = plan.handles.selection.selectedMarkID,
               let selectedMark = plan.committedMarks.first(where: { $0.id == selectedID })
         else {
