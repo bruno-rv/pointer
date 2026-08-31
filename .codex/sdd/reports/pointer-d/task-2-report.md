@@ -104,6 +104,13 @@ edited.
 - `FirstUseGuideAssetPreparing` is an internal-only panel seam used by the
   retained-panel regression; it forwards complete resolved image maps into the
   existing guide view without changing the public presenting protocol.
+- `FirstUseGuidePanelWindow` remains a floating `.nonactivatingPanel` and is
+  explicitly key-capable without becoming main; after ordering front it makes
+  Done the first responder with Return as its key equivalent. Closing it orders
+  the window out and leaves no orphaned visible/key panel.
+- Catalog validation checks every entry ID and requires nonempty accessible name
+  and description for every informative entry. Explicitly decorative extras may
+  omit those strings, while required tool entries remain informative.
 
 ## Remaining concerns
 
@@ -288,7 +295,8 @@ resource lookup. It deterministically derives each resource name from
 source-contract test requires exactly one `bundle.image(forResource:)` call
 while rejecting global/default named lookup and alternate resource routes.
 
-Final verification after Task 1's test fixes and retained-panel reload fix:
+Final verification after Task 1's test fixes, retained-panel reload fix, and
+focus/catalog validation fixes:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
@@ -297,11 +305,11 @@ Build complete
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
 exit 0
-FirstUseGuideTests: 21 passed, 0 failed
+FirstUseGuideTests: 24 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 292 passed, 0 failed
+PointerPackageTests.xctest: 295 passed, 0 failed
 
 git diff --check
 exit 0
@@ -309,8 +317,8 @@ No whitespace errors
 ```
 
 The focused guide suite and full package suite both pass after Task 1's test
-fixes and the retained-panel reload correction. This follow-up did not modify
-`RenderPlanTests.swift` or any other Task 1 path.
+fixes, retained-panel reload correction, and focus/catalog validation fixes.
+This follow-up did not modify `RenderPlanTests.swift` or any other Task 1 path.
 
 ## Retained-panel appearance regression
 
@@ -338,9 +346,58 @@ Executed 1 test, with 0 failures (0 unexpected)
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
 exit 0
-FirstUseGuideTests: 21 passed, 0 failed
+FirstUseGuideTests: 24 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 292 passed, 0 failed
+PointerPackageTests.xctest: 295 passed, 0 failed
+```
+
+## Focus and catalog validation regression
+
+The RED focus test exercised the real `FirstUseGuidePanelWindow`: it seeded the
+injected images, ordered the non-modal panel front, and required visibility,
+key-window status, Done as the first responder and initial responder, Return as
+the key equivalent, and close/order-out without an orphan. Before the fix,
+visibility succeeded but key focus and Return failed.
+
+The RED catalog tests added an unsafe extra entry ID and an empty informative
+extra entry. Before all-entry validation, both initializers accepted those
+entries; the explicitly decorative empty-text extra remained valid by policy.
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testRealGuidePanelTakesKeyFocusAndReturnClosesWithoutOrphan
+exit 1
+Executed 1 test, with 3 failures (0 unexpected)
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testCatalogEnvelopeRejectsUnsafeExtraEntryIdentifier
+exit 1
+XCTAssertThrowsError failed: did not throw an error
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testCatalogEnvelopeRejectsEmptyInformativeExtraMetadataButAllowsDecorativeExtra
+exit 1
+XCTAssertThrowsError failed: did not throw an error
+```
+
+The GREEN implementation overrides `canBecomeKey` while retaining
+`canBecomeMain == false`, sets `becomesKeyOnlyIfNeeded`, calls `makeKey()` and
+`makeFirstResponder(Done)` only after visibility, and validates every entry ID
+and informative metadata before accepting the catalog.
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
+exit 0
+FirstUseGuideTests: 24 passed, 0 failed
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+exit 0
+PointerPackageTests.xctest: 295 passed, 0 failed
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+exit 0
+Build complete
+
+git diff --check
+exit 0
+No whitespace errors
 ```

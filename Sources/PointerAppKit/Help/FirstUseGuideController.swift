@@ -287,8 +287,11 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
 }
 
 @MainActor
-private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel, FirstUseGuideAssetPreparing {
+internal final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel, FirstUseGuideAssetPreparing {
     private let guideViewController: FirstUseGuideViewController
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 
     init(
         assetCatalog: any GuideAssetCatalogProviding,
@@ -308,7 +311,7 @@ private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel, First
         isFloatingPanel = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = false
+        becomesKeyOnlyIfNeeded = true
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
         contentViewController = guideViewController
@@ -338,6 +341,13 @@ private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel, First
         setFrame(placement.cgRect, display: true)
         orderFrontRegardless()
         guard isVisible else { return }
+        makeKey()
+        guard isKeyWindow,
+              let doneButton = guideViewController.doneButton,
+              makeFirstResponder(doneButton) else {
+            close()
+            return
+        }
         guideViewController.startAppearanceObservation()
         onVisible()
     }

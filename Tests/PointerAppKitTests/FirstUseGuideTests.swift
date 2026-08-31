@@ -371,6 +371,44 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertEqual(viewController.accessibilityOrderLabels, focusBeforeReshow)
     }
 
+    func testRealGuidePanelTakesKeyFocusAndReturnClosesWithoutOrphan() throws {
+        let fixture = FirstUseGuideTestFixture()
+        let panel = FirstUseGuidePanelWindow(
+            assetCatalog: fixture.catalog,
+            appearanceProvider: fixture.appearanceProvider
+        )
+        var resolvedImages: [String: NSImage] = [:]
+        for example in FirstUseGuideViewController.examples {
+            resolvedImages[example.assetIdentifier] = try fixture.catalog.image(
+                for: example.assetIdentifier,
+                variant: .light
+            )
+        }
+        panel.setResolvedImages(resolvedImages, variant: .light)
+
+        var didBecomeVisible = false
+        panel.show(in: fixture.context) {
+            didBecomeVisible = true
+        }
+        defer { panel.close() }
+
+        let viewController = try XCTUnwrap(
+            panel.contentViewController as? FirstUseGuideViewController
+        )
+        let doneButton = try XCTUnwrap(viewController.doneButton)
+        XCTAssertTrue(didBecomeVisible)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertTrue(panel.isKeyWindow)
+        XCTAssertTrue(panel.firstResponder === doneButton)
+        XCTAssertTrue(panel.initialFirstResponder === doneButton)
+        XCTAssertEqual(doneButton.keyEquivalent, "\r")
+
+        doneButton.performClick(nil)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertFalse(panel.isKeyWindow)
+        panel.close()
+    }
+
     func testMissingOrEmptyCatalogMetadataFailsWithoutAccessibleFallback() {
         let fixture = FirstUseGuideTestFixture()
         let invalidArrow = GuideAssetDescriptor(
@@ -547,6 +585,66 @@ final class FirstUseGuideTests: XCTestCase {
         )) { error in
             XCTAssertEqual(error as? GuideAssetCatalogError, .invalidMetadata("arrow"))
         }
+    }
+
+    func testCatalogEnvelopeRejectsUnsafeExtraEntryIdentifier() throws {
+        let fixture = FirstUseGuideTestFixture()
+        let extraEntry = GuideAssetDescriptor(
+            id: "../extra",
+            accessibleName: "Extra example",
+            accessibleDescription: "Extra example description",
+            isDecorative: false,
+            variants: fixture.catalog.entries[0].variants
+        )
+
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: GuideAssetCatalog.schemaVersion,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: fixture.catalog.entries + [extraEntry]
+            ),
+            bundle: Bundle(for: FirstUseGuideTests.self)
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidAssetIdentifier("../extra"))
+        }
+    }
+
+    func testCatalogEnvelopeRejectsEmptyInformativeExtraMetadataButAllowsDecorativeExtra() throws {
+        let fixture = FirstUseGuideTestFixture()
+        let informativeExtra = GuideAssetDescriptor(
+            id: "extra",
+            accessibleName: " ",
+            accessibleDescription: "",
+            isDecorative: false,
+            variants: fixture.catalog.entries[0].variants
+        )
+
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: GuideAssetCatalog.schemaVersion,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: fixture.catalog.entries + [informativeExtra]
+            ),
+            bundle: Bundle(for: FirstUseGuideTests.self)
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidMetadata("extra"))
+        }
+
+        let decorativeExtra = GuideAssetDescriptor(
+            id: "decorative-extra",
+            accessibleName: "",
+            accessibleDescription: "",
+            isDecorative: true,
+            variants: fixture.catalog.entries[0].variants
+        )
+        XCTAssertNoThrow(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: GuideAssetCatalog.schemaVersion,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: fixture.catalog.entries + [decorativeExtra]
+            ),
+            bundle: Bundle(for: FirstUseGuideTests.self)
+        ))
     }
 
     func testGuideLayoutUsesScrollableContentAndDeterministicAccessibleChildrenOrder() {

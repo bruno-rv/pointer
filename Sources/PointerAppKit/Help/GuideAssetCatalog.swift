@@ -159,6 +159,15 @@ public final class GuideAssetCatalog: GuideAssetCatalogProviding {
             guard identifiers.insert(entry.id).inserted else {
                 throw GuideAssetCatalogError.duplicateEntry(entry.id)
             }
+            guard isSafeAssetIdentifier(entry.id) else {
+                throw GuideAssetCatalogError.invalidAssetIdentifier(entry.id)
+            }
+        }
+        for entry in entries where !entry.isDecorative {
+            guard !entry.accessibleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !entry.accessibleDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw GuideAssetCatalogError.invalidMetadata(entry.id)
+            }
         }
         for identifier in requiredAssetIdentifiers {
             guard let entry = entries.first(where: { $0.id == identifier }) else {
@@ -218,6 +227,9 @@ public final class GuideAssetCatalog: GuideAssetCatalogProviding {
             guard !entry.id.isEmpty,
                   identifiers.insert(entry.id).inserted else {
                 throw GuideAssetCatalogError.duplicateEntry(entry.id)
+            }
+            guard isSafeAssetIdentifier(entry.id) else {
+                throw GuideAssetCatalogError.invalidAssetIdentifier(entry.id)
             }
             var variants = Set<GuideAssetVariant>()
             for descriptor in entry.variants {
