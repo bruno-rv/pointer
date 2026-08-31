@@ -157,6 +157,60 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
         XCTAssertEqual(overlay.canvasView.renderPlan.committedMarks.count, 1)
     }
 
+    func testExistingIDMoveStaysGestureLocalUntilCommitAndCancel() throws {
+        let fixture = DeterministicInteractionFixture.oneDisplay()
+        let harness = fixture.makeHarness()
+        let display = try XCTUnwrap(harness.synchronizeDisplays().connectedUUIDs.first)
+        let overlay = try XCTUnwrap(fixture.displayCoordinator.overlays[display] as? OverlayPanel)
+        _ = fixture.assertConvergence(harness, on: display)
+
+        harness.route(.setMode(.annotation))
+        harness.route(.setTool(.arrow))
+        try harness.beginGesture(at: NSPoint(x: 100, y: 100), on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        try harness.continueGesture(to: NSPoint(x: 400, y: 300), on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        try harness.endGesture(on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+
+        let markID = try XCTUnwrap(harness.snapshot().marksByDisplay[display]?.first?.id)
+        harness.route(.setTool(.select))
+        try harness.beginGesture(at: NSPoint(x: 250, y: 200), on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        let baseBeforeCommit = fixture.displayCoordinator.session.canvas(for: display)
+
+        try harness.continueGesture(to: NSPoint(x: 350, y: 300), on: display)
+        let duringCommit = fixture.assertConvergence(harness, on: display)
+        XCTAssertEqual(fixture.displayCoordinator.session.canvas(for: display), baseBeforeCommit)
+        XCTAssertNil(duringCommit.activeDraftMarkID)
+        XCTAssertEqual(overlay.canvasView.renderPlan.activeDraft, nil)
+        XCTAssertEqual(overlay.canvasView.renderPlan.committedMarks, duringCommit.previewMarksByDisplay[display])
+        XCTAssertEqual(overlay.canvasView.renderPlan.committedMarks.first?.id, markID)
+        XCTAssertNotEqual(duringCommit.previewMarksByDisplay[display], baseBeforeCommit.marks)
+
+        try harness.endGesture(on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        let movedCanvas = fixture.displayCoordinator.session.canvas(for: display)
+        XCTAssertEqual(movedCanvas.marks.first?.id, markID)
+        XCTAssertNotEqual(movedCanvas, baseBeforeCommit)
+
+        try harness.beginGesture(at: NSPoint(x: 350, y: 300), on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        let baseBeforeCancel = fixture.displayCoordinator.session.canvas(for: display)
+        try harness.continueGesture(to: NSPoint(x: 300, y: 250), on: display)
+        let duringCancel = fixture.assertConvergence(harness, on: display)
+        XCTAssertEqual(fixture.displayCoordinator.session.canvas(for: display), baseBeforeCancel)
+        XCTAssertNil(duringCancel.activeDraftMarkID)
+        XCTAssertNotEqual(duringCancel.previewMarksByDisplay[display], baseBeforeCancel.marks)
+
+        try harness.cancelGesture(on: display)
+        _ = fixture.assertConvergence(harness, on: display)
+        let afterCancel = harness.snapshot()
+        XCTAssertEqual(fixture.displayCoordinator.session.canvas(for: display), baseBeforeCancel)
+        XCTAssertEqual(afterCancel.previewMarksByDisplay[display], baseBeforeCancel.marks)
+        XCTAssertNil(afterCancel.activeDraftMarkID)
+    }
+
     func testEmptyAndMalformedDisplaysFailClosed() throws {
         let empty = DeterministicInteractionFixture.empty()
         let emptyHarness = empty.makeHarness()

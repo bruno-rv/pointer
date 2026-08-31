@@ -6,8 +6,11 @@ Status: `DONE_WITH_CONCERNS`
 
 Implemented the first deterministic, real-object interaction slice after the
 B-render-integration handoff. The baseline implementation is commit
-`59ed5ed` (`test: add Pointer interaction harness core`); the current worker
-fixes remain uncommitted on top of that baseline. The production harness
+`59ed5ed` (`test: add Pointer interaction harness core`), and the committed
+reconciliation head is `0d9a08a` (`fix: harden Pointer harness convergence`).
+This report also describes the current bounded follow-up changes on top of
+that reconciliation head; no new commit was created by this worker. The
+production harness
 accepts the documented injected coordinator graph and only obtains gesture
 state through the real `DisplayCoordinator`, `OverlayPanel`, and `CanvasView`
 objects. Commands and local keyboard routing remain on `CommandRouter`; no
@@ -21,7 +24,8 @@ Changed paths owned by this task:
 - `Tests/PointerAppKitTests/Harness/CanvasIntegrationHarnessTests.swift`
 - `.codex/sdd/reports/pointer-a-harness-core-report.md`
 
-No new commit was created by this worker; `59ed5ed` remains the HEAD baseline.
+No new commit was created by this worker; `0d9a08a` remains the committed
+reconciliation head.
 
 ## Production seam
 
@@ -80,7 +84,7 @@ Focused GREEN command:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter CanvasIntegrationHarnessTests
 ```
 
-Result: `6 passed, 0 failed`.
+Result: `7 passed, 0 failed`.
 
 Related GREEN command:
 
@@ -88,7 +92,7 @@ Related GREEN command:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CanvasIntegrationHarnessTests|CanvasViewTests|DisplayCoordinatorTests|CommandRouterTests'
 ```
 
-Result: `68 passed, 0 failed`.
+Result: `69 passed, 0 failed`.
 
 Full GREEN command:
 
@@ -96,21 +100,22 @@ Full GREEN command:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
-Result: `315 passed, 0 failed` across the package.
+Result: `316 passed, 0 failed` across the package.
 
 ## Covered scenarios
 
 `CanvasIntegrationHarnessTests` uses the real display coordinator overlay
 factory and verifies. A reusable fixture oracle iterates every connected real
 overlay after every display sync, gesture begin, continuation, commit, and
-cancel. It derives expected committed marks directly from each coordinator
-session canvas, derives the expected draft independently as the sole preview
-mark absent from that committed ID set, checks exact RenderPlan partition and
-identity, validates CanvasView/session per-display projection, and checks
-overlay click-through mode. During an active continuation it allows only the
-documented gesture-local preview divergence from shared session state; after
-boundaries it checks the converged projection. This preserves the production
-rule that continuation samples do not publish shared session state.
+cancel. It derives each coordinator committed base and CanvasView preview
+independently, derives the expected new-ID draft as the sole preview mark
+absent from that committed ID set, derives expected RenderPlan committed marks
+as `preview.marks` with that draft removed, and checks exact partition and
+identity. It separately asserts that non-owner previews equal the coordinator
+canvas while only the real gesture owner may diverge, validates CanvasView/
+session per-display projection, and checks overlay click-through mode. This
+preserves the production rule that continuation samples do not publish shared
+session state.
 
 1. Arrow and rectangle commits travel through command routing and real canvas
    gestures, produce two committed marks, leave no active draft, and publish
@@ -124,10 +129,14 @@ rule that continuation samples do not publish shared session state.
    active draft, resize handles, and contextual Delete.
 4. Empty and malformed display fixtures report no connected displays and reject
    unsupported UUIDs without mutating the session.
-5. A multi-display stale-plan case proves that a disconnected selected display
+5. An existing-ID select-move case proves that the coordinator canvas remains
+   the committed base during continuation while the owner CanvasView preview
+   and RenderPlan move the existing mark with no active draft; both commit and
+   cancel return to the converged state.
+6. A multi-display stale-plan case proves that a disconnected selected display
    cannot borrow handles from another display's stale real plan, and that a
    stale active draft is not reported without coordinator ownership.
-6. Disconnect/reconnect preserves an `display-a` mark and undo history in the
+7. Disconnect/reconnect preserves an `display-a` mark and undo history in the
    intermediate disconnected snapshot while `display-b` remains connected and
    empty; the coordinator recreates A's real overlay and CanvasView without
    migrating content into B.

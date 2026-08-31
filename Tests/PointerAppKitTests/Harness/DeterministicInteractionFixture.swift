@@ -175,7 +175,10 @@ final class DeterministicInteractionFixture {
             XCTAssertLessThanOrEqual(draftCandidates.count, 1, file: file, line: line)
             let expectedDraft = draftCandidates.count == 1 ? draftCandidates[0] : nil
             let plan = canvas.renderPlan
-            XCTAssertEqual(plan.committedMarks, committedCanvas.marks, file: file, line: line)
+            let expectedPlanCommittedMarks = previewCanvas.marks.filter {
+                $0.id != expectedDraft?.id
+            }
+            XCTAssertEqual(plan.committedMarks, expectedPlanCommittedMarks, file: file, line: line)
             XCTAssertEqual(plan.activeDraft, expectedDraft, file: file, line: line)
             XCTAssertEqual(
                 Set(plan.committedMarks.map(\.id)).intersection(Set(draftCandidates.map(\.id))),
@@ -183,6 +186,11 @@ final class DeterministicInteractionFixture {
                 file: file,
                 line: line
             )
+            let isGestureOwner = canvas.hasActiveGesture
+                && coordinatorSession.hasActiveGesture(on: connectedDisplay)
+            if !isGestureOwner {
+                XCTAssertEqual(previewCanvas, committedCanvas, file: file, line: line)
+            }
             XCTAssertEqual(
                 plan.committedMarks.count + (plan.activeDraft == nil ? 0 : 1),
                 previewCanvas.marks.count,
