@@ -1,11 +1,9 @@
 # Pointer A Overlap Harness Report
 
-Status: `FOLLOW_UP_UNCOMMITTED`
+Status: `DONE`
 
-The accepted checkpoint `85f5b7b` is committed and was clean before this
-adversarial follow-up. The changes described below are intentionally
-uncommitted until the independent reviewer and adversarial review reconcile
-them.
+Final reconciliation head: `d7f1b6e` is committed and clean after the
+independent reviewer and adversarial review.
 
 ## Scope
 
@@ -81,6 +79,5 @@ Final verification:
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build` — PASS.
 - `git diff --check` — PASS.
 
-The current follow-up worktree is intentionally uncommitted with only the
-existing overlap test and report modified relative to `85f5b7b`; no
+The final reconciliation is committed at `d7f1b6e` with a clean worktree; no
 production or pre-existing harness files were touched.
