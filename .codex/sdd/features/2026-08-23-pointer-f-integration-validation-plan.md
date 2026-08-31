@@ -323,12 +323,13 @@ provenance; F/E shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
 the compare branch reaches only E's public exact
-`writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`,
+`writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`,
 which reads and hashes the exact report bytes, decodes, cross-checks the
-supplied report, and performs full preflight before writing. Internal
-four-argument decoded `compare` is Task 3's deferred, non-writing calculation
-seam and makes no hash-verification claim. Hash, identity, fixture, provenance,
-or eligibility mismatch must fail before any output file is created.
+supplied hash-free `PerformanceComparisonDraft`, injects the hashes into the
+final report, and performs full preflight before writing. Internal four-argument
+decoded `compare` returns only that draft; it is Task 3's deferred, non-writing
+calculation seam and makes no hash-verification claim. Hash, identity, fixture,
+provenance, or eligibility mismatch must fail before any output file is created.
 only the no-flag branch executes:
 
     let composition = PointerCompositionRoot.make()
@@ -572,7 +573,8 @@ power/display/buildConfiguration equality, distinct source commits matching
 run/build provenance, persisted lowercase 64-hex
 `baselineMeasurementReportSHA256`/`candidateMeasurementReportSHA256` hashes
 bound to the exact input report bytes; `writeComparison` computes and verifies
-those hashes before output, and F retains the exact input reports unchanged.
+those hashes, injects them into the final report, and writes only after
+validation; F retains the exact input reports unchanged.
 It also requires nonempty ratio/delta arrays of
 exactly `totalPairs == pairsPerOrder * 2`. It also validates equal persisted
 `baselineFixture`/`candidateFixture` values against their measurement reports,

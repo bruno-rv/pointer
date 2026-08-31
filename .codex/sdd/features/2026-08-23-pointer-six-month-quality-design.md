@@ -911,12 +911,17 @@ Acceptance criteria:
   full-quality commands after the F launcher/build foundation is accepted.
   `Pointer --benchmark-gestures --format json` remains the model-only
   `GestureBenchmark.Result`; it does not produce either full-quality report.
+  Internal `PerformanceComparisonDraft` is an opaque, non-persisted carrier
+  containing all comparison content except the two exact input-report hashes;
+  only internal `compare` produces it and it has no public initializer.
   The only public persisted entry is the exact
-  `writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
+  `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
   it reads exact report bytes from the URLs, computes hashes, decodes, performs
-  full preflight/cross-check validation against the supplied report, and then
+  full preflight/cross-check validation against the supplied hash-free draft,
+  injects those hashes into the final `PerformanceComparisonReport`, and then
   writes. Internal four-argument `compare(baseline:candidate:configuration:eligibility:)`
-  is the Task 3 calculation seam, deferred and non-writing in Task 2b, with no
+  returns only the hash-free `PerformanceComparisonDraft`; it is the Task 3
+  calculation seam, deferred and non-writing in Task 2b, with no
   hash-verification claim. A hash, identity, fixture, provenance, or eligibility
   mismatch produces no comparison file. Before constructing or writing a comparison, the harness
   validates both input reports and rejects any required `failed` or `unmeasured` metric. A

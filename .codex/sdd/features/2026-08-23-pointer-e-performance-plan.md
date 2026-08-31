@@ -465,9 +465,9 @@ neither a previous report nor a documentation claim can satisfy it.
             candidate: PerformanceMeasurementReport,
             configuration: PerformanceConfiguration,
             eligibility: PerformancePairEligibility
-        ) throws -> PerformanceComparisonReport
+        ) throws -> PerformanceComparisonDraft
         public static func writeComparison(
-            report: PerformanceComparisonReport,
+            draft: PerformanceComparisonDraft,
             baselineURL: URL,
             candidateURL: URL,
             outputDirectory: URL,
@@ -476,15 +476,45 @@ neither a previous report nor a documentation claim can satisfy it.
         ) throws -> PerformanceComparisonReport
     }
 
+    public struct PerformanceComparisonDraft: Sendable {
+        // Opaque non-persisted carrier produced only by internal compare. It
+        // has the same comparison content as PerformanceComparisonReport,
+        // excluding baselineMeasurementReportSHA256 and
+        // candidateMeasurementReportSHA256, and has no public initializer.
+        let reportKind: PerformanceReportKind
+        let schemaVersion: Int
+        let harnessVersion: String
+        let foundationIdentity: FoundationIdentity
+        let buildContractVersion: String
+        let baselineBuildProvenance: BuildProvenance
+        let candidateBuildProvenance: BuildProvenance
+        let baselineRunProvenance: PerformanceRunProvenance
+        let candidateRunProvenance: PerformanceRunProvenance
+        let baselineMeasurementIdentity: MeasurementIdentity
+        let candidateMeasurementIdentity: MeasurementIdentity
+        let baselineFixture: FixtureIdentity
+        let candidateFixture: FixtureIdentity
+        let pairEligibility: PerformancePairEligibility
+        let baselineID: String
+        let candidateID: String
+        let metrics: [MetricComparison]
+        let resilience: ResilienceMeasurement
+        let seed: UInt64
+        let resampleCount: Int
+        let disposition: Disposition
+    }
+
 Only public persisted entry is the exact
-`writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
+`writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
 it reads the exact bytes at `baselineURL` and `candidateURL`, computes lowercase
 64-hex SHA-256 values, decodes the measurement reports, performs full
-preflight/cross-check validation against the supplied `report`, then atomically
-writes it. Internal four-argument `compare(baseline:candidate:configuration:eligibility:)`
-is the Task 3 calculation seam, is deferred and non-writing in Task 2b, and
-does not claim hash verification. The persisted report fields retain the exact
-input-byte hashes.
+preflight/cross-check validation against the supplied hash-free draft, injects
+the computed hashes to construct the final `PerformanceComparisonReport`, then
+atomically writes it. Internal four-argument
+`compare(baseline:candidate:configuration:eligibility:)` returns only the
+hash-free `PerformanceComparisonDraft`; it is the Task 3 calculation seam,
+deferred and non-writing in Task 2b, and does not claim hash verification. The
+persisted report fields retain the exact input-byte hashes.
 
     public struct PerformanceComparisonReport: Codable, Sendable {
         public let reportKind: PerformanceReportKind
@@ -603,15 +633,17 @@ Structural measurement validation allows `measured`,
 `failed`, and `unmeasured` so diagnostic failures round-trip honestly, but
 `validateCompletion()` rejects required failed/unmeasured metrics, budget
 breaches, leaks, invalid dispositions, or any non-measured required status.
-Public `writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
+Public `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
 reads and hashes both exact measurement files, decodes them, validates both
-reports and all pair inputs against the supplied report, and writes only after
-all cross-checks pass. Internal four-argument `compare(baseline:candidate:
-configuration:eligibility:)` is deferred to Task 3 calculations and is
-non-writing in Task 2b; it makes no hash-verification claim. A hash, identity,
-fixture, provenance, or eligibility mismatch therefore produces no output. A
-persisted `PerformanceComparisonReport` therefore contains measured comparisons
-only. Its structural validator requires
+reports and all pair inputs against the supplied hash-free draft, injects the
+computed hashes to construct the final `PerformanceComparisonReport`, and
+writes only after all cross-checks pass. Internal four-argument
+`compare(baseline:candidate:configuration:eligibility:)` returns only the
+hash-free `PerformanceComparisonDraft`; it is deferred to Task 3 calculations
+and is non-writing in Task 2b, with no hash-verification claim. A hash,
+identity, fixture, provenance, or eligibility mismatch therefore produces no
+output. A persisted `PerformanceComparisonReport` therefore contains measured
+comparisons only. Its structural validator requires
 `reportKind == .comparison`, immutable baseline/candidate identities, matching
 schema/harness/foundation/build-contract versions, matching host/fixture,
 both typed `BuildProvenance` values, matching baseline/candidate
@@ -842,6 +874,7 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonWriterRejectsFixtureMismatchWithoutOutput()
     func testComparisonWriterRejectsProvenanceMismatchWithoutOutput()
     func testComparisonWriterRejectsEligibilityMismatchWithoutOutput()
+    func testComparisonWriterInjectsExactInputHashesIntoPersistedReport()
     func testInternalComparisonCalculationIsDeferredAndNonWriting()
     func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
     func testComparisonCompletionRecomputesRatioAndCandidateP95()
@@ -864,14 +897,16 @@ distinct source commits matching each run/build provenance. Require nonempty
 ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
 Round-trip lowercase 64-hex `baselineMeasurementReportSHA256` and
 `candidateMeasurementReportSHA256` fields, and assert the writer computes and
-verifies them against the exact input report bytes before emitting output.
+verifies them against the exact input report bytes, injects them into the final
+persisted report, and emits output atomically.
 Call only the public
-`writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
-writer with persisted report paths; assert that internal decoded
+`writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
+writer with a hash-free `PerformanceComparisonDraft` and persisted report paths;
+assert that internal decoded
 `compare(baseline:candidate:configuration:eligibility:)` is four-argument,
-calculation-deferred, non-writing, and does not claim hash verification. The
-public writer rejects byte-hash, identity, fixture, provenance, or eligibility
-mismatches without creating an output file.
+calculation-deferred, returns only the draft, is non-writing, and does not claim
+hash verification. The public writer rejects byte-hash, identity, fixture,
+provenance, or eligibility mismatches without creating an output file.
 Round-trip persisted `baselineFixture` and `candidateFixture` values, assert
 they are equal and match the corresponding measurement reports, reject
 nonfinite or nonpositive baseline/candidate samples or
