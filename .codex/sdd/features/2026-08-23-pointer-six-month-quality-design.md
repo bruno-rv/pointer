@@ -118,6 +118,32 @@ Every campaign report labels which class supports each claim. A deterministic
 pass never silently becomes a physical-use pass, and a screenshot never stands
 in for an interaction sequence.
 
+The canonical immutable content-manifest scope is identical for every E
+baseline, E candidate, and F clean-clone run. At execution time, the script
+enumerates Git-tracked regular files with these exact pathspecs:
+`Package.swift`; `Sources/**`; `Tests/**`; `scripts/**`;
+`Bundle/Assets.xcassets/**`; `Bundle/AppIconIdentity.json`;
+`Bundle/GuideAssetIdentity.json`; `Bundle/Info.plist`; and the required
+plan/design inputs: the master design plus all six phase plans:
+`.codex/sdd/features/2026-08-23-pointer-six-month-quality-design.md`,
+`.codex/sdd/features/2026-08-23-pointer-a-observability-plan.md`,
+`.codex/sdd/features/2026-08-23-pointer-b-lifecycle-correctness-plan.md`,
+`.codex/sdd/features/2026-08-23-pointer-c-product-surface-accessibility-plan.md`,
+`.codex/sdd/features/2026-08-23-pointer-d-visual-language-plan.md`,
+`.codex/sdd/features/2026-08-23-pointer-e-performance-plan.md`, and
+`.codex/sdd/features/2026-08-23-pointer-f-integration-validation-plan.md`.
+It sorts paths using `LC_ALL=C`, writes one deterministic
+`<sha256>  <relative-path>` row per file to `source-manifest.sha256`, and
+defines the 64-hex content identity as the SHA-256 of those exact row bytes.
+The manifest excludes generated reports, `build/**`, SwiftPM `.build/**`,
+code-signature metadata, mtimes, absolute paths, and any untracked file. The
+same scope, row format, aggregate algorithm, and exclusions are mandatory for
+E baseline/candidate artifacts and the F clean-clone artifact; a different
+scope is a schema failure. A clean tree may use its observed 40-hex commit
+identity, while a dirty tree must use the observed 64-hex content-manifest
+identity. In either case the measured executable and bundle manifests must
+hash-match the provenance artifact before the result is accepted.
+
 ## Workstream map and ownership
 
 The workstreams are disjoint write scopes. A dependency means that a worker may
@@ -133,31 +159,45 @@ publication to the coordinating agent.
 | C | Palette, commands, shortcuts, accessibility, guide composition, and placement | `Palette/**`; `Sources/PointerAppKit/Palette/ControlMetadataProvider.swift`; `Sources/PointerAppKit/Palette/GuidePlacementContext.swift`; `Sources/PointerAppKit/Palette/GuidePlacementProvider.swift`; `CommandRouter.swift`; `MenuBarController.swift`; `PointerApplication.swift`; `PointerApplicationController.swift`; shortcut files; `Sources/PointerAppKit/Help/FirstUseGuidePresenting.swift`; the predeclared `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift` seam consumed by C and D; only app-controller/palette/command/shortcut tests such as `PointerApplicationControllerTests.swift` (excluding `Tests/PointerAppKitTests/Support/**` and `Tests/PointerAppKitTests/Harness/**`) | B-core's accepted lifecycle contracts and A-foundation support |
 | D | Visual language, learning support, and render-plan contracts | `MarkRenderer.swift`; `Sources/PointerAppKit/Rendering/RenderPlan.swift`; `Sources/PointerAppKit/Rendering/HandleInventory.swift`; `Bundle/Assets.xcassets/**`; `Bundle/AppIconIdentity.json`; `Bundle/GuideAssetIdentity.json`; `Sources/PointerAppKit/Help/GuideAssetCatalog.swift`; `Sources/PointerAppKit/Help/FirstUseGuideController.swift`; `Sources/PointerAppKit/Help/FirstUseGuideViewController.swift`; the existing C-predeclared `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift` seam (consumed, not redeclared); `Sources/PointerAppKit/Help/UserDefaultsFirstUseGuideStateStore.swift`; `Tests/PointerAppKitTests/FirstUseGuideTests.swift`; `Tests/PointerAppKitTests/FirstUseGuideTestFixtures.swift`; `Tests/PointerAppKitTests/AssetIdentityTests.swift`; `Tests/PointerAppKitTests/RenderPlanTests.swift`; visual/accessibility snapshot tests and resources (excluding `Tests/PointerAppKitTests/Support/**` and `Tests/PointerAppKitTests/Harness/**`) | B-core geometry/lifecycle contracts and C's accepted control/guide interface |
 | B-render-integration | CanvasView render-plan integration and standby live path | `CanvasView.swift` draw/render-plan integration only; `Tests/PointerAppKitTests/CanvasViewRenderIntegrationTests.swift` | D's accepted RenderPlan/HandleInventory and B-core CanvasView seam |
-| A-harness | Real integrated interaction harness | `Sources/PointerAppKit/Diagnostics/DeterministicInteractionHarness.swift`; `Tests/PointerAppKitTests/Harness/**`; harness-only report fixtures | B-render-integration's accepted live rendering path and all prior phase contracts |
-| E | Performance and resilience measurement | `Sources/PointerAppKit/Diagnostics/GestureBenchmark.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceComparisonHarness.swift`; `Tests/PointerAppKitTests/GestureBenchmarkTests.swift`; `Tests/PointerAppKitTests/PerformanceHarnessTests.swift`; `Tests/PointerAppKitTests/PerformanceComparisonHarnessTests.swift`; benchmark scripts; performance fixtures; `.codex/sdd/reports/quality-campaign/performance/measurements/**`; `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; measured fixes only within prior phase-owned code through a returned finding | A-harness's converged production path |
-| F | Integration, composition, manual use, and completion evidence | `Package.swift`; `Sources/PointerComposition/PointerCompositionRoot.swift`; `Sources/Pointer/main.swift`; `Tests/PointerCompositionTests/PointerCompositionRootTests.swift`; `PointerBuildScriptsTests` target; `Tests/BuildScripts/**` including `LauncherContractTests.swift`, `GuideAssetCatalogBuildTests.swift`, `CleanCloneContractTests.swift`, `IconResolutionProbe.swift`, and `test-build-contract.sh`; `.github/workflows/verify.yml`; `Bundle/Info.plist`; `scripts/build-app.sh`; `scripts/run-app.sh`; `scripts/verify.sh`; clean-clone/manual test harnesses; `.codex/sdd/reports/quality-campaign/final/**`; final validation matrix | E and all prior reconciled phases; owns composition and final aggregation, not product behavior |
+| A-harness | Real integrated interaction harness | `Sources/PointerAppKit/Diagnostics/DeterministicInteractionHarness.swift`; `Tests/PointerAppKitTests/Harness/**`; harness-only report fixtures; `.codex/sdd/reports/pointer-a-harness-lifecycle-report.md`; `.codex/sdd/reports/pointer-a-harness-phase-report.md` | B-render-integration's accepted live rendering path and all prior phase contracts |
+| E-foundation (E tasks 1–3) | Performance benchmark, report schema, and harness contracts | `Sources/PointerAppKit/Diagnostics/GestureBenchmark.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceComparisonHarness.swift`; `Tests/PointerAppKitTests/GestureBenchmarkTests.swift`; `Tests/PointerAppKitTests/PerformanceHarnessTests.swift`; `Tests/PointerAppKitTests/PerformanceComparisonHarnessTests.swift`; benchmark scripts; performance fixtures; report schemas and validators | A-harness's converged production path |
+| F-foundation (F tasks 1–3) | Composition, launcher, and Release resource foundation | `Package.swift`; `Sources/PointerComposition/PointerCompositionRoot.swift`; `Sources/Pointer/main.swift`; `Tests/PointerCompositionTests/PointerCompositionRootTests.swift`; `PointerBuildScriptsTests` target; `Tests/BuildScripts/**` including `LauncherContractTests.swift`, `GuideAssetCatalogBuildTests.swift`, `IconResolutionProbe.swift`, and `test-build-contract.sh`; `Bundle/Info.plist`; `scripts/build-app.sh`; `scripts/run-app.sh`; `.codex/sdd/reports/quality-campaign/foundation/**` | E-foundation contracts plus all prior reconciled phases |
+| E-execution | Paired immutable performance execution and reconciliation | `PerformanceCLI`; `benchmark-quality.sh`; `.codex/sdd/reports/quality-campaign/performance/measurements/**`; `.codex/sdd/reports/quality-campaign/performance/provenance/**`; `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; `.codex/sdd/reports/quality-campaign/performance/resilience/**`; no product-source ownership | F-foundation Release/launcher/resource foundation plus E-foundation |
+| F-final (F tasks 4–7) | CI, clean-clone, manual use, and completion evidence | `.github/workflows/verify.yml`; `scripts/verify.sh`; `scripts/test-clean-clone.sh`; `Tests/BuildScripts/CleanCloneContractTests.swift`; clean-clone/manual test harnesses; `.codex/sdd/reports/quality-campaign/final/**`; final validation matrix | E-execution plus all prior reconciled phases; owns final aggregation, not product behavior |
 
 The canonical phase graph is
-`A-foundation → B-core → C → D → B-render-integration → A-harness → E → F`.
+`A-foundation → B-core → C → D → B-render-integration → A-harness →
+E-foundation (tasks 1–3) → F-foundation (tasks 1–3) → E-execution →
+F-final (tasks 4–7)`.
 A-foundation establishes phase-neutral state/event contracts and CLI smoke;
 B-core owns the public gesture/display/lifecycle seam without RenderPlan
 integration; C consumes B-core; D consumes B-core/C and publishes the
 RenderPlan/HandleInventory contract; B-render-integration consumes D and edits
 only the CanvasView draw seam; A-harness consumes the converged real view path;
-E consumes A-harness; F consumes every reconciled phase. There are no back
-edges: D never edits B, B-render-integration never edits D, and A-harness
-cannot change B-core APIs. Only disjoint work within one phase may run in
-parallel, and a downstream phase cannot start until the upstream worker,
-reviewer, and adversarial gate is reconciled. C owns the
+E-foundation defines the benchmark, schema, and harness contracts; F-foundation
+then makes the launcher, composition, and Release resource path executable;
+E-execution runs the paired immutable baseline/candidate protocol against that
+foundation; F-final aggregates the results and runs the final gates. There are
+no back edges or E/F cycles: D never edits B, B-render-integration never edits
+D, A-harness cannot change B-core APIs, and E-execution cannot change F.
+Only disjoint work within one gate may run in parallel, and a downstream gate
+cannot start until the upstream worker, reviewer, and adversarial gate is
+reconciled. C owns the
 `FirstUseGuidePresenting` interface and application/menu injection points; F
-still owns the importable `PointerComposition` library and composition factory.
+still owns the importable `PointerComposition` library and composition factory
+in F-foundation.
 The `Pointer` executable retains its diagnostic and interactive paths, and
 `PointerCompositionTests` imports `PointerComposition`/`PointerAppKit` rather
-than the executable. E remains the sole owner of
-`.codex/sdd/reports/quality-campaign/performance/measurements/**` and
-`.codex/sdd/reports/quality-campaign/performance/comparisons/**`; F consumes those reports
-and writes only final aggregation under
+than the executable. E remains the sole owner of the performance report
+subtrees; F-final consumes them and writes only final aggregation under
 `.codex/sdd/reports/quality-campaign/final/**`.
+
+The canonical prerequisites before F-final are the accepted A-harness
+evidence for the real guide lifecycle and the canonical 420-point narrow
+display fixture. These prerequisites are not implied by a later static test:
+the A-harness report must identify the real guide/controller path, and the
+narrow-display report must identify the 420-point fixture and its observed
+palette result.
 
 ## Workstream A-foundation — deterministic foundation and CLI smoke
 
@@ -405,19 +445,22 @@ Acceptance criteria:
   key, and `HotKeyController`'s production initializer requires its registrar,
   shortcut store, and scheduler. No production shortcut/store convenience
   initializer may discover global state; fakes may use a test-only factory.
-- F's `PointerComposition.PointerCompositionRoot.make()` returns the
+- F's `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` returns the
   inspectable `PointerComposition` container after constructing the concrete
   screen provider, display coordinator, command router, palette, menu bar,
-  `ControlMetadataProvider`, `GuidePlacementProvider`, `GuideAssetCatalog`,
-  Carbon registrar, scheduler, `UserDefaultsShortcutStore`, shortcut
-  controller, D's guide, `GuideAssetCatalogProviding`, and
+  `ControlMetadataProvider`, `GuidePlacementProvider`, and
+  `GuideAssetCatalog` from `GuideAssetIdentity.json` in the injected bundle,
+  followed by the Carbon registrar, scheduler, `UserDefaultsShortcutStore`,
+  shortcut controller, D's guide, `GuideAssetCatalogProviding`, and
   `FirstUseGuideStateStoring`, then injecting them
   through C's protocols. C's application controller accepts these dependencies
   explicitly; its no-argument convenience construction is removed from the
   production target or restricted to test support. The canonical composition
-  test must instantiate this graph and assert every dependency identity, the
-  initial mode/tool are unchanged by guide construction, and no store or
-  registrar is discovered implicitly.
+  test must instantiate this graph with a non-main fixture bundle and assert
+  every dependency identity, the initial mode/tool are unchanged by guide
+  construction, and no store, registrar, or bundle resource is discovered
+  implicitly. `GuideAssetCatalog` never performs `Bundle.main` or global
+  lookup.
 - Same-process stop/start is a supported restart contract.
   `PointerApplicationController.stop()` calls B's
   `DisplayCoordinator.stop()` and requires its `DisplayStopResult` to report
@@ -630,9 +673,11 @@ Acceptance criteria:
   dimensions/color space/alpha policy, expected marker pixel coordinate/RGBA,
   and expected resolved-icon digest. The chosen executable
   strategy is Release `actool` compilation to
-  `Contents/Resources/Assets.car` with `CFBundleIconName=AppIcon`; copying raw
-  `.xcassets` into the bundle is not success. F owns the build assertion and
-  fails if the compiled catalog, metadata, manifest, or icon set is missing.
+  `Contents/Resources/Assets.car` with `CFBundleIconName=AppIcon`; only the
+  byte-identical `GuideAssetIdentity.json` is copied alongside the compiled
+  catalog. Copying raw PNGs, imagesets, or `.xcassets` into the bundle is not
+  success. F owns the build assertion and fails if the compiled catalog,
+  metadata, manifest, or icon set is missing.
   The guide
   shows each tool's icon and a representative result (for example, an arrow,
   shape, stroke, spotlight, emoji, and selection) with one concise explanation
@@ -743,6 +788,16 @@ Acceptance criteria:
   useful diagnostic, and the harness cannot bypass validation, WindowServer
   layering, the command router, D's RenderPlan, or the real session mutation
   route merely to make a test green.
+- The harness owns an integrated real-guide artifact. Its
+  `IntegratedRealGuideLifecycleFixture` injects the actual
+  `FirstUseGuideController` and its real panel into
+  `PointerApplicationController`, then exercises `start()`, `stop()`, and
+  same-process `restart` with assertions for palette-before-guide ordering,
+  visible/key/Done focus, seen-state, display-loss cleanup, reconnect
+  restoration, and application-stop cleanup. The accepted evidence is
+  `.codex/sdd/reports/pointer-a-harness-lifecycle-report.md` and
+  `.codex/sdd/reports/pointer-a-harness-phase-report.md`; a fake guide or
+  static catalog test cannot satisfy this prerequisite.
 - The phase gate requires the worker, independent reviewer, and adversarial
   Codex to reconcile real-view convergence, standby render-plan behavior, and
   deterministic/manual evidence before E starts. A-harness owns the integrated
@@ -753,15 +808,25 @@ Acceptance criteria:
 Purpose: find and remove perceived sluggishness with production evidence, not
 speculative caching or broad rewrites.
 
+E is staged. Tasks 1–3 are the E-foundation: they establish the model
+benchmark, typed report schemas, validators, adapters, and CLI/script
+contracts after A-harness. The paired immutable baseline/candidate execution
+and reconciliation run only after F tasks 1–3 have made the composition,
+launcher, and Release resource path executable. E cannot pin a baseline or
+claim performance completion from a pre-F report.
+
 Acceptance criteria:
 
 - The Release benchmark continues to exercise production `PointerSession` and
   gesture APIs with 12 fixture marks, 240 continuation samples, five warmups,
   and at least 30 measured trials. It reports median, p95, MAD, publication
-  count, final-state validity, and a stable model checksum. The owned
+  count, final-state validity, and a stable model checksum as the serialized
+  model-only `GestureBenchmark.Result` emitted by
+  `--benchmark-gestures --format json`. It is not a performance report and
+  makes no renderer, compositor, launch, or memory claim. The owned
   `PerformanceHarness.swift` emits a versioned Codable
-  `PerformanceMeasurementReport` for one immutable build/variant with
-  `reportKind: "measurement"`, `schemaVersion`, immutable `identity`, `host`,
+  `PerformanceMeasurementReport` for one immutable build/variant with a typed
+  `reportKind: .measurement`, `schemaVersion`, immutable `identity`, `host`,
   `fixture`, `model`,
   `renderer`, `compositor`, `combinedFrame`, `launch`, `allocations`,
   `redrawLayout`, `responsiveness`, `inputToVisible`, `memory`, and
@@ -782,18 +847,39 @@ Acceptance criteria:
   final-window delta bytes/percent, matched-baseline series/values, peak live
   resource counts, end live resource counts, and a `phase` for each sample
   (`running`, `stopping`, `stopped`, or `restarted`).
-  `PerformanceHarnessTests` validates the complete schema and statuses and
-  rejects missing fields rather than treating them as zero. E writes variant
-  measurements and paired comparisons only under
-  `.codex/sdd/reports/quality-campaign/performance/measurements/**` and
+  `PerformanceHarnessTests` validates the complete schema, typed report kind,
+  and statuses and rejects missing/wrong-kind fields rather than treating them
+  as zero. E writes variant measurements and paired comparisons only under
+  `.codex/sdd/reports/quality-campaign/performance/measurements/**`,
+  `.codex/sdd/reports/quality-campaign/performance/provenance/**`, and
   `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; F may
   consume them but does not edit either subtree.
-- Every before/after comparison uses immutable baseline and candidate
-  identities: a clean commit SHA or a SHA-256 content manifest covering source,
-  tests, assets, scripts, and bundle resources. It records both identities,
-  host model, macOS, Xcode/developer directory, power/display state, build
-  configuration, and fixture. A label such as `current` or a dirty unrecorded
-  checkout is not an identity.
+- `PerformanceConfiguration` and every measurement report carry typed
+  `harnessVersion`, `foundationIdentity` (identity and version), and
+  `buildContractVersion` fields. Every report also embeds a typed provenance
+  artifact containing observed clean/dirty status, source identity kind/value,
+  the full source-manifest SHA-256, executable SHA-256, bundle/build-manifest
+  SHA-256, UTC timestamp, foundation identity, and harness/build-contract
+  versions. The script creates and validates this artifact, proves Git
+  cleanliness/ancestry and checkout-to-binary correspondence, and passes it
+  with `--provenance-file`; `PerformanceCLI` only syntactically validates the
+  flags/artifact and embeds the decoded values. A measured executable must
+  hash-match the artifact.
+- Every single measurement uses exactly one immutable identity: a clean
+  40-hex commit SHA or a 64-hex SHA-256 content manifest covering the
+  canonical source scope. The CLI accepts exactly one of
+  `--source-commit-sha <40hex>` or `--content-manifest-sha256 <64hex>` and
+  rejects both, neither, malformed, symbolic, or dirty source-commit
+  identities. A dirty tree must use the content-manifest identity. The
+  authoritative paired comparison accepts clean 40-hex baseline/candidate
+  commits only, with explicit output roots, refs, exact heads, baseline
+  ancestry, and foundation-checkpoint ancestry; content-manifest measurements
+  are diagnostic-only. It records both identities, host model, macOS, Xcode/
+  developer directory, power/display state, build configuration, and fixture.
+  A label such as `current` or a dirty unrecorded checkout is not an identity.
+  Baseline eligibility additionally requires the same E schema/harness and F
+  launcher/build foundation; the baseline is pinned only after that foundation
+  checkpoint, and the candidate is a subsequent measured commit.
 - The fixed paired protocol runs five warmups per variant and 30 paired trials
   on the same host/fixture, with a fixed seed and 15 baseline→candidate plus
   15 candidate→baseline pairs. It computes the paired candidate/baseline ratio
@@ -804,12 +890,20 @@ Acceptance criteria:
   `PerformanceMeasurementReport` files and emits a versioned
   `PerformanceComparisonReport` under
   `.codex/sdd/reports/quality-campaign/performance/comparisons/**` with
-  `reportKind: "comparison"`, baseline/candidate measurement identities,
+  a typed `reportKind: .comparison`, baseline/candidate measurement identities,
   paired ratios, bootstrap intervals, budget results, and an unambiguous
-  disposition. `Pointer --benchmark-gestures --format json` emits one
-  `PerformanceMeasurementReport`; `scripts/benchmark-gestures.sh` orchestrates
-  the two variant runs and writes the one paired comparison. No unsuffixed
-  generic performance-report type is a valid schema or output.
+  disposition. `Pointer --quality-performance --format json` emits one
+  `PerformanceMeasurementReport`, and `Pointer --quality-compare --format
+  json` emits one `PerformanceComparisonReport`. Scripts orchestrate those
+  full-quality commands after the F launcher/build foundation is accepted.
+  `Pointer --benchmark-gestures --format json` remains the model-only
+  `GestureBenchmark.Result`; it does not produce either full-quality report.
+  Before constructing or writing a comparison, the harness validates both
+  input reports and rejects any required `failed` or `unmeasured` metric. A
+  persisted `PerformanceComparisonReport` contains measured comparisons only;
+  `validateCompletion()` never turns a rejected input into a persisted status
+  or claims completion from one.
+  No unsuffixed generic performance-report type is a valid schema or output.
 - Model, renderer, compositor, launch, and memory are separate actual harness
   runs exposed by `PerformanceHarness` and covered by
   `PerformanceHarnessTests` (`measureModel`, `measureRenderer`,
@@ -877,18 +971,25 @@ Acceptance criteria:
 Purpose: prove that the product works as experienced, not merely that its
 isolated tests are green.
 
+F is staged. Tasks 1–3 are the F-foundation and depend on reconciled
+E-foundation contracts. Tasks 4–7 run only after E's paired immutable
+execution/reconciliation and own the final CI, clean-clone, manual-use,
+Chrome-friction, and completion evidence gates.
+
 Acceptance criteria:
 
 - The integrated gate runs the full Swift suite, Release build, bundle/plist/
-  signature/arm64 validation, deterministic smoke, benchmark, and
-  `git diff --check`. Workstream F owns `Bundle/Info.plist`,
-  `scripts/build-app.sh`, `scripts/run-app.sh`, and
+  signature/arm64 validation, deterministic smoke, model-only benchmark, E's
+  reconciled quality reports, and `git diff --check`. Workstream F owns
+  `Bundle/Info.plist`, `scripts/build-app.sh`, `scripts/run-app.sh`, and
   `Tests/BuildScripts/test-build-contract.sh`; those contracts are verified in
-  Release and by a clean-clone run, not assumed from a Debug test. The gate
-  validates every tracked bundle resource—including the app icon,
-  `GuideAssetIdentity.json`, and `FirstUseGuide` assets—after copying, checks `plutil`, executable
-  architecture, ad-hoc signature, and resource existence, and proves a second
-  build is idempotent. The Release build invokes `actool` for the tracked
+  Release and by a clean-clone run, not assumed from a Debug test. The runtime
+  bundle ships only the executable, `Info.plist`, compiled
+  `Contents/Resources/Assets.car`, and a byte-identical
+  `Contents/Resources/GuideAssetIdentity.json`. Raw PNGs, imagesets, and
+  `.xcassets` directories never ship. The gate validates `plutil`, executable
+  architecture, ad-hoc signature, output existence, raw-asset absence, and
+  idempotence. The Release build invokes `actool` for the tracked
   `AppIcon.appiconset`, asserts `Contents/Resources/Assets.car` contains the
   AppIcon set, and asserts `CFBundleIconName` is exactly `AppIcon`; a raw
   `.xcassets` directory or a missing icon metadata key fails the gate. The
@@ -910,21 +1011,20 @@ Acceptance criteria:
   and the manifest marker pixel, so 1× and Retina representations use the same
   deterministic identity; a missing exact-size representation is rendered by
   the same fixed-color-space path rather than accepted opportunistically. The
-  build-contract test writes a tracked-resource/bundle manifest containing the
-  source icon files, identity manifest, `Assets.car`, Info.plist,
-  `GuideAssetIdentity.json`, and copied guide assets,
-  rebuilds the Release bundle idempotently, and compares the manifests byte
-  for byte (excluding only code-signature metadata). The clean-clone gate
-  compiles and invokes this same probe and comparison, so icon identity and
-  resource reproducibility are executable evidence rather than a manual-only
-  assertion.
-- The Release and clean-clone build contracts decode
-  `GuideAssetIdentity.json`, require every tool/example and light/dark/
-  high-contrast entry, compare each source SHA-256 and asset identifier to the
-  injected `GuideAssetCatalog`, and verify every identifier resolves in the
-  compiled `Assets.car` via `assetutil --info`. Missing, extra, mismatched, or
-  fallback-resolved guide assets fail the gate; the decoded manifest and
-  compiled catalog are included in the idempotent tracked-resource manifest.
+  build-contract test keeps separate source-input and bundle-output manifests,
+  asserts the runtime output contains no raw asset, rebuilds the Release bundle
+  idempotently, and compares both manifests byte for byte (excluding only
+  code-signature metadata). The clean-clone gate compiles and invokes this same
+  probe and comparison, so icon identity and resource reproducibility are
+  executable evidence rather than a manual-only assertion.
+- The Release and clean-clone build contracts decode the byte-identical
+  `GuideAssetIdentity.json` shipped beside `Assets.car`, require every
+  tool/example and light/dark/high-contrast entry, compare each source SHA-256
+  and asset identifier to the injected `GuideAssetCatalog`, and verify every
+  identifier resolves in the compiled `Assets.car` via `assetutil --info`.
+  Missing, extra, mismatched, fallback-resolved, or raw guide assets fail the
+  gate; source inputs and runtime outputs remain separate in the idempotent
+  manifest.
 - F owns the separate compiled-contract target `PointerBuildScriptsTests`.
   `Tests/BuildScripts/LauncherContractTests.swift` validates CLI dispatch,
   `Tests/BuildScripts/GuideAssetCatalogBuildTests.swift` decodes
@@ -965,7 +1065,15 @@ Acceptance criteria:
   `PointerAppKit` diagnostics before the interactive branch calls
   `let composition = PointerCompositionRoot.make()` and then calls
   `composition.application.run()`. The local `composition` must remain alive
-  for the entire blocking run. A separate
+  for the entire blocking run. The launcher also dispatches
+  `--quality-performance --format json` (one
+  `PerformanceMeasurementReport`) and
+  `--quality-compare --format json` (one
+  `PerformanceComparisonReport`) before composition; each measurement
+  invocation accepts exactly one of `--source-commit-sha <40hex>` or
+  `--content-manifest-sha256 <64hex>`, and comparison requires
+  `--baseline`, `--candidate`, `--manual-evidence-dir`, and `--output-dir`.
+  Scripts orchestrate those full-quality branches. A separate
   `PointerCompositionTests` test target depends directly on
   `PointerComposition`, `PointerAppKit`, and XCTest, and never imports or
   links the top-level `Pointer` executable.
@@ -978,7 +1086,8 @@ Acceptance criteria:
   `--benchmark-gestures --format json` branch. Their contract tests assert that
   both branches return without constructing `PointerComposition`; the
   no-argument path alone constructs the interactive application.
-- `PointerCompositionRoot.make()` returns a public, `@MainActor`
+- `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` returns a
+  public, `@MainActor`
   `PointerComposition` container—not only an `NSApplication`. The container
   exposes `application`, `controller`, and protocol/concrete identity views for
   screen provider, display coordinator, command router, palette, menu bar,
@@ -1022,13 +1131,14 @@ Acceptance criteria:
   }
   ```
 - `Sources/PointerComposition/PointerCompositionRoot.swift` is the sole
-  production composition root. `PointerCompositionRoot.make() ->
-  PointerComposition` first obtains the one application instance as
-  `PointerApplication.shared as! PointerApplication`, then constructs the
-  concrete screen provider, display
-  coordinator, command router, palette, `ControlMetadataProvider`,
-  `GuidePlacementProvider`, `GuideAssetCatalog` decoded from the tracked
-  `GuideAssetIdentity.json`, menu bar, Carbon registrar, scheduler,
+  production composition root. `PointerCompositionRoot.make(resourceBundle:
+  Bundle = .main) -> PointerComposition` first obtains the one application
+  instance as `PointerApplication.shared as! PointerApplication`, then
+  constructs the concrete screen provider, display coordinator, command router,
+  palette, `ControlMetadataProvider`, `GuidePlacementProvider`, and
+  `GuideAssetCatalog` decoded from the tracked `GuideAssetIdentity.json` in
+  that injected resource bundle, followed by the menu bar, Carbon registrar,
+  scheduler,
   `NotificationCenter.default`, termination action,
   `UserDefaultsShortcutStore` using `UserDefaults.standard`, shortcut
   controller, D's guide using the injected catalog, and
@@ -1040,7 +1150,11 @@ Acceptance criteria:
   canvas selection unchanged, provider/catalog identities are the same
   instances wired into palette/guide placement/guide rendering, and no store,
   registrar, scheduler, provider, catalog,
-  or guide is discovered implicitly.
+  or guide is discovered implicitly. `GuideAssetCatalog` never calls
+  `Bundle.main`, uses a default bundle, or performs global lookup; the
+  composition-root default is the only place that selects `.main`. The
+  composition test passes a non-main fixture bundle and proves the same
+  injected instance reaches the catalog and guide.
 - Production `PointerApplicationController` and `HotKeyController` expose only
   dependency-injected construction. If a no-argument convenience initializer
   is retained, it is test-support-only and unavailable to the production
@@ -1050,11 +1164,20 @@ Acceptance criteria:
   construction outside `PointerCompositionRoot.swift`. The same source-level
   check permits `UserDefaults.standard`, `NotificationCenter.default`, and
   the production termination closure only in that composition root.
-- The clean-clone gate runs the literal documented build/run and verifier from
-  a fresh scoped directory with no untracked assets, local paths, or inherited
-  build products. It must prove that the Release bundle contains the same
-  tracked resources and that deterministic smoke can run before any live
-  window is opened.
+- The clean-clone gate accepts an explicit
+  `--foundation-provenance <path>`, validates its 40-hex
+  `checkpointCommitSHA`, and proves
+  `git merge-base --is-ancestor checkpointCommitSHA currentSourceHEAD`.
+  It recomputes the canonical source manifest in a temporary checkout of the
+  foundation checkpoint and compares that SHA to the accepted artifact, then
+  separately recomputes the current source checkout manifest. It records both
+  hashes, observed source commit/status, UTC timestamp, exact commands/results,
+  output hashes, and cleanup in final `CleanCloneIdentity.md`. A stale
+  clean/dirty report or prior identity cannot satisfy the gate. The fresh
+  scoped directory has no inherited build products; its Release bundle ships
+  only compiled `Assets.car` plus byte-identical `GuideAssetIdentity.json` (no
+  raw PNGs, imagesets, or `.xcassets`), and deterministic smoke runs before
+  any live window opens.
 - A person directly uses the built app through the complete matrix: launch in
   standby; toggle annotation; create every mark type; select, move, resize,
   delete, undo, clear, and swept-erase; use emoji and spotlight; drag and
@@ -1101,13 +1224,15 @@ Acceptance criteria:
   field keeps the goal active; it cannot be marked "not applicable" or inferred
   from deterministic evidence. If the current host lacks a required capability,
   the coordinator must obtain a capable host or report the goal incomplete.
-- F writes a `ChromeFrictionReport` with baseline/candidate identities,
-  persistent control count, palette row count, always-visible status count,
-  focus-stop count, required common-path clicks/keys/steps, additions,
-  removals, and disposition. Completion requires at least one persistent
-  dimension to decrease, no increase in any persistent dimension, and no
-  increase in required common-path interaction; a missing inventory or a net
-  increase keeps the campaign in `REVISE`.
+- F reruns the authoritative `ChromeFrictionReport` against the final F
+  candidate, recording its full immutable E baseline hash and candidate
+  identity, persistent control count, palette row count, always-visible status
+  count, focus-stop count, required common-path clicks/keys/steps, additions,
+  removals, and disposition. D's earlier checkpoint is provenance only and is
+  never silently relabeled as F evidence. Completion requires at least one
+  persistent dimension to decrease, no increase in any persistent dimension,
+  and no increase in required common-path interaction; a missing inventory or
+  a net increase keeps the campaign in `REVISE`.
 - Where hardware and host state allow, the manual matrix also covers two
   connected displays, pointer-display palette placement, per-display marks,
   full-screen Spaces, display disconnect/reconnect, no-display transitions,
@@ -1201,17 +1326,17 @@ The audit must show:
 | Use the app extensively | Direct/manual matrix for every supported tool, mode, editing action, palette flow, shortcut path, and available display/Space condition, with exact untestable gaps |
 | Find confusing, ugly, missing, inconsistent, costly, inaccessible, slow, and edge-case behavior | Reviewed issue ledger with reproduction and disposition; no unresolved blocker/high-severity item; a second fresh audit finds no meaningful new issue or reopens the loop |
 | Fix the findings | Diff plus focused regression test or direct evidence for each accepted finding; no symptom-only workaround where a root-cause fix is in scope |
-| Preserve executable composition and injection | F's `Package.swift` target graph proves `PointerComposition` and `PointerAppKit` are directly importable by `PointerCompositionTests` without tests importing the executable, while `Pointer` preserves pre-composition `--smoke`/`--benchmark-gestures` diagnostic dispatch; canonical `Tests/PointerCompositionTests/PointerCompositionRootTests.swift` proves the sole factory injects every production dependency, `ControlMetadataProvider`, `GuidePlacementProvider`, `GuideAssetCatalogProviding`, `UserDefaultsShortcutStore`, guide store, registrar, and scheduler, uses `PointerApplication.shared as! PointerApplication`, and keeps the graph alive through `let composition` and `application.run()` |
-| Preserve phase ownership and ordering | The reconciled graph is exactly `A-foundation → B-core → C → D → B-render-integration → A-harness → E → F`; CanvasView gesture/cursor edits remain B-core-owned, draw/RenderPlan consumption is B-render-owned, real integrated views are A-harness-owned, and no downstream phase starts before its upstream gate |
+| Preserve executable composition and injection | F's `Package.swift` target graph proves `PointerComposition` and `PointerAppKit` are directly importable by `PointerCompositionTests` without tests importing the executable, while `Pointer` preserves pre-composition `--smoke`/model-only `--benchmark-gestures` diagnostic dispatch and adds the distinct full-quality `--quality-performance`/`--quality-compare` report branches; canonical `Tests/PointerCompositionTests/PointerCompositionRootTests.swift` proves the sole `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` factory injects one explicit resource bundle into `GuideAssetCatalog`, every production dependency, `ControlMetadataProvider`, `GuidePlacementProvider`, `GuideAssetCatalogProviding`, `UserDefaultsShortcutStore`, guide store, registrar, and scheduler, uses `PointerApplication.shared as! PointerApplication`, and keeps the graph alive through `let composition` and `application.run()` |
+| Preserve phase ownership and ordering | The reconciled graph is exactly `A-foundation → B-core → C → D → B-render-integration → A-harness → E-foundation (tasks 1–3) → F-foundation (tasks 1–3) → E-execution → F-final (tasks 4–7)`; CanvasView gesture/cursor edits remain B-core-owned, draw/RenderPlan consumption is B-render-owned, real integrated views are A-harness-owned, and no downstream gate starts before its worker, reviewer, and adversarial gate |
 | Preserve marks and control through mode/display lifecycle | B's `DisplayCoordinator.stop()`/`DisplayStopResult` plus deterministic standby, zero-display, and same-process running/stopped/restarted checkpoints prove entering standby clears selection while retaining marks/undo/shortcut/menu-bar state, hidden standby selection chrome, exact-once hotkey rebinding, bounded running counts, zero stop cleanup, cleared handlers, fresh-overlay restart/no closed-panel reuse, observer/timer release, distinct non-committing display-loss versus application-stop guide cleanup, palette hide, and duplicate-free reconnect/restart restoration |
 | Preserve geometric boundary behavior | B's inclusive/epsilon hit-testing suite covers collinear overlap, endpoint/tangent contact, rectangle-edge and arrow-endpoint regressions, and just-outside misses |
 | Prove standby rendering rather than only model state | D's offscreen `MarkRenderer`/RenderPlan check, B-render-integration's real CanvasView draw test, A-harness convergence proof, palette affordance test, and F's live built-app CanvasView manual proof all agree that marks remain visible while standby selection/handles/Delete stay absent and explicit re-selection is required |
 | Make actions teachable and operable | B's CanvasView cursor tests plus manual/deterministic proof for explicit mode/tool feedback, empty-canvas deselection, contextual Delete, keyboard routing, VoiceOver semantics, and contrast/transparency states |
-| Add images and icons that support learning | Tracked `AppIcon.appiconset` plus `AppIconIdentity.json` compiled to `Assets.car`, exact Launch Services bundle URL and real AppIcon marker/digest proof using canonical 512×512 sRGB RGBA8 alpha-normalized SHA-256 pixels, injected `GuideAssetCatalogProviding` decoded from exact `GuideAssetIdentity.json`, all tool/example variants/source hashes/accessibility flags resolved in compiled `Assets.car`, idempotent tracked-resource/bundle manifest comparison, correct `CFBundleIconName`, executable `IconResolutionProbe.swift`, coherent tool icons, compact visual first-use guide, dark/light/contrast checks, accessible descriptions, and proof that the common path gained no unnecessary click |
+| Add images and icons that support learning | Tracked `AppIcon.appiconset` plus `AppIconIdentity.json` compiled to `Assets.car`, exact Launch Services bundle URL and real AppIcon marker/digest proof using canonical 512×512 sRGB RGBA8 alpha-normalized SHA-256 pixels, injected `GuideAssetCatalogProviding` decoded from the byte-identical runtime `GuideAssetIdentity.json`, all tool/example variants/source hashes/accessibility flags resolved in compiled `Assets.car`, distinct source-input and bundle-output manifest comparison with raw PNG/imageset/`.xcassets` absence and idempotence, correct `CFBundleIconName`, executable `IconResolutionProbe.swift`, coherent tool icons, compact visual first-use guide, dark/light/contrast checks, accessible descriptions, and proof that the common path gained no unnecessary click |
 | Make first-use support safe and reversible | Fresh-defaults manual matrix proves guide show only after successful palette show, first-display retry after zero-display startup, visible-panel-before-seen marking, non-committing display-loss hide and reconnect restore after palette show, distinct application-stop intent clearing with normal seen/unseen restart rules, no orphan panel/seen mutation/mode-tool mutation, Close/Done, reopen, Escape, annotation-triggered dismissal, no automatic reappearance, no CanvasView interference, deterministic guide metadata, and live VoiceOver evidence |
 | Add delight while removing more than adding | User-facing diff review showing contextual feedback or micro-details with a clear job, removal/collapse of redundant chrome, and no net increase to common-path friction |
 | Keep iterating until meaningful improvements are hard to find | Worker/reviewer/Codex reconciliation records plus a final adversarial pass with no unresolved meaningful finding; remaining lower-severity items are explicit and bounded |
-| Prove performance and resource health | Variant `PerformanceMeasurementReport` plus paired `PerformanceComparisonReport` under the separate performance measurement/comparison paths, immutable commit/content-manifest identities, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
+| Prove performance and resource health | Model-only `GestureBenchmark.Result` from `--benchmark-gestures --format json`, plus typed variant `PerformanceMeasurementReport` and paired `PerformanceComparisonReport` from the separate `--quality-performance`/`--quality-compare` commands, immutable commit/content-manifest identities with mutually exclusive 40/64-hex flags, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, baseline eligibility after the F foundation checkpoint, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
 | Complete supported physical evidence | A capable-host preflight and mandatory host/date/steps/result/evidence ledger covers every supported physical case; any capable but untested or failed case keeps the goal active |
 | Preserve validation, security, accessibility, architecture, and scope | Full verifier, Release bundle, clean-clone, manual, keyboard/VoiceOver, appearance, permission, performance, and boundary checks; no new forbidden dependency, permission, or production import |
 | Preserve project boundaries | Stable-app-only diff, untouched primary dirty README/`graphify-out`, no unapproved commit/push/publication, and a clean final status for the campaign-owned paths |
