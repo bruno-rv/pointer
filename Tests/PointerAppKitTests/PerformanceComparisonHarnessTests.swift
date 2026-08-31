@@ -82,37 +82,37 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
 
     func testComparisonRejectsInvalidArraysRatiosAndBootstrap() throws {
         var shortSamples = PerformanceFixtures.comparison().metrics
-        shortSamples[0] = MetricComparison(metricID: shortSamples[0].metricID, evidenceClass: shortSamples[0].evidenceClass, baselineID: shortSamples[0].baselineID, candidateID: shortSamples[0].candidateID, baselineSamples: [1], candidateSamples: [], ratios: [], deltas: [], budgetLimit: shortSamples[0].budgetLimit, bootstrapInterval: shortSamples[0].bootstrapInterval, manualEvidence: nil, disposition: .acceptedNoRegression)
+        shortSamples[0] = MetricComparison(metricID: shortSamples[0].metricID, evidenceClass: shortSamples[0].evidenceClass, unit: shortSamples[0].unit, baselineID: shortSamples[0].baselineID, candidateID: shortSamples[0].candidateID, baselineSamples: [1], candidateSamples: [], ratios: [], deltas: [], budgetLimit: shortSamples[0].budgetLimit, bootstrapInterval: shortSamples[0].bootstrapInterval, manualEvidence: nil, disposition: .acceptedNoRegression)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: shortSamples).validateStructure())
 
         var wrongRatio = PerformanceFixtures.comparison().metrics
-        wrongRatio[0] = MetricComparison(metricID: wrongRatio[0].metricID, evidenceClass: wrongRatio[0].evidenceClass, baselineID: wrongRatio[0].baselineID, candidateID: wrongRatio[0].candidateID, baselineSamples: wrongRatio[0].baselineSamples, candidateSamples: wrongRatio[0].candidateSamples, ratios: Array(repeating: 1, count: 30), deltas: wrongRatio[0].deltas, budgetLimit: wrongRatio[0].budgetLimit, bootstrapInterval: wrongRatio[0].bootstrapInterval, manualEvidence: nil, disposition: .acceptedNoRegression)
+        wrongRatio[0] = MetricComparison(metricID: wrongRatio[0].metricID, evidenceClass: wrongRatio[0].evidenceClass, unit: wrongRatio[0].unit, baselineID: wrongRatio[0].baselineID, candidateID: wrongRatio[0].candidateID, baselineSamples: wrongRatio[0].baselineSamples, candidateSamples: wrongRatio[0].candidateSamples, ratios: Array(repeating: 1, count: 30), deltas: wrongRatio[0].deltas, budgetLimit: wrongRatio[0].budgetLimit, bootstrapInterval: wrongRatio[0].bootstrapInterval, manualEvidence: nil, disposition: .acceptedNoRegression)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: wrongRatio).validateStructure())
 
         var badBootstrap = PerformanceFixtures.comparison().metrics
-        badBootstrap[0] = MetricComparison(metricID: badBootstrap[0].metricID, evidenceClass: badBootstrap[0].evidenceClass, baselineID: badBootstrap[0].baselineID, candidateID: badBootstrap[0].candidateID, baselineSamples: badBootstrap[0].baselineSamples, candidateSamples: badBootstrap[0].candidateSamples, ratios: badBootstrap[0].ratios, deltas: badBootstrap[0].deltas, budgetLimit: badBootstrap[0].budgetLimit, bootstrapInterval: BootstrapInterval(lowerDelta: 2, upperDelta: 1, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
+        badBootstrap[0] = MetricComparison(metricID: badBootstrap[0].metricID, evidenceClass: badBootstrap[0].evidenceClass, unit: badBootstrap[0].unit, baselineID: badBootstrap[0].baselineID, candidateID: badBootstrap[0].candidateID, baselineSamples: badBootstrap[0].baselineSamples, candidateSamples: badBootstrap[0].candidateSamples, ratios: badBootstrap[0].ratios, deltas: badBootstrap[0].deltas, budgetLimit: badBootstrap[0].budgetLimit, bootstrapInterval: BootstrapInterval(lowerDelta: 2, upperDelta: 1, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: badBootstrap).validateStructure())
     }
 
     func testComparisonRequiresThirtyPairedSamplesAndDerivedArrays() throws {
         var emptyDerived = PerformanceFixtures.comparison().metrics
         let value = emptyDerived[0]
-        emptyDerived[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: [], deltas: [], budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
+        emptyDerived[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: [], deltas: [], budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: emptyDerived).validateStructure())
 
         var shortDerived = PerformanceFixtures.comparison().metrics
-        shortDerived[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: Array(value.ratios.dropLast()), deltas: Array(value.deltas.dropLast()), budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
+        shortDerived[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: Array(value.ratios.dropLast()), deltas: Array(value.deltas.dropLast()), budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: shortDerived).validateStructure())
     }
 
     func testComparisonRejectsNonPositiveMetricSamples() throws {
         var zeroBaseline = PerformanceFixtures.comparison().metrics
         let value = zeroBaseline[0]
-        zeroBaseline[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 0, count: 30), candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
+        zeroBaseline[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 0, count: 30), candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: zeroBaseline).validateStructure())
 
         var negativeCandidate = PerformanceFixtures.comparison().metrics
-        negativeCandidate[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: Array(repeating: -1, count: 30), ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
+        negativeCandidate[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: Array(repeating: -1, count: 30), ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: negativeCandidate).validateStructure())
     }
 
@@ -120,19 +120,60 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         let value = PerformanceFixtures.comparison().metrics[0]
         let ratioRegression = (0..<30).map { _ in 1.2 }
         let ratioSamples = (0..<30).map { _ in 120.0 }
-        let ratioMetric = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 100, count: 30), candidateSamples: ratioSamples, ratios: ratioRegression, deltas: Array(repeating: 20, count: 30), budgetLimit: 130, bootstrapInterval: BootstrapInterval(lowerDelta: 20, upperDelta: 20, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
+        let ratioMetric = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 100, count: 30), candidateSamples: ratioSamples, ratios: ratioRegression, deltas: Array(repeating: 20, count: 30), budgetLimit: nil, bootstrapInterval: BootstrapInterval(lowerDelta: 20, upperDelta: 20, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
         var ratioMetrics = PerformanceFixtures.comparison().metrics
         ratioMetrics[0] = ratioMetric
         let ratioReport = PerformanceFixtures.comparison(metrics: ratioMetrics)
         XCTAssertNoThrow(try ratioReport.validateStructure())
         XCTAssertThrowsError(try ratioReport.validateCompletion())
 
-        let budgetMetric = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 100, count: 30), candidateSamples: Array(repeating: 140, count: 30), ratios: Array(repeating: 1.4, count: 30), deltas: Array(repeating: 40, count: 30), budgetLimit: 130, bootstrapInterval: BootstrapInterval(lowerDelta: 40, upperDelta: 40, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
+        let budgetValue = PerformanceFixtures.comparison().metrics.first { $0.metricID == .combinedFrame }!
+        let budgetMetric = MetricComparison(metricID: budgetValue.metricID, evidenceClass: budgetValue.evidenceClass, unit: budgetValue.unit, baselineID: budgetValue.baselineID, candidateID: budgetValue.candidateID, baselineSamples: Array(repeating: 10, count: 30), candidateSamples: Array(repeating: 17, count: 30), ratios: Array(repeating: 1.7, count: 30), deltas: Array(repeating: 7, count: 30), budgetLimit: 16.7, bootstrapInterval: BootstrapInterval(lowerDelta: 7, upperDelta: 7, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
         var budgetMetrics = PerformanceFixtures.comparison().metrics
-        budgetMetrics[0] = budgetMetric
+        budgetMetrics[budgetMetrics.firstIndex { $0.metricID == .combinedFrame }!] = budgetMetric
         let budgetReport = PerformanceFixtures.comparison(metrics: budgetMetrics)
         XCTAssertNoThrow(try budgetReport.validateStructure())
         XCTAssertThrowsError(try budgetReport.validateCompletion())
+    }
+
+    func testComparisonRequiresCanonicalUnitsAndNonSpoofableBudgets() throws {
+        XCTAssertEqual(PerformanceMetricID.redrawLayout.canonicalUnit, .milliseconds)
+        let metrics = PerformanceFixtures.comparison().metrics
+        let combined = metrics.first { $0.metricID == .combinedFrame }!
+        let wrongUnit = MetricComparison(metricID: combined.metricID, evidenceClass: combined.evidenceClass, unit: .bytes, baselineID: combined.baselineID, candidateID: combined.candidateID, baselineSamples: combined.baselineSamples, candidateSamples: combined.candidateSamples, ratios: combined.ratios, deltas: combined.deltas, budgetLimit: 16.7, bootstrapInterval: combined.bootstrapInterval, manualEvidence: nil, disposition: combined.disposition)
+        var wrongUnitMetrics = metrics
+        wrongUnitMetrics[wrongUnitMetrics.firstIndex { $0.metricID == .combinedFrame }!] = wrongUnit
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: wrongUnitMetrics).validateStructure())
+
+        let missingBudget = MetricComparison(metricID: combined.metricID, evidenceClass: combined.evidenceClass, unit: combined.unit, baselineID: combined.baselineID, candidateID: combined.candidateID, baselineSamples: combined.baselineSamples, candidateSamples: combined.candidateSamples, ratios: combined.ratios, deltas: combined.deltas, budgetLimit: nil, bootstrapInterval: combined.bootstrapInterval, manualEvidence: nil, disposition: combined.disposition)
+        var missingBudgetMetrics = metrics
+        missingBudgetMetrics[missingBudgetMetrics.firstIndex { $0.metricID == .combinedFrame }!] = missingBudget
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: missingBudgetMetrics).validateStructure())
+
+        let spoofedBudget = MetricComparison(metricID: combined.metricID, evidenceClass: combined.evidenceClass, unit: combined.unit, baselineID: combined.baselineID, candidateID: combined.candidateID, baselineSamples: combined.baselineSamples, candidateSamples: combined.candidateSamples, ratios: combined.ratios, deltas: combined.deltas, budgetLimit: 1e300, bootstrapInterval: combined.bootstrapInterval, manualEvidence: nil, disposition: combined.disposition)
+        var spoofedBudgetMetrics = metrics
+        spoofedBudgetMetrics[spoofedBudgetMetrics.firstIndex { $0.metricID == .combinedFrame }!] = spoofedBudget
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: spoofedBudgetMetrics).validateStructure())
+
+        let memory = metrics.first { $0.metricID == .memoryRSS }!
+        let unexpectedBudget = MetricComparison(metricID: memory.metricID, evidenceClass: memory.evidenceClass, unit: memory.unit, baselineID: memory.baselineID, candidateID: memory.candidateID, baselineSamples: memory.baselineSamples, candidateSamples: memory.candidateSamples, ratios: memory.ratios, deltas: memory.deltas, budgetLimit: 1e12, bootstrapInterval: memory.bootstrapInterval, manualEvidence: nil, disposition: memory.disposition)
+        var unexpectedBudgetMetrics = metrics
+        unexpectedBudgetMetrics[unexpectedBudgetMetrics.firstIndex { $0.metricID == .memoryRSS }!] = unexpectedBudget
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: unexpectedBudgetMetrics).validateStructure())
+
+        XCTAssertNoThrow(try PerformanceFixtures.comparison().validateCompletion())
+    }
+
+    func testComparisonCompletionRejectsResponsivenessAndInputToVisibleBudgetBreaches() throws {
+        for metricID in [PerformanceMetricID.responsiveness, .inputToVisible] {
+            let value = PerformanceFixtures.comparison().metrics.first { $0.metricID == metricID }!
+            let breach = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 100, count: 30), candidateSamples: Array(repeating: 101, count: 30), ratios: Array(repeating: 1.01, count: 30), deltas: Array(repeating: 1, count: 30), budgetLimit: 100, bootstrapInterval: BootstrapInterval(lowerDelta: 1, upperDelta: 1, seed: 48271, resampleCount: 10_000), manualEvidence: value.manualEvidence, disposition: .acceptedNoRegression)
+            var metrics = PerformanceFixtures.comparison().metrics
+            metrics[metrics.firstIndex { $0.metricID == metricID }!] = breach
+            let report = PerformanceFixtures.comparison(metrics: metrics)
+            XCTAssertNoThrow(try report.validateStructure())
+            XCTAssertThrowsError(try report.validateCompletion())
+        }
     }
 
     func testComparisonRequiresMatchingPersistedFixtures() throws {
@@ -169,7 +210,7 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         var missingEvidence = manual.metrics
         let metric = missingEvidence.firstIndex { $0.metricID == .inputToVisible }!
         let value = missingEvidence[metric]
-        missingEvidence[metric] = MetricComparison(metricID: value.metricID, evidenceClass: .manual, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
+        missingEvidence[metric] = MetricComparison(metricID: value.metricID, evidenceClass: .manual, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: missingEvidence).validateStructure())
 
         var wrongHostEvidence = manual.metrics
@@ -177,12 +218,12 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         let manualMetric = wrongHostEvidence[manualIndex]
         let evidence = PerformanceFixtures.manualEvidence
         let wrongHost = ManualMetricEvidence(metricID: evidence.metricID, evidenceClass: evidence.evidenceClass, host: "other-machine", recordedAt: evidence.recordedAt, permissions: evidence.permissions, steps: evidence.steps, samples: evidence.samples, result: evidence.result, evidencePath: evidence.evidencePath)
-        wrongHostEvidence[manualIndex] = MetricComparison(metricID: manualMetric.metricID, evidenceClass: manualMetric.evidenceClass, baselineID: manualMetric.baselineID, candidateID: manualMetric.candidateID, baselineSamples: manualMetric.baselineSamples, candidateSamples: manualMetric.candidateSamples, ratios: manualMetric.ratios, deltas: manualMetric.deltas, budgetLimit: manualMetric.budgetLimit, bootstrapInterval: manualMetric.bootstrapInterval, manualEvidence: wrongHost, disposition: manualMetric.disposition)
+        wrongHostEvidence[manualIndex] = MetricComparison(metricID: manualMetric.metricID, evidenceClass: manualMetric.evidenceClass, unit: manualMetric.unit, baselineID: manualMetric.baselineID, candidateID: manualMetric.candidateID, baselineSamples: manualMetric.baselineSamples, candidateSamples: manualMetric.candidateSamples, ratios: manualMetric.ratios, deltas: manualMetric.deltas, budgetLimit: manualMetric.budgetLimit, bootstrapInterval: manualMetric.bootstrapInterval, manualEvidence: wrongHost, disposition: manualMetric.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: wrongHostEvidence).validateStructure())
 
         var deterministicEvidence = PerformanceFixtures.comparison().metrics
         let deterministic = deterministicEvidence[0]
-        deterministicEvidence[0] = MetricComparison(metricID: deterministic.metricID, evidenceClass: .deterministic, baselineID: deterministic.baselineID, candidateID: deterministic.candidateID, baselineSamples: deterministic.baselineSamples, candidateSamples: deterministic.candidateSamples, ratios: deterministic.ratios, deltas: deterministic.deltas, budgetLimit: deterministic.budgetLimit, bootstrapInterval: deterministic.bootstrapInterval, manualEvidence: PerformanceFixtures.manualEvidence, disposition: deterministic.disposition)
+        deterministicEvidence[0] = MetricComparison(metricID: deterministic.metricID, evidenceClass: .deterministic, unit: deterministic.unit, baselineID: deterministic.baselineID, candidateID: deterministic.candidateID, baselineSamples: deterministic.baselineSamples, candidateSamples: deterministic.candidateSamples, ratios: deterministic.ratios, deltas: deterministic.deltas, budgetLimit: deterministic.budgetLimit, bootstrapInterval: deterministic.bootstrapInterval, manualEvidence: PerformanceFixtures.manualEvidence, disposition: deterministic.disposition)
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: deterministicEvidence).validateStructure())
     }
 

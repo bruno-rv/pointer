@@ -141,20 +141,22 @@ enum PerformanceFixtures {
 
     static func metricComparisons(manualMetric: PerformanceMetricID? = nil) -> [MetricComparison] {
         PerformanceMetricID.allCases.map { metricID in
-            let baselineSamples = (0..<configuration.trialCount).map { Double(100 + $0) }
-            let candidateSamples = baselineSamples.map { $0 - 10 }
+            let startingValue = metricID.canonicalBudgetLimit.map { $0 * 0.5 } ?? 100
+            let baselineSamples = (0..<configuration.trialCount).map { startingValue + Double($0) * 0.1 }
+            let candidateSamples = baselineSamples.map { $0 - 1 }
             let evidenceClass: MetricEvidenceClass = metricID == manualMetric ? .manual : .deterministic
             return MetricComparison(
                 metricID: metricID,
                 evidenceClass: evidenceClass,
+                unit: metricID.canonicalUnit,
                 baselineID: baselineCommit,
                 candidateID: commit,
                 baselineSamples: baselineSamples,
                 candidateSamples: candidateSamples,
                 ratios: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline },
                 deltas: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline },
-                budgetLimit: 130,
-                bootstrapInterval: BootstrapInterval(lowerDelta: -10, upperDelta: -10, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
+                budgetLimit: metricID.canonicalBudgetLimit,
+                bootstrapInterval: BootstrapInterval(lowerDelta: -1, upperDelta: -1, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
                 manualEvidence: metricID == manualMetric ? manualEvidence : nil,
                 disposition: .acceptedNoRegression
             )

@@ -1,5 +1,30 @@
 import Foundation
 
+public enum PerformanceMetricUnit: String, Codable, Sendable, Equatable {
+    case nanoseconds
+    case milliseconds
+    case bytes
+}
+
+extension PerformanceMetricID {
+    var canonicalUnit: PerformanceMetricUnit {
+        switch self {
+        case .model: return .nanoseconds
+        case .renderer, .compositor, .combinedFrame, .launchCold, .launchWarm, .responsiveness, .inputToVisible: return .milliseconds
+        case .allocations, .memoryRSS: return .bytes
+        case .redrawLayout: return .milliseconds
+        }
+    }
+
+    var canonicalBudgetLimit: Double? {
+        switch self {
+        case .combinedFrame: return 16.7
+        case .responsiveness, .inputToVisible: return 100
+        case .model, .renderer, .compositor, .launchCold, .launchWarm, .allocations, .redrawLayout, .memoryRSS: return nil
+        }
+    }
+}
+
 public struct ManualMetricEvidence: Codable, Sendable, Equatable {
     public let metricID: PerformanceMetricID
     public let evidenceClass: MetricEvidenceClass
@@ -45,13 +70,14 @@ public struct ManualMetricAdapter: Codable, Sendable, Equatable {
 public struct MetricComparison: Codable, Sendable, Equatable {
     public let metricID: PerformanceMetricID
     public let evidenceClass: MetricEvidenceClass
+    public let unit: PerformanceMetricUnit
     public let baselineID: String
     public let candidateID: String
     public let baselineSamples: [Double]
     public let candidateSamples: [Double]
     public let ratios: [Double]
     public let deltas: [Double]
-    public let budgetLimit: Double
+    public let budgetLimit: Double?
     public let bootstrapInterval: BootstrapInterval
     public let manualEvidence: ManualMetricEvidence?
     public let disposition: Disposition
@@ -59,19 +85,21 @@ public struct MetricComparison: Codable, Sendable, Equatable {
     public init(
         metricID: PerformanceMetricID,
         evidenceClass: MetricEvidenceClass,
+        unit: PerformanceMetricUnit,
         baselineID: String,
         candidateID: String,
         baselineSamples: [Double],
         candidateSamples: [Double],
         ratios: [Double],
         deltas: [Double],
-        budgetLimit: Double,
+        budgetLimit: Double?,
         bootstrapInterval: BootstrapInterval,
         manualEvidence: ManualMetricEvidence?,
         disposition: Disposition
     ) {
         self.metricID = metricID
         self.evidenceClass = evidenceClass
+        self.unit = unit
         self.baselineID = baselineID
         self.candidateID = candidateID
         self.baselineSamples = baselineSamples
@@ -219,7 +247,9 @@ enum PerformanceComparisonReportValidator {
         for metric in report.metrics {
             try require(median(metric.ratios) <= 1.10, "metric ratio median exceeds the 1.10 budget")
             try require(nearestRankP95(metric.ratios) <= 1.10, "metric ratio p95 exceeds the 1.10 budget")
-            try require(nearestRankP95(metric.candidateSamples) <= metric.budgetLimit, "metric candidate p95 exceeds its budget")
+            if let budgetLimit = metric.budgetLimit {
+                try require(nearestRankP95(metric.candidateSamples) <= budgetLimit, "metric candidate p95 exceeds its budget")
+            }
         }
     }
 
@@ -303,9 +333,17 @@ enum PerformanceComparisonReportValidator {
         for metric in metrics {
             try require(metric.baselineID == baselineID, "metric baseline ID mismatch")
             try require(metric.candidateID == candidateID, "metric candidate ID mismatch")
+            try require(metric.unit == metric.metricID.canonicalUnit, "metric unit does not match its canonical unit")
             try require(metric.baselineSamples.count == expectedPairCount && metric.candidateSamples.count == expectedPairCount, "paired metric arrays must contain exactly totalPairs samples")
             try require(metric.baselineSamples.allSatisfy { $0.isFinite && $0 > 0 } && metric.candidateSamples.allSatisfy { $0.isFinite && $0 > 0 }, "metric samples must be finite and positive")
-            try require(metric.budgetLimit.isFinite && metric.budgetLimit > 0, "metric budget limit must be finite and positive")
+            if let canonicalBudget = metric.metricID.canonicalBudgetLimit {
+                guard let budgetLimit = metric.budgetLimit else {
+                    throw PerformanceValidationError.invalid("metric requires its canonical budget limit")
+                }
+                try require(budgetLimit.isFinite && budgetLimit > 0 && budgetLimit == canonicalBudget, "metric budget limit does not match its canonical budget")
+            } else {
+                try require(metric.budgetLimit == nil, "metric does not permit an absolute budget limit")
+            }
             try require(metric.bootstrapInterval.lowerDelta.isFinite && metric.bootstrapInterval.upperDelta.isFinite, "bootstrap bounds must be finite")
             try require(metric.bootstrapInterval.lowerDelta <= metric.bootstrapInterval.upperDelta, "bootstrap bounds are incoherent")
             try require(metric.bootstrapInterval.seed == seed, "metric bootstrap seed mismatch")

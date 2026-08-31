@@ -5,7 +5,8 @@ commit was created; the parent coordinator owns integration and phase commits.
 
 ## Delivered
 
-- Added the explicit Codable/Equatable comparison payloads in
+- Added the typed `PerformanceMetricUnit` mapping and explicit
+  Codable/Equatable comparison payloads in
   `Sources/PointerAppKit/Diagnostics/PerformanceComparisonReport.swift`:
   `ManualMetricEvidence`, `ManualMetricAdapter`, `MetricComparison` (including
   its typed absolute `budgetLimit`), and `PerformanceComparisonReport`.
@@ -47,8 +48,13 @@ commit was created; the parent coordinator owns integration and phase commits.
   `pairsPerOrder * 2` (30 standard) finite samples. Ratios and deltas must
   equal candidate/baseline and candidate-minus-baseline respectively within a
   small floating-point tolerance; empty or short derived arrays are rejected.
-  Baseline and candidate samples must be strictly positive, and every metric
-  carries a finite positive absolute `budgetLimit`.
+  Baseline and candidate samples must be strictly positive. Only
+  `combinedFrame` (16.7 ms), `responsiveness` (100 ms), and `inputToVisible`
+  (100 ms) carry exact canonical absolute budgets; all other metrics persist
+  `nil` budgets, preventing caller-selected limits from hiding regressions.
+  The canonical unit table uses milliseconds for `redrawLayout` (as well as
+  frame, launch, responsiveness, and input metrics), nanoseconds for `model`,
+  and bytes for allocation and memory metrics.
 - Full baseline/candidate measurement environments must match across host
   model, macOS, Xcode, developer directory, power state, display state, and
   Release build configuration. Each persisted identity must also agree with
@@ -62,8 +68,9 @@ commit was created; the parent coordinator owns integration and phase commits.
   coherent. Completion requires accepted overall/metric/resilience dispositions
   and no leaked or unexpected-growth case.
 - Completion independently recomputes each metric's ratio median and
-  nearest-rank p95, requiring both ratio statistics to be at most 1.10 and the
-  candidate p95 to remain at or below that metric's `budgetLimit`.
+  nearest-rank p95, requiring both ratio statistics to be at most 1.10. For
+  the three contract-defined absolute budgets, candidate p95 must also remain
+  at or below the canonical `budgetLimit`.
 - `writeComparison` is intentionally non-mutating until Task 3 owns valid
   calculation/output mapping. Both invalid inputs and the explicit deferral
   leave no partial output.
@@ -78,10 +85,11 @@ fixture members. GREEN was then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceComparisonHarnessTests
 ```
 
-Result: 16 focused tests passed, covering full Codable round-trip and
+Result: 18 focused tests passed, covering full Codable round-trip and
 completion, wrong/missing report kind, duplicate/missing IDs, exact 30-pair
 array cardinality, every measurement-environment compatibility dimension,
-positive-sample and ratio/budget regression rejection, persisted fixture and
+positive-sample, canonical-unit, non-spoofable budget, ratio regression, and
+16.7/100 ms budget breach rejection, persisted fixture and
 baseline/candidate variant mismatch, host/config and eligibility mismatch,
 content-manifest rejection,
 failed/unmeasured preflight, array/ratio/bootstrap errors, manual evidence and
