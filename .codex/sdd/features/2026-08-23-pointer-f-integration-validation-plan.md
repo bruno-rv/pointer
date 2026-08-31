@@ -565,10 +565,12 @@ power/display/buildConfiguration equality, distinct source commits matching
 run/build provenance, and nonempty ratio/delta arrays of exactly
 `totalPairs == pairsPerOrder * 2`. It also validates equal persisted
 `baselineFixture`/`candidateFixture` values against their measurement reports,
-finite positive per-metric `budgetLimit`, finite strictly positive baseline and
-candidate samples, and recomputed ratio median/p95 at most `1.10` with candidate
-p95 within that
-budget. The report also
+the canonical `PerformanceMetricUnit`, finite strictly positive baseline and
+candidate samples, and recomputed ratio median/p95 at most `1.10`. Absolute
+`budgetLimit` is optional and must equal the canonical value only for
+`combinedFrame` (16.7 ms), `responsiveness` (100 ms), and `inputToVisible`
+(100 ms); other metrics must carry nil budgets, and `memoryRSS` uses delta/
+slope rather than absolute RSS p95. The report also
 links the canonical 420-point narrow-display evidence and accepted A-harness
 real-guide evidence before marking F-final complete.
 

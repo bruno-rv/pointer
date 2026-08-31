@@ -377,6 +377,12 @@ neither a previous report nor a documentation claim can satisfy it.
         case memoryRSS
     }
 
+    public enum PerformanceMetricUnit: String, Codable, Sendable, Equatable {
+        case milliseconds
+        case nanoseconds
+        case bytes
+    }
+
     public struct MetricComparison: Codable, Sendable {
         public let metricID: PerformanceMetricID
         public let evidenceClass: MetricEvidenceClass
@@ -386,7 +392,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateSamples: [Double]
         public let ratios: [Double]
         public let deltas: [Double]
-        public let budgetLimit: Double
+        public let unit: PerformanceMetricUnit
+        public let budgetLimit: Double?
         public let bootstrapInterval: BootstrapInterval
         public let manualEvidence: ManualMetricEvidence?
         public let disposition: Disposition
@@ -543,6 +550,18 @@ neither a previous report nor a documentation claim can satisfy it.
         public static func run(arguments: [String], outputDirectory: URL) throws
     }
 
+The canonical metric map is a private validator table, not a public Codable
+type: `model` uses nanoseconds with no absolute
+budget; `renderer`, `compositor`, `launchCold`, `launchWarm`, `redrawLayout`,
+`responsiveness`, and `inputToVisible` use milliseconds, with absolute budgets
+only for `combinedFrame` (`16.7`) and `responsiveness`/`inputToVisible`
+(`100`). `allocations` uses bytes with no absolute budget. `memoryRSS` uses
+bytes for the final-window delta and post-warmup slope, never an absolute RSS
+p95, and has no absolute `budgetLimit`. The unit and optional budget are
+serialized in each `MetricComparison`; the validator rejects a wrong unit,
+missing required budget, huge/wrong value, or unexpected budget on an
+unbudgeted metric. These are canonical values, not report-supplied thresholds.
+
 `PerformanceMeasurementReport.validateStructure()` requires
 `reportKind == .measurement`, all required keys/types, exactly one immutable
 source identity, valid enum values, finite numeric values, coherent arrays,
@@ -584,16 +603,20 @@ display state, and buildConfiguration; their clean source commit identities
 must be distinct, and each must match its run/build provenance. It requires
 full `baselineFixture` and `candidateFixture` values, equal in every field,
 and each matching its corresponding measurement report. It requires one
-`MetricComparison` for every `PerformanceMetricID`, a finite positive
-`budgetLimit`, nonempty ratio/delta arrays with exactly
+`MetricComparison` for every `PerformanceMetricID`, the canonical
+`PerformanceMetricUnit`, and a canonical optional `budgetLimit` (finite and
+positive only when that metric has an absolute budget). It requires nonempty
+ratio/delta arrays with exactly
 `configuration.totalPairs` (`pairsPerOrder * 2`) entries for every metric,
 equal-length paired sample arrays, and finite strictly positive baseline and
 candidate samples so each ratio is exact. `validateCompletion()` recomputes every ratio,
-the ratio median, the ratio p95, and the candidate-sample p95; both ratio
-summaries must be at most `1.10`, and candidate p95 must be at most the
-absolute `budgetLimit`. Empty arrays, nonfinite or nonpositive baseline or
-candidate samples, stale supplied ratios/deltas, or budget/ratio breaches are
-rejected. It also requires valid
+the ratio median, and the ratio p95; both ratio summaries must be at most
+`1.10`. For metrics with a canonical absolute budget, it also recomputes
+candidate p95 in that metric's unit and requires it to be at most the canonical
+limit. `memoryRSS` is validated using its delta/slope fields and never an
+absolute RSS p95. Empty arrays, nonfinite or nonpositive baseline or candidate
+samples, stale supplied ratios/deltas, wrong units, missing/huge/unexpected
+budgets, or budget/ratio breaches are rejected. It also requires valid
 `BootstrapInterval` values and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
 steps, result, and evidence path); a deterministic metric must have nil manual
@@ -787,6 +810,8 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonPersistsEqualMatchingFixtures()
     func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
     func testComparisonCompletionRecomputesRatioAndCandidateP95()
+    func testMetricComparisonRejectsWrongUnitAndUnexpectedBudget()
+    func testMemoryComparisonUsesDeltaAndSlopeNotAbsoluteP95()
     func testBootstrapIntervalOnlyClaimsImprovementWhenUpperBoundIsBelowZero()
     func testBudgetRegressionAndMissingMetricDispositionIsRevise()
     func testResilienceReportCoversModeToolsMarksClearUndoDisplayChurnAndShortcutTimeout()
@@ -806,7 +831,10 @@ they are equal and match the corresponding measurement reports, reject
 nonfinite or nonpositive baseline/candidate samples or
 nonfinite/nonpositive `budgetLimit`, and prove
 completion recomputes ratio median/p95 at most `1.10` and candidate p95 within
-the absolute budget.
+the canonical absolute budget. Round-trip `MetricComparison.unit`, reject
+wrong-unit and unexpected/huge/missing budgets against the canonical metric
+map, and verify `memoryRSS` uses delta/slope evidence rather than absolute RSS
+p95.
 Also assert source/content identities, host/build/fixture fields, five
 warmups, `pairsPerOrder == 15`, derived `totalPairs == 30`, exactly 15
 baseline-first plus 15 candidate-first pairs, ratio
