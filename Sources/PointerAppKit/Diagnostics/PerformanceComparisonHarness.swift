@@ -47,7 +47,7 @@ public enum PerformanceComparisonHarness {
         try require(baseline.runProvenance.acceptedFoundationArtifactSHA256 == candidate.runProvenance.acceptedFoundationArtifactSHA256, "baseline/candidate foundation artifact mismatch")
     }
 
-    public static func compare(
+    static func compare(
         baseline: PerformanceMeasurementReport,
         candidate: PerformanceMeasurementReport,
         configuration: PerformanceConfiguration,
@@ -61,27 +61,6 @@ public enum PerformanceComparisonHarness {
         report: PerformanceComparisonReport,
         baselineURL: URL,
         candidateURL: URL,
-        outputDirectory: URL
-    ) throws -> PerformanceComparisonReport {
-        let baselineData = try Data(contentsOf: baselineURL)
-        let candidateData = try Data(contentsOf: candidateURL)
-        let baselineHash = sha256(baselineData)
-        let candidateHash = sha256(candidateData)
-        try require(report.baselineMeasurementReportSHA256 == baselineHash, "baseline measurement report hash mismatch")
-        try require(report.candidateMeasurementReportSHA256 == candidateHash, "candidate measurement report hash mismatch")
-        try report.validateCompletion()
-
-        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-        let outputURL = outputDirectory.appendingPathComponent("paired-comparison.json")
-        let comparisonData = try JSONEncoder().encode(report)
-        try comparisonData.write(to: outputURL, options: .atomic)
-        return report
-    }
-
-    public static func writeComparison(
-        baselineURL: URL,
-        candidateURL: URL,
-        manualEvidenceDirectory: URL,
         outputDirectory: URL,
         configuration: PerformanceConfiguration,
         eligibility: PerformancePairEligibility
@@ -92,11 +71,17 @@ public enum PerformanceComparisonHarness {
         let candidateHash = sha256(candidateData)
         let baseline = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: baselineData)
         let candidate = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: candidateData)
-        try require(baselineHash != candidateHash, "baseline and candidate measurement report hashes must differ")
-        _ = manualEvidenceDirectory
-        _ = outputDirectory
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
-        throw PerformanceValidationError.invalid("comparison calculations are deferred to Task 3")
+        try require(report.baselineMeasurementReportSHA256 == baselineHash, "baseline measurement report hash mismatch")
+        try require(report.candidateMeasurementReportSHA256 == candidateHash, "candidate measurement report hash mismatch")
+        try validateReportBindings(report, baseline: baseline, candidate: candidate, eligibility: eligibility)
+        try report.validateCompletion()
+
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let outputURL = outputDirectory.appendingPathComponent("paired-comparison.json")
+        let comparisonData = try JSONEncoder().encode(report)
+        try comparisonData.write(to: outputURL, options: .atomic)
+        return report
     }
 
     private static func require(_ condition: Bool, _ message: String) throws {
@@ -113,6 +98,32 @@ public enum PerformanceComparisonHarness {
             && baseline.powerState == candidate.powerState
             && baseline.displayState == candidate.displayState
             && baseline.buildConfiguration == candidate.buildConfiguration
+    }
+
+    private static func validateReportBindings(
+        _ report: PerformanceComparisonReport,
+        baseline: PerformanceMeasurementReport,
+        candidate: PerformanceMeasurementReport,
+        eligibility: PerformancePairEligibility
+    ) throws {
+        try require(report.baselineID == baseline.identity.sourceCommitSHA, "baseline comparison ID does not match decoded measurement")
+        try require(report.candidateID == candidate.identity.sourceCommitSHA, "candidate comparison ID does not match decoded measurement")
+        try require(report.baselineMeasurementIdentity == baseline.identity, "baseline measurement identity mismatch")
+        try require(report.candidateMeasurementIdentity == candidate.identity, "candidate measurement identity mismatch")
+        try require(report.baselineFixture == baseline.fixture, "baseline fixture mismatch")
+        try require(report.candidateFixture == candidate.fixture, "candidate fixture mismatch")
+        try require(report.baselineBuildProvenance == baseline.buildProvenance, "baseline build provenance mismatch")
+        try require(report.candidateBuildProvenance == candidate.buildProvenance, "candidate build provenance mismatch")
+        try require(report.baselineRunProvenance == baseline.runProvenance, "baseline run provenance mismatch")
+        try require(report.candidateRunProvenance == candidate.runProvenance, "candidate run provenance mismatch")
+        try require(report.baselineRunProvenance.host == baseline.host, "baseline host mismatch")
+        try require(report.candidateRunProvenance.host == candidate.host, "candidate host mismatch")
+        try require(report.baselineRunProvenance.configuration == baseline.runProvenance.configuration, "baseline configuration mismatch")
+        try require(report.candidateRunProvenance.configuration == candidate.runProvenance.configuration, "candidate configuration mismatch")
+        try require(report.harnessVersion == baseline.harnessVersion && report.harnessVersion == candidate.harnessVersion, "comparison harness mismatch")
+        try require(report.foundationIdentity == baseline.foundationIdentity && report.foundationIdentity == candidate.foundationIdentity, "comparison foundation mismatch")
+        try require(report.buildContractVersion == baseline.buildContractVersion && report.buildContractVersion == candidate.buildContractVersion, "comparison build contract mismatch")
+        try require(report.pairEligibility == eligibility, "comparison pair eligibility mismatch")
     }
 
     private static func sha256(_ data: Data) -> String {

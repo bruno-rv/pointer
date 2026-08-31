@@ -24,16 +24,24 @@ commit was created; the parent coordinator owns integration and phase commits.
   `validateCompletion()` with fail-closed identity, provenance, version,
   metric, paired-array, derived ratio/delta, bootstrap, manual evidence,
   resilience, and disposition checks.
-- Added `PerformanceComparisonHarness.preflight(...)` and the plan-required
-  `compare(...)`/`writeComparison(...)` signatures. Preflight validates both
+- Added `PerformanceComparisonHarness.preflight(...)` and the internal,
+  calculation-deferred `compare(...)` seam. The public report-bound
+  `writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
+  is the sole persistence API. Preflight validates both
   measurement reports to completion before checking pair eligibility, rejects
   content-manifest diagnostics and failed/unmeasured inputs, and revalidates
   roots, commit identities, host, fixture, configuration, foundation, and
   build contract.
+- The persisted-output URL writer decodes the exact input bytes, runs full
+  preflight, cross-checks IDs, full measurement identities, fixtures, build/run
+  provenance, hosts/configuration, versions, and pair eligibility, then writes
+  only with exact SHA-256 bindings. The decoded-value `compare` entry point is
+  internal and remains calculation-deferred for Task 3.
 - Kept Task 3's sampling, ratio/bootstrap calculation, manual-evidence file
-  loading, CLI, and pair orchestration out of this task. The forced `compare`
-  and `writeComparison` entry points perform all preflight work and then throw a
-  specific Task 3 deferral; they do not fabricate a report or touch output.
+  loading, CLI, and pair orchestration out of this task. The plan-signature
+  `compare` entry point performs preflight and then throws a specific Task 3
+  deferral; it does not fabricate a report. Persisted output is available only
+  through the report-bound URL writer after all binding checks pass.
 - Added comparison-specific baseline/candidate, eligibility, metric, manual
   evidence, and round-trip fixtures in
   `Tests/PointerAppKitTests/PerformanceFixtures.swift`.
@@ -81,10 +89,10 @@ commit was created; the parent coordinator owns integration and phase commits.
   requires their sum to remain at or below 16.7 ms. A 16 ms combined-frame
   boundary remains valid while a 10 ms + 10 ms renderer/compositor pair is
   rejected.
-- The plan-signature `writeComparison` remains non-mutating until Task 3 owns
-  calculation/output mapping. The report-bound writer hashes exact input bytes,
-  validates matching persisted bindings, and writes atomically; mismatch,
-  missing-input, and deferred paths leave no partial output.
+- The internal `compare` seam remains non-writing until Task 3 owns calculation
+  and output mapping. The public report-bound writer hashes exact input bytes,
+  validates matching persisted bindings, and writes atomically; mismatch and
+  missing-input paths leave no partial output.
 
 ## Evidence
 
@@ -96,13 +104,14 @@ fixture members. GREEN was then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceComparisonHarnessTests
 ```
 
-Result: 21 focused tests passed, covering full Codable round-trip and
+Result: 22 focused tests passed, covering full Codable round-trip and
 completion, wrong/missing report kind, duplicate/missing IDs, exact 30-pair
 array cardinality, every measurement-environment compatibility dimension,
 positive-sample, canonical-unit, non-spoofable budget, ratio regression, and
 16.7/100 ms budget breach rejection, persisted fixture and
 baseline/candidate variant mismatch, absolute RSS semantics, exact input-byte
-SHA-256 binding and mismatch rejection, renderer/compositor and combined-frame
+SHA-256 binding and mismatch rejection, decoded-input identity/fixture/build/
+run/host/config/eligibility cross-checks, renderer/compositor and combined-frame
 budget boundaries, host/config and eligibility mismatch, content-manifest
 rejection,
 failed/unmeasured preflight, array/ratio/bootstrap errors, manual evidence and

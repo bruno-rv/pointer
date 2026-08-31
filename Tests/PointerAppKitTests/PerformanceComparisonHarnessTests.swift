@@ -284,7 +284,7 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         try JSONEncoder().encode(PerformanceFixtures.baseline).write(to: baselineURL)
         try JSONEncoder().encode(PerformanceFixtures.candidate).write(to: candidateURL)
 
-        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: temp.appendingPathComponent("manual"), outputDirectory: outputURL.deletingLastPathComponent(), configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
+        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(report: PerformanceFixtures.comparison(), baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputURL.deletingLastPathComponent(), configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
@@ -305,7 +305,7 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         )
 
         let outputDirectory = temp.appendingPathComponent("bound-output", isDirectory: true)
-        let written = try PerformanceComparisonHarness.writeComparison(report: bound, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory)
+        let written = try PerformanceComparisonHarness.writeComparison(report: bound, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility)
         XCTAssertEqual(written, bound)
         XCTAssertTrue(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
 
@@ -314,8 +314,52 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
             candidateMeasurementReportSHA256: PerformanceFixtures.sha256(candidateData)
         )
         let mismatchOutput = temp.appendingPathComponent("mismatch-output", isDirectory: true)
-        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(report: mismatch, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: mismatchOutput))
+        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(report: mismatch, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: mismatchOutput, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
         XCTAssertFalse(FileManager.default.fileExists(atPath: mismatchOutput.appendingPathComponent("paired-comparison.json").path))
+    }
+
+    func testWriteComparisonCrossChecksCallerReportAgainstDecodedInputsBeforeOutput() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-cross-check-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let baselineURL = temp.appendingPathComponent("baseline.json")
+        let candidateURL = temp.appendingPathComponent("candidate.json")
+        let baselineData = try JSONEncoder().encode(PerformanceFixtures.baseline)
+        let candidateData = try JSONEncoder().encode(PerformanceFixtures.candidate)
+        try baselineData.write(to: baselineURL)
+        try candidateData.write(to: candidateURL)
+        let baselineHash = PerformanceFixtures.sha256(baselineData)
+        let candidateHash = PerformanceFixtures.sha256(candidateData)
+
+        func assertRejected(_ label: String, report: PerformanceComparisonReport, eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility) {
+            let outputDirectory = temp.appendingPathComponent(label, isDirectory: true)
+            XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(report: report, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: eligibility), "Expected \(label) mismatch to be rejected")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
+        }
+
+        assertRejected("identity", report: PerformanceFixtures.comparison(baselineMeasurementIdentity: PerformanceFixtures.identity, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+        assertRejected("fixture", report: PerformanceFixtures.comparison(baselineFixture: FixtureIdentity(identifier: "other", markCount: PerformanceFixtures.fixture.markCount, continuationSamples: PerformanceFixtures.fixture.continuationSamples, warmupCount: PerformanceFixtures.fixture.warmupCount, trialCount: PerformanceFixtures.fixture.trialCount, seed: PerformanceFixtures.fixture.seed), baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+
+        let changedCandidateBuild = BuildProvenance(sourceTreeStatus: .clean, sourceIdentity: PerformanceFixtures.build.sourceIdentity, sourceManifestSHA256: PerformanceFixtures.build.sourceManifestSHA256, executableSHA256: String(repeating: "8", count: 64), bundleManifestSHA256: PerformanceFixtures.build.bundleManifestSHA256, buildConfiguration: PerformanceFixtures.build.buildConfiguration, recordedAtUTC: PerformanceFixtures.build.recordedAtUTC, foundation: PerformanceFixtures.build.foundation, harnessVersion: PerformanceFixtures.build.harnessVersion, buildContractVersion: PerformanceFixtures.build.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.build.acceptedFoundationArtifactSHA256)
+        let changedCandidateRun = PerformanceRunProvenance(variant: "candidate", outputRoot: PerformanceFixtures.run.outputRoot, sourceRef: PerformanceFixtures.run.sourceRef, build: changedCandidateBuild, host: PerformanceFixtures.run.host, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: PerformanceFixtures.run.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.run.foundation, harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
+        assertRejected("build", report: PerformanceFixtures.comparison(candidateBuild: changedCandidateBuild, candidateRun: changedCandidateRun, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+
+        let changedRun = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/other", sourceRef: PerformanceFixtures.run.sourceRef, build: PerformanceFixtures.run.build, host: PerformanceFixtures.run.host, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: PerformanceFixtures.run.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.run.foundation, harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
+        assertRejected("run", report: PerformanceFixtures.comparison(candidateRun: changedRun, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+
+        let changedHost = HostIdentity(machineIdentifier: "other-machine", processArchitecture: PerformanceFixtures.host.processArchitecture, connectedDisplayUUIDs: PerformanceFixtures.host.connectedDisplayUUIDs)
+        let changedBaselineRun = PerformanceRunProvenance(variant: "baseline", outputRoot: PerformanceFixtures.baselineRun.outputRoot, sourceRef: PerformanceFixtures.baselineRun.sourceRef, build: PerformanceFixtures.baselineRun.build, host: changedHost, recordedAtUTC: PerformanceFixtures.baselineRun.recordedAtUTC, configuration: PerformanceFixtures.baselineRun.configuration, foundationProvenancePath: PerformanceFixtures.baselineRun.foundationProvenancePath, foundation: PerformanceFixtures.baselineRun.foundation, harnessVersion: PerformanceFixtures.baselineRun.harnessVersion, buildContractVersion: PerformanceFixtures.baselineRun.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.baselineRun.acceptedFoundationArtifactSHA256)
+        let changedCandidateHostRun = PerformanceRunProvenance(variant: "candidate", outputRoot: PerformanceFixtures.run.outputRoot, sourceRef: PerformanceFixtures.run.sourceRef, build: PerformanceFixtures.run.build, host: changedHost, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: PerformanceFixtures.run.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.run.foundation, harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
+        assertRejected("host", report: PerformanceFixtures.comparison(baselineRun: changedBaselineRun, candidateRun: changedCandidateHostRun, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+
+        let changedConfiguration = PerformanceConfiguration(fixtureMarkCount: 12, samplesPerGesture: 240, warmupCount: 5, trialCount: 30, pairsPerOrder: 14, bootstrapSeed: 48271, bootstrapResamples: 10_000, memoryWindowSeconds: 600, memorySampleIntervalSeconds: 5, harnessVersion: PerformanceFixtures.configuration.harnessVersion, foundationIdentity: PerformanceFixtures.foundation, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion)
+        let changedBaselineConfigRun = PerformanceRunProvenance(variant: "baseline", outputRoot: PerformanceFixtures.baselineRun.outputRoot, sourceRef: PerformanceFixtures.baselineRun.sourceRef, build: PerformanceFixtures.baselineRun.build, host: PerformanceFixtures.baselineRun.host, recordedAtUTC: PerformanceFixtures.baselineRun.recordedAtUTC, configuration: changedConfiguration, foundationProvenancePath: PerformanceFixtures.baselineRun.foundationProvenancePath, foundation: PerformanceFixtures.baselineRun.foundation, harnessVersion: PerformanceFixtures.baselineRun.harnessVersion, buildContractVersion: PerformanceFixtures.baselineRun.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.baselineRun.acceptedFoundationArtifactSHA256)
+        let changedCandidateConfigRun = PerformanceRunProvenance(variant: "candidate", outputRoot: PerformanceFixtures.run.outputRoot, sourceRef: PerformanceFixtures.run.sourceRef, build: PerformanceFixtures.run.build, host: PerformanceFixtures.run.host, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: changedConfiguration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.run.foundation, harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
+        assertRejected("configuration", report: PerformanceFixtures.comparison(baselineRun: changedBaselineConfigRun, candidateRun: changedCandidateConfigRun, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash))
+
+        let changedEligibility = PerformancePairEligibility(baselineRoot: "build/other", candidateRoot: PerformanceFixtures.eligibility.candidateRoot, baselineCommitSHA: PerformanceFixtures.eligibility.baselineCommitSHA, candidateCommitSHA: PerformanceFixtures.eligibility.candidateCommitSHA, foundationProvenance: PerformanceFixtures.eligibility.foundationProvenance)
+        assertRejected("eligibility", report: PerformanceFixtures.comparison(baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash), eligibility: changedEligibility)
     }
 
     func testValidPairPassesMeasuredPreflightButCompareRemainsTask3Owned() throws {
