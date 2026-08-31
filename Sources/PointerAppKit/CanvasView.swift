@@ -20,10 +20,13 @@ public final class CanvasView: NSView {
     }
     public private(set) var session: PointerSession
     public private(set) var cursorPlan: CursorPlan
+    public private(set) var renderPlan: RenderPlan
     public var onBoundaryEvent: ((GestureBoundaryEvent) -> Void)?
     public var onSessionUpdate: ((PointerSession) -> Void)?
     public var onRedrawRequested: (() -> Void)?
     public private(set) var hasActiveGesture = false
+
+    private var currentHoverInventory = HoverInventory(hoveredMarkID: nil, isVisible: false)
 
     public init(
         frame frameRect: NSRect,
@@ -36,6 +39,7 @@ public final class CanvasView: NSView {
         self.tool = tool
         self.cursorPlan = Self.cursorPlan(for: tool, mode: session.mode)
         self.hasActiveGesture = session.hasActiveGesture(on: display)
+        self.renderPlan = Self.renderPlan(for: session, display: display, hover: currentHoverInventory)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -50,6 +54,7 @@ public final class CanvasView: NSView {
         hasActiveGesture = session.hasActiveGesture(on: display)
         self.session = session
         updateCursorPlan()
+        updateRenderPlan()
         needsDisplay = true
     }
 
@@ -85,6 +90,7 @@ public final class CanvasView: NSView {
         let redrawHandler = onRedrawRequested
         let sessionHandler = onSessionUpdate
         let boundaryHandler = onBoundaryEvent
+        updateRenderPlan()
         needsDisplay = true
         redrawHandler?()
         sessionHandler?(session)
@@ -98,6 +104,7 @@ public final class CanvasView: NSView {
         let redrawHandler = onRedrawRequested
         let sessionHandler = onSessionUpdate
         let boundaryHandler = onBoundaryEvent
+        updateRenderPlan()
         needsDisplay = true
         redrawHandler?()
         sessionHandler?(session)
@@ -108,8 +115,7 @@ public final class CanvasView: NSView {
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         MarkRenderer.draw(
-            canvas: session.previewCanvas(for: display),
-            selectedID: session.selection,
+            plan: renderPlan,
             in: bounds,
             context: context
         )
@@ -135,6 +141,7 @@ public final class CanvasView: NSView {
         let redrawHandler = onRedrawRequested
         let sessionHandler = onSessionUpdate
         let boundaryHandler = onBoundaryEvent
+        updateRenderPlan()
         if update.needsRedraw {
             needsDisplay = true
             redrawHandler?()
@@ -145,6 +152,31 @@ public final class CanvasView: NSView {
         if let boundaryEvent = update.boundaryEvent {
             boundaryHandler?(boundaryEvent)
         }
+    }
+
+    private func updateRenderPlan() {
+        renderPlan = Self.renderPlan(for: session, display: display, hover: currentHoverInventory)
+    }
+
+    private static func renderPlan(
+        for session: PointerSession,
+        display: DisplayUUID,
+        hover: HoverInventory
+    ) -> RenderPlan {
+        let committedCanvas = session.canvas(for: display)
+        let previewCanvas = session.previewCanvas(for: display)
+        let activeDraft = previewCanvas.marks.first { previewMark in
+            !committedCanvas.marks.contains { committedMark in
+                committedMark.id == previewMark.id
+            }
+        }
+        return RenderPlan.make(
+            canvas: previewCanvas,
+            mode: session.mode,
+            selectedID: session.selection,
+            activeDraft: activeDraft,
+            hover: hover
+        )
     }
 
     private var cursor: NSCursor {
