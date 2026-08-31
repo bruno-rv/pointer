@@ -1,8 +1,7 @@
 # Pointer E Task2b: comparison schema and preflight
 
-Status: integrated through code commits through `bb89ac5` and documentation
-commit `0883741`; the current Task2b follow-up remains in the working tree for
-the coordinator's next commit.
+Status: integrated and clean at code commit `59b1b48` and documentation commit
+`791e0f0`.
 
 ## Delivered
 
@@ -125,8 +124,8 @@ failed/unmeasured preflight, array/ratio/bootstrap errors, manual evidence and
 host matching, resilience coherence, disposition rejection, atomic no-output
 behavior, and valid-pair preflight with the Task 3 deferral.
 
-The parent coordinator must rerun the full Swift suite, Release/debug build,
-and `git diff --check` after all parallel E work is reconciled. Task 3 must
+Current integrated verification records 22 focused tests, 384 full-suite tests,
+a passing build, and a clean diff. Task 3 must
 replace the explicit comparison deferral with fixed-seed paired calculations,
 manual evidence loading, and atomic JSON output without weakening this
 preflight boundary.
