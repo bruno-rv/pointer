@@ -145,51 +145,63 @@ final class LifecycleHarnessTests: XCTestCase {
         XCTAssertEqual(fixture.guideStateStore.markCount, 0)
     }
 
-    func testRealGuidePanelStopsAppearanceObservationAndLeavesNoVisibleOrphan() throws {
-        _ = NSApplication.shared
-        let fixture = FirstUseGuideTestFixture()
-        let (catalog, bundleURL) = try makeTrackedGuideCatalog()
-        defer { try? FileManager.default.removeItem(at: bundleURL) }
-        let stateStore = FirstUseGuideTestStateStore()
-        let appearanceProvider = FirstUseGuideTestAppearanceProvider()
-        let controller = FirstUseGuideController(
-            stateStore: stateStore,
-            placementProvider: fixture.placementProvider,
-            assetCatalog: catalog,
-            appearanceProvider: appearanceProvider
-        )
-        defer {
-            controller.hideForApplicationStop()
-        }
+    func testIntegratedControllerOwnsRealGuideAcrossStartStopAndExplicitReopen() throws {
+        let fixture = try IntegratedRealGuideLifecycleFixture()
+        fixture.start()
+        defer { fixture.cleanup() }
 
-        XCTAssertEqual(controller.show(in: fixture.context), .shown)
-        XCTAssertTrue(controller.isVisible)
-        let panel = try XCTUnwrap(
-            NSApp.windows.first {
-                $0.identifier?.rawValue == "pointer.first-use-guide" && $0.isVisible
-            }
+        let firstPanel = try XCTUnwrap(fixture.visibleGuidePanel)
+        let firstViewController = try XCTUnwrap(
+            firstPanel.contentViewController as? FirstUseGuideViewController
         )
-        XCTAssertTrue(panel.isVisible)
-        XCTAssertTrue(panel.isKeyWindow)
-        XCTAssertTrue(panel.firstResponder === (panel.contentViewController as? FirstUseGuideViewController)?.doneButton)
-        let viewController = try XCTUnwrap(
-            panel.contentViewController as? FirstUseGuideViewController
+        XCTAssertTrue(fixture.guide.isVisible)
+        XCTAssertTrue(firstPanel.isKeyWindow)
+        XCTAssertTrue(
+            firstPanel.firstResponder === firstViewController.doneButton,
+            "The integrated first-use guide should give focus to Done"
         )
-        XCTAssertEqual(viewController.exampleImageViews.count, 8)
-        XCTAssertTrue(viewController.exampleImageViews.allSatisfy { $0.image != nil })
-        XCTAssertTrue(viewController.resolutionErrors.isEmpty)
-        XCTAssertTrue(viewController.isAppearanceObservationActive)
-        XCTAssertEqual(stateStore.markCount, 1)
+        XCTAssertEqual(firstViewController.exampleImageViews.count, 8)
+        XCTAssertTrue(firstViewController.exampleImageViews.allSatisfy { $0.image != nil })
+        XCTAssertTrue(firstViewController.resolutionErrors.isEmpty)
+        XCTAssertTrue(firstViewController.isAppearanceObservationActive)
+        XCTAssertTrue(fixture.guideStateStore.hasDismissedFirstUseGuide)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 1)
+        assertIntegratedRunningCheckpoint(fixture, guideVisible: true)
 
-        controller.hideForApplicationStop()
+        fixture.controller.stop()
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(firstPanel.isVisible)
+        XCTAssertFalse(firstPanel.isKeyWindow)
+        XCTAssertFalse(firstViewController.isAppearanceObservationActive)
+        assertIntegratedStoppedCheckpoint(fixture)
 
-        XCTAssertFalse(controller.isVisible)
-        XCTAssertFalse(panel.isVisible)
-        XCTAssertFalse(panel.isKeyWindow)
-        XCTAssertFalse(viewController.isAppearanceObservationActive)
-        XCTAssertEqual(stateStore.markCount, 1)
-        XCTAssertFalse(NSApp.windows.contains { $0 === panel && $0.isVisible })
-        XCTAssertFalse(NSApp.keyWindow === panel)
+        fixture.controller.start()
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertNil(fixture.visibleGuidePanel)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 1)
+        assertIntegratedRunningCheckpoint(fixture, guideVisible: false)
+
+        XCTAssertEqual(fixture.controller.showGuide(), .shown)
+        let secondPanel = try XCTUnwrap(fixture.visibleGuidePanel)
+        let secondViewController = try XCTUnwrap(
+            secondPanel.contentViewController as? FirstUseGuideViewController
+        )
+        XCTAssertFalse(secondPanel === firstPanel)
+        XCTAssertTrue(fixture.guide.isVisible)
+        XCTAssertTrue(secondPanel.isKeyWindow)
+        XCTAssertTrue(secondViewController.isAppearanceObservationActive)
+        XCTAssertEqual(secondViewController.exampleImageViews.count, 8)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 1)
+
+        XCTAssertEqual(
+            fixture.controller.applicationShouldTerminate(NSApp),
+            .terminateNow
+        )
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(secondPanel.isVisible)
+        XCTAssertFalse(secondPanel.isKeyWindow)
+        XCTAssertFalse(secondViewController.isAppearanceObservationActive)
+        assertIntegratedStoppedCheckpoint(fixture)
     }
 
     func testStopCancelsUnfinishedRealGesturesWithoutCommittingDraftsOnOneAndTwoDisplays() throws {
@@ -506,50 +518,60 @@ final class LifecycleHarnessTests: XCTestCase {
         XCTAssertNil(fixture.shortcutController.onStateChange, file: file, line: line)
     }
 
-    private func makeTrackedGuideCatalog() throws -> (GuideAssetCatalog, URL) {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let manifestURL = repositoryRoot.appendingPathComponent("Bundle/GuideAssetIdentity.json")
-        let envelope = try JSONDecoder().decode(
-            GuideAssetCatalogEnvelope.self,
-            from: Data(contentsOf: manifestURL)
+    private func assertIntegratedRunningCheckpoint(
+        _ fixture: IntegratedRealGuideLifecycleFixture,
+        guideVisible: Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let checkpoint = fixture.controller.resourceCheckpoint
+        XCTAssertEqual(checkpoint.paletteCount, 1, file: file, line: line)
+        XCTAssertEqual(checkpoint.menuCount, 1, file: file, line: line)
+        XCTAssertEqual(checkpoint.screenObserverCount, 1, file: file, line: line)
+        XCTAssertEqual(checkpoint.appearanceObserverCount, 1, file: file, line: line)
+        XCTAssertEqual(checkpoint.shortcutWiringCount, 1, file: file, line: line)
+        XCTAssertEqual(
+            checkpoint.overlayCount,
+            fixture.displayDescriptors.count,
+            file: file,
+            line: line
         )
-        let sourceRoot = repositoryRoot.appendingPathComponent("Bundle/Assets.xcassets/FirstUseGuide")
-        let bundleURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PointerGuideAssets-\(UUID().uuidString).bundle")
-        try FileManager.default.createDirectory(
-            at: bundleURL,
-            withIntermediateDirectories: true
-        )
-        try Data(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict></dict></plist>".utf8
-        ).write(to: bundleURL.appendingPathComponent("Info.plist"))
+        XCTAssertEqual(checkpoint.callbackCount, 5, file: file, line: line)
+        XCTAssertEqual(checkpoint.timerCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.guideCount, guideVisible ? 1 : 0, file: file, line: line)
+        XCTAssertEqual(fixture.menuBar.menuResourceCount, 1, file: file, line: line)
+        XCTAssertEqual(fixture.menuBar.callbackBindingCount, 1, file: file, line: line)
+        XCTAssertNotNil(fixture.shortcutController.registrar.onEvent, file: file, line: line)
+        XCTAssertNotNil(fixture.shortcutController.onToggle, file: file, line: line)
+        XCTAssertNotNil(fixture.shortcutController.onStateChange, file: file, line: line)
+        XCTAssertEqual(fixture.palette.appearanceObserverCount, 1, file: file, line: line)
+    }
 
-        for entry in envelope.entries {
-            for variant in entry.variants {
-                let sourcePath = GuideAssetSourceMapping.sourcePath(
-                    for: variant.assetIdentifier,
-                    variant: variant.variant
-                )
-                let sourceURL = try XCTUnwrap(
-                    FileManager.default
-                        .subpaths(atPath: sourceRoot.path)?
-                        .map(sourceRoot.appendingPathComponent)
-                        .first { $0.lastPathComponent == sourcePath }
-                )
-                try FileManager.default.copyItem(
-                    at: sourceURL,
-                    to: bundleURL.appendingPathComponent(sourcePath)
-                )
-            }
-        }
-
-        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
-        let catalog = try GuideAssetCatalog(envelope: envelope, bundle: bundle)
-        return (catalog, bundleURL)
+    private func assertIntegratedStoppedCheckpoint(
+        _ fixture: IntegratedRealGuideLifecycleFixture,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let checkpoint = fixture.controller.resourceCheckpoint
+        XCTAssertEqual(checkpoint.paletteCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.menuCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.screenObserverCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.appearanceObserverCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.shortcutWiringCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.overlayCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.callbackCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.timerCount, 0, file: file, line: line)
+        XCTAssertEqual(checkpoint.guideCount, 0, file: file, line: line)
+        XCTAssertEqual(fixture.palette.appearanceObserverCount, 0, file: file, line: line)
+        XCTAssertNil(fixture.menuBar.statusItem, file: file, line: line)
+        XCTAssertEqual(fixture.menuBar.callbackBindingCount, 0, file: file, line: line)
+        XCTAssertNil(fixture.visibleGuidePanel, file: file, line: line)
+        XCTAssertNil(fixture.coordinator.onDisplaySync, file: file, line: line)
+        XCTAssertNil(fixture.commandRouter.onStateChange, file: file, line: line)
+        XCTAssertNil(fixture.commandRouter.onAnnotationEntry, file: file, line: line)
+        XCTAssertNil(fixture.shortcutController.registrar.onEvent, file: file, line: line)
+        XCTAssertNil(fixture.shortcutController.onToggle, file: file, line: line)
+        XCTAssertNil(fixture.shortcutController.onStateChange, file: file, line: line)
     }
 
     private func drawArrow(on overlay: OverlayPanel, in fixture: LifecycleInteractionFixture) {

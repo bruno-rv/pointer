@@ -16,6 +16,10 @@ engine.
 - deterministic screen, shortcut registrar/store/scheduler, clock, and guide
   presentation seams.
 
+`IntegratedRealGuideLifecycleFixture` composes the same real graph but injects
+the real D `FirstUseGuideController`, backed by a temporary bundle populated
+from the tracked guide manifest and all 24 source PNGs.
+
 Each test boots AppKit through `_ = NSApplication.shared`. No global event
 monitor, event tap, input synthesis, screen capture, or sleep is used.
 
@@ -73,11 +77,15 @@ parameter notification. The complete stopped checkpoint and the original
 - Hides a visible guide on display loss without changing its seen state,
   restores it only after palette restoration, and clears the restoration intent
   on application stop so the next start does not replay a stale restore.
-- Uses a concrete `FirstUseGuideController` with the tracked
-  `GuideAssetIdentity.json` and all 24 copied PNGs in an injected temporary
-  bundle. The real `FirstUseGuidePanelWindow` is checked for visibility, key
-  focus, Done focus, eight resolved images, and an active appearance observer;
-  application-stop teardown removes visibility/key status and the observer.
+- The integrated `PointerApplicationController.start()` path uses a concrete
+  `FirstUseGuideController` with the tracked `GuideAssetIdentity.json` and all
+  24 copied PNGs in an injected temporary bundle. The real
+  `FirstUseGuidePanelWindow` is checked for visibility, key focus, Done focus,
+  eight resolved images, and an active appearance observer; controller-stop
+  teardown removes visibility/key status and the observer.
+- After the integrated controller stops, a seen guide does not auto-reopen on
+  restart; an explicit `showGuide()` creates a fresh real panel, and
+  `applicationShouldTerminate` performs the second complete teardown.
 - Exercises an unseen hidden guide through display loss, deliberate application
   stop, and restart. Restart emits only `palette.show` then a fresh
   `guide.showIfNeeded`, never a stale restore; mode, tool, canvas, seen state,
@@ -88,13 +96,13 @@ parameter notification. The complete stopped checkpoint and the original
 This is deterministic AppKit/resource evidence, not physical multi-display or
 VoiceOver evidence. It proves production object composition, lifecycle counts,
 callback cleanup, real in-process CanvasView gesture routing, and guide event
-ordering. The concrete guide row exercises the D `FirstUseGuideController` and
-real panel in `PointerAppKit`, but does not claim executable launch or Release
-`Assets.car` proof: `Sources/Pointer/main.swift` composition and packaged
-resource validation remain F-owned integration evidence. This suite also does
-not prove WindowServer behavior across Spaces, physical pointer hit targets, or
-a person's live VoiceOver experience; those remain manual integration
-evidence.
+ordering. The integrated row exercises the D `FirstUseGuideController` through
+the real `PointerApplicationController` in `PointerAppKit`, but does not claim
+executable launch or Release `Assets.car` proof: `Sources/Pointer/main.swift`
+composition and packaged resource validation remain F-owned integration
+evidence. This suite also does not prove WindowServer behavior across Spaces,
+physical pointer hit targets, or a person's live VoiceOver experience; those
+remain manual integration evidence.
 
 ## Verification
 
@@ -110,3 +118,21 @@ The initial RED run intentionally failed to compile because
 passed all thirteen tests, including concrete guide-panel teardown, active
 gesture cancellation, stale shortcut delivery, post-restart callback oracles,
 and unseen/pending-guide state checks.
+
+The related lifecycle/controller/guide/hotkey/display/render suites passed:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'LifecycleHarnessTests|PointerApplicationControllerTests|GuideIntegrationTests|FirstUseGuideTests|HotKeyControllerTests|ShortcutLifecycleTests|DisplayLifecycleRegressionTests|CanvasIntegrationHarnessTests|CanvasViewRenderIntegrationTests'
+Executed 121 tests, with 0 failures
+```
+
+The full package and build gates also passed:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+Executed 340 tests, with 0 failures
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+Build complete
+git diff --check
+passed
+```
