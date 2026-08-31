@@ -79,7 +79,7 @@ D's public top-level RenderPlan and HandleInventory are consumed by B's CanvasVi
     @MainActor
     public final class GuideAssetCatalog: GuideAssetCatalogProviding {
         public let entries: [GuideAssetDescriptor]
-        public init(envelope: GuideAssetCatalogEnvelope, bundle: Bundle)
+        public init(envelope: GuideAssetCatalogEnvelope, bundle: Bundle) throws
         public func image(for identifier: String, variant: GuideAssetVariant) throws -> NSImage
     }
 
@@ -95,9 +95,21 @@ D's public top-level RenderPlan and HandleInventory are consumed by B's CanvasVi
     public final class FirstUseGuideController: FirstUseGuidePresenting {
         public let placementProvider: any GuidePlacementProviding
         public let assetCatalog: any GuideAssetCatalogProviding
+        public let appearanceProvider: any GuideAppearanceProviding
         public init(stateStore: any FirstUseGuideStateStoring,
                     placementProvider: any GuidePlacementProviding,
-                    assetCatalog: any GuideAssetCatalogProviding)
+                    assetCatalog: any GuideAssetCatalogProviding,
+                    appearanceProvider: any GuideAppearanceProviding)
+    }
+
+    @MainActor
+    public protocol GuideAppearanceProviding: AnyObject {
+        var variant: GuideAssetVariant { get }
+    }
+
+    internal enum FirstUseGuidePlacementPlan {
+        static func frame(size: DisplayFrame,
+                          in context: GuidePlacementContext) -> DisplayFrame?
     }
 
     D consumes the C-owned FirstUseGuidePresenting declaration unchanged; D does
@@ -116,6 +128,7 @@ D's public top-level RenderPlan and HandleInventory are consumed by B's CanvasVi
     internal init(stateStore: any FirstUseGuideStateStoring,
                   placementProvider: any GuidePlacementProviding,
                   assetCatalog: any GuideAssetCatalogProviding,
+                  appearanceProvider: any GuideAppearanceProviding,
                   panelFactory: @escaping (GuidePlacementContext) -> any FirstUseGuidePanel)
 
     public struct SelectionInventory: Equatable, Sendable {
@@ -204,7 +217,17 @@ Expected: the public top-level RenderPlan, HandleInventory, and mode-aware draw 
 
 - [ ] **Step 3: Implement the plan.**
 
-RenderPlan.make uses the supplied selection, hover, and active draft; any mode other than annotation, including standby, discards the draft so activeDraft is nil. Standby retains committed marks and sets selection.selectedMarkID/isVisible, hover.hoveredMarkID/isVisible, resize.handles/isVisible, and contextualDeleteVisible to empty/false. Annotation restores only explicit selection and a supplied hover target. MarkRenderer.draw(plan:) draws committed marks, then an annotation draft, then only the inventory's visible resize handles. Keep normalized mapping and style/opacity unchanged.
+RenderPlan.make uses the supplied selection, hover, and active draft; in
+annotation it partitions the explicit activeDraft ID out of the supplied
+preview canvas before populating committedMarks and deriving inventories. Any
+mode other than annotation, including standby, discards the draft and retains
+the full canvas marks. Standby sets selection.selectedMarkID/isVisible,
+hover.hoveredMarkID/isVisible, resize.handles/isVisible, and
+contextualDeleteVisible to empty/false. Annotation restores only explicit
+selection and a supplied hover target. MarkRenderer.draw(plan:) draws
+committed marks, then an annotation draft, then only the inventory's visible
+resize handles when selection.isVisible is true. Keep normalized mapping and
+style/opacity unchanged.
 
 - [ ] **Step 4: Run GREEN and appearance fixtures.**
 
@@ -212,7 +235,31 @@ RenderPlan.make uses the supplied selection, hover, and active draft; any mode o
 
 Expected: light/dark, Increase Contrast, Reduce Transparency, dense-canvas, selected/unselected, narrow/wide, and full-screen-content fixtures pass; record bitmap digest.
 
-Handoff to the coordinator is the accepted public RenderPlan/HandleInventory signatures, the fixed bitmap geometry/coordinates/tolerance/literal digest, and the exact CanvasView sequence for the separate B-render-integration phase. D does not edit CanvasView or claim the live draw path is complete until that B phase passes.
+For the separate B render-integration phase, on every session update and
+gesture boundary, derive and pass the preview state as follows:
+
+```text
+committedCanvas = session.canvas(for: display)
+previewCanvas = session.previewCanvas(for: display)
+activeDraft = previewCanvas.marks.first(where: { previewMark in
+    !committedCanvas.marks.contains(where: { $0.id == previewMark.id })
+})
+CanvasView.renderPlan = RenderPlan.make(
+    canvas: previewCanvas,
+    mode: session.mode,
+    selectedID: session.selection,
+    activeDraft: activeDraft,
+    hover: currentHoverInventory
+)
+CanvasView.draw(_:) -> MarkRenderer.draw(plan:in:context:)
+```
+
+`RenderPlan.make` performs the same draft-ID partition defensively, so B must
+pass both the preview canvas and the derived draft rather than passing the
+committed canvas as a substitute for preview state. D does not edit CanvasView
+or claim the live draw path is complete until that B phase passes. The fixed
+bitmap geometry/coordinates/tolerance/literal digest and accepted public
+RenderPlan/HandleInventory signatures remain the handoff contract.
 
 ## Task 2: Implement injected first-use storage and guide state machine
 
@@ -248,7 +295,7 @@ Expected: missing protocol, state store, controller, view controller, and test p
 
 - [ ] **Step 3: Implement the minimal state machine.**
 
-FirstUseGuideController implements the C-owned FirstUseGuidePresenting protocol without redeclaring or extending it. It requires the injected GuideAssetCatalogProviding and exposes that catalog only through its concrete read-only assetCatalog property; C's protocol remains catalog-agnostic. It resolves every example image only through assetCatalog.image(for:variant:), and never performs a named-image lookup, bundle fallback, UserDefaults lookup, or default catalog construction. It consumes the C-owned GuidePlacementProviding identity and exposes it through placementProvider. showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:) receive GuidePlacementContext containing visibleFrame, paletteFrame, and avoidanceFrames; D positions the panel inside the supplied visibleFrame while avoiding every supplied frame, without requiring C to supply a list of future guide obstacles or known guide frames. The controller requests a panel and marks the store only after the panel is visible/order-front, returning `.shown` only then and `.failed(String)` otherwise. dismiss clears transient intent and orders out. hideForDisplayLoss records visible/pending intent without committing; restore restores exactly once; hideForApplicationStop clears that intent and does not commit.
+FirstUseGuideController implements the C-owned FirstUseGuidePresenting protocol without redeclaring or extending it. It requires the injected GuideAssetCatalogProviding and GuideAppearanceProviding seams and exposes them only through concrete read-only properties; C's protocol remains catalog-agnostic. It validates every required entry and resolves every example image only through assetCatalog.image(for:variant:), and never performs a global/default named-image lookup, UserDefaults lookup, or default catalog construction. GuideAssetCatalog's throwing initializer rejects wrong schema/identity, duplicate IDs or variants, missing variants, unsafe identifiers, invalid hashes, and invalid informative metadata. For each descriptor, GuideAssetCatalog derives the compiled resource name from GuideAssetSourceMapping.sourcePath by removing `.png` and performs exactly one `bundle.image(forResource: resourceName)` lookup through its injected Bundle. It never loads a raw URL/path, uses `NSImage(contentsOf:)`, falls back to another lookup, uses Bundle.main, or calls global `NSImage(named:)`; compiled Assets.car is the sole runtime asset route. It consumes the C-owned GuidePlacementProviding identity and exposes it through placementProvider. showIfNeeded(in:)/show(in:)/restoreAfterDisplayLoss(in:) receive GuidePlacementContext containing visibleFrame, paletteFrame, and avoidanceFrames; the pure FirstUseGuidePlacementPlan returns an optional frame inside visibleFrame that avoids the palette union every supplied obstacle, with no overlapping fallback. The controller requests a panel and marks the store only after the panel is visible/order-front, returning `.shown` only then and `.failed(String)` otherwise. dismiss clears transient intent and orders out. hideForDisplayLoss records visible/pending intent without committing; restore restores exactly once; hideForApplicationStop clears that intent and does not commit.
 
 The source-contract test resolves paths from #filePath and asserts exactly one
 FirstUseGuidePresenting protocol declaration in
@@ -262,7 +309,12 @@ protocol or C controller.
 
 - [ ] **Step 4: Implement guide panel and accessible examples.**
 
-Show Arrow, Rectangle, Ellipse, Pen, Spotlight, Emoji, Select, and Eraser icons plus one concise explanation and essential shortcut. Focus order is title, explanation, example/name/description, shortcut, Close/Done. Decorative art has accessibilityElementsHidden=true; every informative image has an accessibility label/help.
+Show Arrow, Rectangle, Ellipse, Pen, Spotlight, Emoji, Select, and Eraser icons plus one concise explanation and essential shortcut. Focus order is title, explanation, example/name/description, shortcut, Close/Done. Decorative art has accessibilityElementsHidden=true; every informative image has an accessibility label/help. The panel uses an adaptive scroll viewport so its title, explanation, examples, and Done action remain inside narrow 320–360 point visible frames. The selected
+light/dark/highContrast variant comes from the injected appearance provider;
+effective-appearance and accessibility-display-options changes reload images
+without moving the panel or focus, while retaining the prior images if a
+reload fails. The semantic guide background is reapplied under the changed
+effective appearance.
 
 - [ ] **Step 5: Run GREEN.**
 
@@ -292,13 +344,13 @@ Expected: missing asset catalog/identity manifest, GuideAssetCatalog entries/map
 
 - [ ] **Step 2: Create raster assets with exact manifest fields.**
 
-AppIconIdentity.json must name AppIcon, SHA-256 every source PNG, canonical dimensions, sRGB color space, straight-alpha policy, marker pixel coordinate/RGBA, and expected resolved-icon digest. GuideAssetCatalog.swift and Bundle/GuideAssetIdentity.json use the exact GuideAssetCatalogEnvelope `schemaVersion`/`catalogIdentifier`/`entries` envelope and define every example entry with GuideAssetDescriptor.id/accessibleName/accessibleDescription/isDecorative/variants. `catalogIdentifier` is the stable nonempty value `pointer.first-use-guide.v1`. Every descriptor has exactly light, dark, and highContrast GuideAssetVariantDescriptor entries with variant/assetIdentifier/sourceSHA256 only. Source paths and dimensions are derived by the deterministic GuideAssetSourceMapping for each assetIdentifier/variant and inspected from the source PNG, never serialized in the JSON envelope. The catalog's tracked source mapping must equal the local PNGs below Bundle/Assets.xcassets/FirstUseGuide; guide assets must have no SVG or network reference. Asset candidates are generated as real raster images through the image-generation workflow, reviewed visually, then wired into the catalog; SVG or code-drawn substitutes do not satisfy this task.
+AppIconIdentity.json must name AppIcon, SHA-256 every source PNG, canonical dimensions, sRGB color space, straight-alpha policy, marker pixel coordinate/RGBA, and expected resolved-icon digest. GuideAssetCatalog.swift and Bundle/GuideAssetIdentity.json use the exact GuideAssetCatalogEnvelope `schemaVersion`/`catalogIdentifier`/`entries` envelope and define every example entry with GuideAssetDescriptor.id/accessibleName/accessibleDescription/isDecorative/variants. `catalogIdentifier` is the stable nonempty value `pointer.first-use-guide.v1`. Every descriptor has exactly light, dark, and highContrast GuideAssetVariantDescriptor entries with variant/assetIdentifier/sourceSHA256 only. Source paths and dimensions are derived by the deterministic GuideAssetSourceMapping for each assetIdentifier/variant and inspected from the source PNG, never serialized in the JSON envelope. The compiled imageset/resource name is that mapped source path with its `.png` suffix removed, so the injected-bundle lookup remains deterministic after actool produces Assets.car. The catalog's tracked source mapping must equal the local PNGs below Bundle/Assets.xcassets/FirstUseGuide; guide assets must have no SVG or network reference. Asset candidates are generated as real raster images through the image-generation workflow, reviewed visually, then wired into the catalog; SVG or code-drawn substitutes do not satisfy this task.
 
 - [ ] **Step 3: Run asset tests and inspect catalogs.**
 
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'AssetIdentityTests|FirstUseGuideTests'
 
-Expected: PASS for tracked files, dimensions, color space, alpha policy, canonical mapping, and accessible guide asset references. AssetIdentityTests iterates every GuideAssetDescriptor and every GuideAssetVariantDescriptor, asserts all example IDs are present, accessibleName/accessibleDescription are nonempty for informative entries, isDecorative is explicit, derives each source PNG path with GuideAssetSourceMapping, verifies source SHA-256 against sourceSHA256, and inspects dimensions/pixels with CGImageSourceCreateWithURL (or NSImage(contentsOf:)). It fails if a tracked guide PNG is unused or a variant is missing. It does not use compiled asset names; F validates the injected catalog implementation after actool.
+Expected: PASS for tracked files, dimensions, color space, alpha policy, canonical mapping, and accessible guide asset references. AssetIdentityTests iterates every GuideAssetDescriptor and every GuideAssetVariantDescriptor, asserts all example IDs are present, accessibleName/accessibleDescription are nonempty for informative entries, isDecorative is explicit, derives each source PNG path with GuideAssetSourceMapping, verifies source SHA-256 against sourceSHA256, and inspects dimensions/pixels with CGImageSourceCreateWithURL (or NSImage(contentsOf:)). It fails if a tracked guide PNG is unused or a variant is missing. It does not bypass the injected catalog or perform a default image lookup; F validates that the compiled resource names resolve through the injected catalog after actool.
 
 ## Task 4: Prove deletion and common-path friction reduction
 

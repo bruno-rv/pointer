@@ -9,9 +9,108 @@ internal protocol FirstUseGuidePanel: AnyObject {
 }
 
 @MainActor
+public protocol GuideAppearanceProviding: AnyObject {
+    var variant: GuideAssetVariant { get }
+}
+
+@MainActor
+public final class SystemGuideAppearanceProvider: GuideAppearanceProviding {
+    public init() {}
+
+    public var variant: GuideAssetVariant {
+        if NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast {
+            return .highContrast
+        }
+        let appearance = NSApp?.effectiveAppearance
+            ?? NSAppearance.currentDrawing()
+        return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .dark
+            : .light
+    }
+}
+
+@MainActor
+private protocol FirstUseGuideAssetPreparing: AnyObject {
+    func setResolvedImages(_ images: [String: NSImage], variant: GuideAssetVariant)
+}
+
+internal enum FirstUseGuidePlacementPlan {
+    static let margin = 16.0
+
+    static func frame(
+        size: DisplayFrame,
+        in context: GuidePlacementContext
+    ) -> DisplayFrame? {
+        guard isValid(context.visibleFrame),
+              isValid(context.paletteFrame),
+              context.avoidanceFrames.allSatisfy(isValid),
+              isValid(size),
+              size.width <= context.visibleFrame.width,
+              size.height <= context.visibleFrame.height else {
+            return nil
+        }
+
+        let visible = context.visibleFrame
+        let palette = context.paletteFrame
+        let candidates = [
+            DisplayFrame(
+                x: palette.x + palette.width + margin,
+                y: palette.y,
+                width: size.width,
+                height: size.height
+            ),
+            DisplayFrame(
+                x: palette.x - size.width - margin,
+                y: palette.y,
+                width: size.width,
+                height: size.height
+            ),
+            DisplayFrame(
+                x: visible.x + (visible.width - size.width) / 2,
+                y: visible.y + visible.height - size.height,
+                width: size.width,
+                height: size.height
+            ),
+            DisplayFrame(
+                x: visible.x + (visible.width - size.width) / 2,
+                y: visible.y,
+                width: size.width,
+                height: size.height
+            ),
+        ]
+        let obstacles = [palette] + context.avoidanceFrames
+        for candidate in candidates {
+            let clamped = clamp(candidate, to: visible)
+            if obstacles.allSatisfy({ !intersects(clamped, $0) }) {
+                return clamped
+            }
+        }
+        return nil
+    }
+
+    private static func clamp(_ frame: DisplayFrame, to bounds: DisplayFrame) -> DisplayFrame {
+        let x = min(max(frame.x, bounds.x), bounds.x + bounds.width - frame.width)
+        let y = min(max(frame.y, bounds.y), bounds.y + bounds.height - frame.height)
+        return DisplayFrame(x: x, y: y, width: frame.width, height: frame.height)
+    }
+
+    private static func intersects(_ lhs: DisplayFrame, _ rhs: DisplayFrame) -> Bool {
+        lhs.x < rhs.x + rhs.width && lhs.x + lhs.width > rhs.x
+            && lhs.y < rhs.y + rhs.height && lhs.y + lhs.height > rhs.y
+    }
+
+    private static func isValid(_ frame: DisplayFrame) -> Bool {
+        frame.x.isFinite && frame.y.isFinite
+            && frame.width.isFinite && frame.width > 0
+            && frame.height.isFinite && frame.height > 0
+    }
+}
+
+@MainActor
 public final class FirstUseGuideController: FirstUseGuidePresenting {
     public let placementProvider: any GuidePlacementProviding
     public let assetCatalog: any GuideAssetCatalogProviding
+    public let appearanceProvider: any GuideAppearanceProviding
 
     private let stateStore: any FirstUseGuideStateStoring
     private let panelFactory: (GuidePlacementContext) -> any FirstUseGuidePanel
@@ -28,12 +127,31 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
         placementProvider: any GuidePlacementProviding,
         assetCatalog: any GuideAssetCatalogProviding
     ) {
+        let appearanceProvider = SystemGuideAppearanceProvider()
         self.init(
             stateStore: stateStore,
             placementProvider: placementProvider,
             assetCatalog: assetCatalog,
+            appearanceProvider: appearanceProvider
+        )
+    }
+
+    public convenience init(
+        stateStore: any FirstUseGuideStateStoring,
+        placementProvider: any GuidePlacementProviding,
+        assetCatalog: any GuideAssetCatalogProviding,
+        appearanceProvider: any GuideAppearanceProviding
+    ) {
+        self.init(
+            stateStore: stateStore,
+            placementProvider: placementProvider,
+            assetCatalog: assetCatalog,
+            appearanceProvider: appearanceProvider,
             panelFactory: { _ in
-                FirstUseGuidePanelWindow(assetCatalog: assetCatalog)
+                FirstUseGuidePanelWindow(
+                    assetCatalog: assetCatalog,
+                    appearanceProvider: appearanceProvider
+                )
             }
         )
     }
@@ -42,11 +160,13 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
         stateStore: any FirstUseGuideStateStoring,
         placementProvider: any GuidePlacementProviding,
         assetCatalog: any GuideAssetCatalogProviding,
+        appearanceProvider: any GuideAppearanceProviding,
         panelFactory: @escaping (GuidePlacementContext) -> any FirstUseGuidePanel
     ) {
         self.stateStore = stateStore
         self.placementProvider = placementProvider
         self.assetCatalog = assetCatalog
+        self.appearanceProvider = appearanceProvider
         self.panelFactory = panelFactory
         pendingFirstUse = !stateStore.hasDismissedFirstUseGuide
     }
@@ -113,10 +233,20 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
               context.avoidanceFrames.allSatisfy(isValid) else {
             return .failed("Guide placement context is invalid")
         }
+        do {
+            try GuideAssetCatalog.validateRequiredEntries(assetCatalog.entries)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
 
+        let selectedVariant = appearanceProvider.variant
+        var resolvedImages: [String: NSImage] = [:]
         do {
             for example in FirstUseGuideViewController.examples {
-                _ = try assetCatalog.image(for: example.assetIdentifier, variant: .light)
+                resolvedImages[example.assetIdentifier] = try assetCatalog.image(
+                    for: example.assetIdentifier,
+                    variant: selectedVariant
+                )
             }
         } catch {
             return .failed(error.localizedDescription)
@@ -124,6 +254,10 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
 
         let guidePanel = panel ?? panelFactory(context)
         panel = guidePanel
+        (guidePanel as? FirstUseGuideAssetPreparing)?.setResolvedImages(
+            resolvedImages,
+            variant: selectedVariant
+        )
         var becameVisible = false
         guidePanel.show(in: context) { [weak self] in
             guard let self,
@@ -149,14 +283,21 @@ public final class FirstUseGuideController: FirstUseGuidePresenting {
             && frame.width.isFinite && frame.width > 0
             && frame.height.isFinite && frame.height > 0
     }
+
 }
 
 @MainActor
-private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel {
+private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel, FirstUseGuideAssetPreparing {
     private let guideViewController: FirstUseGuideViewController
 
-    init(assetCatalog: any GuideAssetCatalogProviding) {
-        guideViewController = FirstUseGuideViewController(assetCatalog: assetCatalog)
+    init(
+        assetCatalog: any GuideAssetCatalogProviding,
+        appearanceProvider: any GuideAppearanceProviding
+    ) {
+        guideViewController = FirstUseGuideViewController(
+            assetCatalog: assetCatalog,
+            appearanceProvider: appearanceProvider
+        )
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 440, height: 560),
             styleMask: [.titled, .closable, .nonactivatingPanel],
@@ -176,22 +317,33 @@ private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel {
         setAccessibilityHelp("Learn Pointer annotation tools and shortcuts")
         identifier = NSUserInterfaceItemIdentifier("pointer.first-use-guide")
         guideViewController.onDismiss = { [weak self] in
-            self?.orderOut(nil)
+            self?.close()
         }
+    }
+
+    func setResolvedImages(_ images: [String: NSImage], variant: GuideAssetVariant) {
+        guideViewController.setResolvedImages(images, variant: variant)
     }
 
     func show(in context: GuidePlacementContext, onVisible: @escaping () -> Void) {
         guideViewController.loadViewIfNeeded()
+        initialFirstResponder = guideViewController.doneButton
         let size = preferredPanelSize(in: context.visibleFrame)
         setContentSize(size)
-        let frame = placement(for: size, in: context)
-        setFrame(frame, display: true)
+        let sizeFrame = DisplayFrame(x: 0, y: 0, width: size.width, height: size.height)
+        guard let placement = FirstUseGuidePlacementPlan.frame(size: sizeFrame, in: context) else {
+            close()
+            return
+        }
+        setFrame(placement.cgRect, display: true)
         orderFrontRegardless()
         guard isVisible else { return }
+        guideViewController.startAppearanceObservation()
         onVisible()
     }
 
     override func close() {
+        guideViewController.stopAppearanceObservation()
         orderOut(nil)
     }
 
@@ -205,53 +357,4 @@ private final class FirstUseGuidePanelWindow: NSPanel, FirstUseGuidePanel {
         )
     }
 
-    private func placement(
-        for size: NSSize,
-        in context: GuidePlacementContext
-    ) -> NSRect {
-        let visible = context.visibleFrame.cgRect
-        let palette = context.paletteFrame.cgRect
-        let candidates = [
-            NSRect(
-                x: palette.maxX + 16,
-                y: palette.minY,
-                width: size.width,
-                height: size.height
-            ),
-            NSRect(
-                x: palette.minX - size.width - 16,
-                y: palette.minY,
-                width: size.width,
-                height: size.height
-            ),
-            NSRect(
-                x: visible.midX - size.width / 2,
-                y: visible.maxY - size.height,
-                width: size.width,
-                height: size.height
-            ),
-            NSRect(
-                x: visible.midX - size.width / 2,
-                y: visible.minY,
-                width: size.width,
-                height: size.height
-            ),
-        ]
-        let avoidance = context.avoidanceFrames.map(\.cgRect)
-        for candidate in candidates {
-            let clamped = clamp(candidate, to: visible)
-            if avoidance.allSatisfy({ !$0.intersects(clamped) }) {
-                return clamped
-            }
-        }
-        return clamp(candidates[0], to: visible)
-    }
-
-    private func clamp(_ rect: NSRect, to bounds: NSRect) -> NSRect {
-        let width = min(rect.width, bounds.width)
-        let height = min(rect.height, bounds.height)
-        let x = min(max(rect.minX, bounds.minX), bounds.maxX - width)
-        let y = min(max(rect.minY, bounds.minY), bounds.maxY - height)
-        return NSRect(x: x, y: y, width: width, height: height)
-    }
 }

@@ -23,6 +23,7 @@ final class FirstUseGuideTestCatalog: GuideAssetCatalogProviding {
     let entries: [GuideAssetDescriptor]
     private(set) var imageRequests: [(String, GuideAssetVariant)] = []
     var imageError: Error?
+    var failingVariants: Set<GuideAssetVariant> = []
 
     init(entries: [GuideAssetDescriptor]? = nil) {
         self.entries = entries ?? Self.defaultEntries
@@ -30,10 +31,14 @@ final class FirstUseGuideTestCatalog: GuideAssetCatalogProviding {
 
     func image(for identifier: String, variant: GuideAssetVariant) throws -> NSImage {
         imageRequests.append((identifier, variant))
-        if let imageError {
+        if let imageError, failingVariants.isEmpty || failingVariants.contains(variant) {
             throw imageError
         }
         return NSImage(size: NSSize(width: 48, height: 48))
+    }
+
+    func resetImageRequests() {
+        imageRequests.removeAll()
     }
 
     static let defaultEntries: [GuideAssetDescriptor] = [
@@ -52,6 +57,15 @@ final class FirstUseGuideTestCatalog: GuideAssetCatalogProviding {
                 )
             }
         )
+    }
+}
+
+@MainActor
+final class FirstUseGuideTestAppearanceProvider: GuideAppearanceProviding {
+    var variant: GuideAssetVariant
+
+    init(variant: GuideAssetVariant = .light) {
+        self.variant = variant
     }
 }
 
@@ -116,6 +130,13 @@ final class FirstUseGuideTestPlacementProvider: GuidePlacementProviding {
 
 @MainActor
 final class FirstUseGuideTestFixture {
+    static let defaultDisplay = DisplayDescriptor(
+        uuid: DisplayUUID(rawValue: "guide-test-display"),
+        frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+        visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+        scaleFactor: 2
+    )
+
     private let suiteName: String
     let defaults: UserDefaults
     let stateStore: FirstUseGuideTestStateStore
@@ -125,8 +146,12 @@ final class FirstUseGuideTestFixture {
     let controller: FirstUseGuideController
     let display: DisplayDescriptor
     let context: GuidePlacementContext
+    let appearanceProvider: FirstUseGuideTestAppearanceProvider
 
-    init(hasDismissedFirstUseGuide: Bool = false) {
+    init(
+        hasDismissedFirstUseGuide: Bool = false,
+        appearanceVariant: GuideAssetVariant = .light
+    ) {
         suiteName = "pointer.first-use-guide.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
         stateStore = FirstUseGuideTestStateStore(
@@ -134,12 +159,8 @@ final class FirstUseGuideTestFixture {
         )
         placementProvider = FirstUseGuideTestPlacementProvider()
         catalog = FirstUseGuideTestCatalog()
-        display = DisplayDescriptor(
-            uuid: DisplayUUID(rawValue: "guide-test-display"),
-            frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
-            visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
-            scaleFactor: 2
-        )
+        appearanceProvider = FirstUseGuideTestAppearanceProvider(variant: appearanceVariant)
+        display = Self.defaultDisplay
         let paletteFrame = DisplayFrame(x: 1_300, y: 800, width: 420, height: 156)
         context = GuidePlacementContext(
             display: display,
@@ -153,6 +174,7 @@ final class FirstUseGuideTestFixture {
             stateStore: stateStore,
             placementProvider: placementProvider,
             assetCatalog: catalog,
+            appearanceProvider: appearanceProvider,
             panelFactory: { _ in panel }
         )
     }

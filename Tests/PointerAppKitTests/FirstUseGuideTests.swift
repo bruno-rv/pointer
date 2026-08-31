@@ -175,5 +175,430 @@ final class FirstUseGuideTests: XCTestCase {
             contentsOf: sourceRoot.appendingPathComponent("PointerAppKit/PointerApplicationController.swift"),
             encoding: .utf8
         ).contains("assetCatalog"))
+        let viewSource = try String(
+            contentsOf: helpRoot.appendingPathComponent("FirstUseGuideViewController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(viewSource.contains("public let variant"))
+        let catalogSource = try String(
+            contentsOf: helpRoot.appendingPathComponent("GuideAssetCatalog.swift"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(
+            catalogSource.components(separatedBy: "image(forResource: resourceName)").count - 1,
+            1
+        )
+        XCTAssertEqual(
+            catalogSource.components(separatedBy: "let resourceName = String(sourcePath.dropLast(\".png\".count))").count - 1,
+            1
+        )
+        XCTAssertTrue(catalogSource.contains("GuideAssetSourceMapping.sourcePath"))
+        XCTAssertFalse(catalogSource.contains("bundle.url"))
+        XCTAssertFalse(catalogSource.contains("bundle.path"))
+        XCTAssertFalse(catalogSource.contains("NSImage(contentsOf"))
+        XCTAssertFalse(catalogSource.contains("Bundle.main"))
+        XCTAssertFalse(catalogSource.contains("NSImage(named"))
+    }
+
+    func testPlacementPlanUsesRightLeftTopBottomAndClampedCandidatesWithoutOverlap() throws {
+        let display = DisplayFrame(x: 0, y: 0, width: 1_000, height: 800)
+        let panel = DisplayFrame(x: 0, y: 0, width: 200, height: 160)
+        let fixture = FirstUseGuideTestFixture()
+        let makeContext: (DisplayFrame, [DisplayFrame]) -> GuidePlacementContext = { palette, avoidance in
+            GuidePlacementContext(
+                display: fixture.display,
+                visibleFrame: display,
+                paletteFrame: palette,
+                avoidanceFrames: avoidance
+            )
+        }
+
+        let right = FirstUseGuidePlacementPlan.frame(
+            size: panel,
+            in: makeContext(DisplayFrame(x: 100, y: 300, width: 200, height: 120), [])
+        )
+        let rightFrame = try XCTUnwrap(right)
+        XCTAssertEqual(rightFrame.x, 316, accuracy: 0.001)
+        XCTAssertEqual(rightFrame.y, 300, accuracy: 0.001)
+
+        let left = FirstUseGuidePlacementPlan.frame(
+            size: panel,
+            in: makeContext(
+                DisplayFrame(x: 700, y: 300, width: 200, height: 120),
+                [DisplayFrame(x: 916, y: 300, width: 84, height: 160)]
+            )
+        )
+        let leftFrame = try XCTUnwrap(left)
+        XCTAssertEqual(leftFrame.x, 484, accuracy: 0.001)
+
+        let top = FirstUseGuidePlacementPlan.frame(
+            size: panel,
+            in: makeContext(
+                DisplayFrame(x: 400, y: 40, width: 200, height: 120),
+                [DisplayFrame(x: 184, y: 40, width: 200, height: 160), DisplayFrame(x: 616, y: 40, width: 200, height: 160)]
+            )
+        )
+        let topFrame = try XCTUnwrap(top)
+        XCTAssertEqual(topFrame.y, 640, accuracy: 0.001)
+
+        let clamped = FirstUseGuidePlacementPlan.frame(
+            size: panel,
+            in: makeContext(DisplayFrame(x: 900, y: 700, width: 200, height: 120), [])
+        )
+        let clampedFrame = try XCTUnwrap(clamped)
+        XCTAssertLessThanOrEqual(clampedFrame.x + clampedFrame.width, display.x + display.width)
+        XCTAssertLessThanOrEqual(clampedFrame.y + clampedFrame.height, display.y + display.height)
+
+        let bottom = FirstUseGuidePlacementPlan.frame(
+            size: panel,
+            in: makeContext(
+                DisplayFrame(x: 400, y: 600, width: 200, height: 120),
+                [DisplayFrame(x: 184, y: 600, width: 200, height: 160), DisplayFrame(x: 616, y: 600, width: 200, height: 160)]
+            )
+        )
+        let bottomFrame = try XCTUnwrap(bottom)
+        XCTAssertEqual(bottomFrame.y, 0, accuracy: 0.001)
+    }
+
+    func testPlacementPlanReturnsNilWhenNoLegalFrameFitsAndControllerKeepsPanelHidden() {
+        let display = DisplayFrame(x: 0, y: 0, width: 500, height: 400)
+        let palette = DisplayFrame(x: 0, y: 0, width: 500, height: 400)
+        let context = GuidePlacementContext(
+            display: FirstUseGuideTestFixture.defaultDisplay,
+            visibleFrame: display,
+            paletteFrame: palette,
+            avoidanceFrames: [palette]
+        )
+        XCTAssertNil(FirstUseGuidePlacementPlan.frame(
+            size: DisplayFrame(x: 0, y: 0, width: 200, height: 160),
+            in: context
+        ))
+        let invalidFrames = GuidePlacementContext(
+            display: FirstUseGuideTestFixture.defaultDisplay,
+            visibleFrame: display,
+            paletteFrame: DisplayFrame(x: 0, y: 0, width: 0, height: 400),
+            avoidanceFrames: []
+        )
+        XCTAssertNil(FirstUseGuidePlacementPlan.frame(
+            size: DisplayFrame(x: 0, y: 0, width: 200, height: 160),
+            in: invalidFrames
+        ))
+
+        let fixture = FirstUseGuideTestFixture()
+        fixture.panel.becomesVisibleOnShow = false
+        XCTAssertEqual(
+            fixture.controller.showIfNeeded(in: fixture.context),
+            .failed("Guide window did not become visible")
+        )
+        XCTAssertFalse(fixture.controller.isVisible)
+        XCTAssertEqual(fixture.stateStore.markCount, 0)
+
+        let invalidContext = GuidePlacementContext(
+            display: fixture.display,
+            visibleFrame: DisplayFrame(x: 0, y: 0, width: 0, height: 400),
+            paletteFrame: fixture.context.paletteFrame,
+            avoidanceFrames: []
+        )
+        XCTAssertEqual(
+            fixture.controller.show(in: invalidContext),
+            .failed("Guide placement context is invalid")
+        )
+    }
+
+    func testAppearanceProviderSelectsDarkAndHighContrastBeforePreflight() {
+        let dark = FirstUseGuideTestFixture(appearanceVariant: .dark)
+        XCTAssertEqual(dark.controller.show(in: dark.context), .shown)
+        XCTAssertEqual(Set(dark.catalog.imageRequests.map(\.1)), [.dark])
+
+        let contrast = FirstUseGuideTestFixture(appearanceVariant: .highContrast)
+        XCTAssertEqual(contrast.controller.show(in: contrast.context), .shown)
+        XCTAssertEqual(Set(contrast.catalog.imageRequests.map(\.1)), [.highContrast])
+    }
+
+    func testAppearanceReloadUsesSelectedVariantAndRetainsImagesOnFailure() {
+        let fixture = FirstUseGuideTestFixture()
+        let viewController = FirstUseGuideViewController(
+            assetCatalog: fixture.catalog,
+            appearanceProvider: fixture.appearanceProvider
+        )
+        viewController.loadViewIfNeeded()
+        XCTAssertEqual(fixture.catalog.imageRequests.count, 8)
+
+        fixture.appearanceProvider.variant = .dark
+        XCTAssertTrue(viewController.reloadImagesForCurrentAppearance())
+        XCTAssertEqual(Set(fixture.catalog.imageRequests.suffix(8).map(\.1)), [.dark])
+        let imageBeforeFailure = viewController.exampleImageViews.first?.image
+
+        fixture.appearanceProvider.variant = .highContrast
+        fixture.catalog.imageError = GuideAssetCatalogError.missingEntry("arrow")
+        fixture.catalog.failingVariants = [.highContrast]
+        XCTAssertFalse(viewController.reloadImagesForCurrentAppearance())
+        XCTAssertTrue(viewController.exampleImageViews.first?.image === imageBeforeFailure)
+    }
+
+    func testMissingOrEmptyCatalogMetadataFailsWithoutAccessibleFallback() {
+        let fixture = FirstUseGuideTestFixture()
+        let invalidArrow = GuideAssetDescriptor(
+            id: "arrow",
+            accessibleName: "",
+            accessibleDescription: "",
+            isDecorative: true,
+            variants: fixture.catalog.entries[0].variants
+        )
+        let catalog = FirstUseGuideTestCatalog(
+            entries: [invalidArrow] + fixture.catalog.entries.dropFirst()
+        )
+        let controller = FirstUseGuideController(
+            stateStore: fixture.stateStore,
+            placementProvider: fixture.placementProvider,
+            assetCatalog: catalog,
+            appearanceProvider: fixture.appearanceProvider,
+            panelFactory: { _ in fixture.panel }
+        )
+
+        guard case let .failed(message) = controller.show(in: fixture.context) else {
+            return XCTFail("Expected invalid metadata to fail presentation")
+        }
+        XCTAssertTrue(message.contains("arrow"))
+        XCTAssertTrue(catalog.imageRequests.isEmpty)
+    }
+
+    func testCatalogEnvelopeRejectsSchemaIdentityDuplicatesVariantsHashesAndMetadata() throws {
+        let fixture = FirstUseGuideTestFixture()
+        let validEntries = fixture.catalog.entries
+        let bundle = Bundle(for: FirstUseGuideTests.self)
+
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 2,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: validEntries
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidSchemaVersion(expected: 1, actual: 2))
+        }
+
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: "wrong",
+                entries: validEntries
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidCatalogIdentifier(expected: GuideAssetCatalog.catalogIdentifier, actual: "wrong"))
+        }
+
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: validEntries + [validEntries[0]]
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .duplicateEntry("arrow"))
+        }
+
+        var missingVariant = validEntries[0]
+        missingVariant = GuideAssetDescriptor(
+            id: missingVariant.id,
+            accessibleName: missingVariant.accessibleName,
+            accessibleDescription: missingVariant.accessibleDescription,
+            isDecorative: false,
+            variants: Array(missingVariant.variants.dropLast())
+        )
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: [missingVariant] + validEntries.dropFirst()
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(
+                error as? GuideAssetCatalogError,
+                .missingVariant(identifier: "arrow", variant: .highContrast)
+            )
+        }
+
+        let duplicateVariant = GuideAssetDescriptor(
+            id: validEntries[0].id,
+            accessibleName: validEntries[0].accessibleName,
+            accessibleDescription: validEntries[0].accessibleDescription,
+            isDecorative: false,
+            variants: validEntries[0].variants + [validEntries[0].variants[0]]
+        )
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: [duplicateVariant] + validEntries.dropFirst()
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(
+                error as? GuideAssetCatalogError,
+                .duplicateVariant(identifier: "arrow", variant: .light)
+            )
+        }
+
+        let invalidHash = GuideAssetDescriptor(
+            id: validEntries[0].id,
+            accessibleName: validEntries[0].accessibleName,
+            accessibleDescription: validEntries[0].accessibleDescription,
+            isDecorative: false,
+            variants: validEntries[0].variants.map {
+                GuideAssetVariantDescriptor(
+                    variant: $0.variant,
+                    assetIdentifier: $0.assetIdentifier,
+                    sourceSHA256: "NOT-A-HASH"
+                )
+            }
+        )
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: [invalidHash] + validEntries.dropFirst()
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(
+                error as? GuideAssetCatalogError,
+                .invalidHash(identifier: "arrow", variant: .light, value: "NOT-A-HASH")
+            )
+        }
+
+        let unsafeIdentifier = GuideAssetDescriptor(
+            id: validEntries[0].id,
+            accessibleName: validEntries[0].accessibleName,
+            accessibleDescription: validEntries[0].accessibleDescription,
+            isDecorative: false,
+            variants: validEntries[0].variants.map {
+                GuideAssetVariantDescriptor(
+                    variant: $0.variant,
+                    assetIdentifier: "../arrow",
+                    sourceSHA256: $0.sourceSHA256
+                )
+            }
+        )
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: [unsafeIdentifier] + validEntries.dropFirst()
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidAssetIdentifier("../arrow"))
+        }
+
+        let invalidMetadata = GuideAssetDescriptor(
+            id: validEntries[0].id,
+            accessibleName: " ",
+            accessibleDescription: "",
+            isDecorative: true,
+            variants: validEntries[0].variants
+        )
+        XCTAssertThrowsError(try GuideAssetCatalog(
+            envelope: GuideAssetCatalogEnvelope(
+                schemaVersion: 1,
+                catalogIdentifier: GuideAssetCatalog.catalogIdentifier,
+                entries: [invalidMetadata] + validEntries.dropFirst()
+            ),
+            bundle: bundle
+        )) { error in
+            XCTAssertEqual(error as? GuideAssetCatalogError, .invalidMetadata("arrow"))
+        }
+    }
+
+    func testGuideLayoutUsesScrollableContentAndDeterministicAccessibleChildrenOrder() {
+        let fixture = FirstUseGuideTestFixture()
+        let viewController = FirstUseGuideViewController(assetCatalog: fixture.catalog)
+        viewController.loadViewIfNeeded()
+
+        XCTAssertNotNil(viewController.scrollView)
+        XCTAssertTrue(viewController.scrollView?.hasVerticalScroller == true)
+        XCTAssertEqual(viewController.exampleImageViews.count, 8)
+        XCTAssertEqual(viewController.doneButton?.accessibilityLabel(), "Done")
+        XCTAssertTrue(viewController.accessibilityOrderLabels.first == "Learn Pointer")
+        XCTAssertEqual(viewController.accessibilityOrderLabels.last, "Done")
+        let exampleNames = viewController.accessibilityOrderLabels
+            .dropFirst(2)
+            .dropLast()
+            .enumerated()
+            .filter { $0.offset.isMultiple(of: 3) }
+            .map(\.element)
+        XCTAssertEqual(exampleNames.count, 8)
+    }
+
+    func testWorkspaceCenterNotificationReloadsHighContrastAndDefaultCenterDoesNot() {
+        let fixture = FirstUseGuideTestFixture()
+        let viewController = FirstUseGuideViewController(
+            assetCatalog: fixture.catalog,
+            appearanceProvider: fixture.appearanceProvider
+        )
+        viewController.loadViewIfNeeded()
+        fixture.catalog.resetImageRequests()
+        viewController.startAppearanceObservation()
+
+        fixture.appearanceProvider.variant = .highContrast
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+        XCTAssertEqual(fixture.catalog.imageRequests.count, 8)
+        XCTAssertEqual(Set(fixture.catalog.imageRequests.map(\.1)), [.highContrast])
+
+        fixture.catalog.resetImageRequests()
+        fixture.appearanceProvider.variant = .dark
+        NotificationCenter.default.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+        XCTAssertTrue(fixture.catalog.imageRequests.isEmpty)
+        viewController.stopAppearanceObservation()
+    }
+
+    func testEffectiveAppearanceUpdatesSemanticBackgroundWithoutMovingFrameOrFocus() {
+        let fixture = FirstUseGuideTestFixture()
+        let viewController = FirstUseGuideViewController(assetCatalog: fixture.catalog)
+        viewController.loadViewIfNeeded()
+        viewController.view.setFrameSize(NSSize(width: 320, height: 360))
+        viewController.view.layoutSubtreeIfNeeded()
+        viewController.view.appearance = NSAppearance(named: .aqua)
+        viewController.refreshSemanticAppearance()
+        let beforeFrame = viewController.view.frame
+        let beforeFocus = viewController.accessibilityOrderLabels
+        let beforeBackground = viewController.view.layer?.backgroundColor
+
+        viewController.view.appearance = NSAppearance(named: .darkAqua)
+        viewController.refreshSemanticAppearance()
+        let afterBackground = viewController.view.layer?.backgroundColor
+
+        XCTAssertNotEqual(beforeBackground?.components, afterBackground?.components)
+        XCTAssertEqual(viewController.view.frame, beforeFrame)
+        XCTAssertEqual(viewController.accessibilityOrderLabels, beforeFocus)
+    }
+
+    func testNarrowGuideKeepsTitleExplanationScrollAndDoneInside320To360Height() {
+        let fixture = FirstUseGuideTestFixture()
+        let viewController = FirstUseGuideViewController(assetCatalog: fixture.catalog)
+        viewController.loadViewIfNeeded()
+        for height in [320.0, 360.0] {
+            viewController.view.setFrameSize(NSSize(width: 320, height: height))
+            viewController.view.layoutSubtreeIfNeeded()
+            for element in [
+                viewController.titleLabel,
+                viewController.explanationLabel,
+                viewController.scrollView,
+                viewController.doneButton,
+            ].compactMap({ $0 }) {
+                XCTAssertGreaterThanOrEqual(element.frame.minY, -0.5)
+                XCTAssertLessThanOrEqual(element.frame.maxY, height + 0.5)
+            }
+        }
     }
 }
