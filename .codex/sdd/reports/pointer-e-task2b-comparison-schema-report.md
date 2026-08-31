@@ -10,6 +10,8 @@ commit was created; the parent coordinator owns integration and phase commits.
   `Sources/PointerAppKit/Diagnostics/PerformanceComparisonReport.swift`:
   `ManualMetricEvidence`, `ManualMetricAdapter`, `MetricComparison` (including
   its typed absolute `budgetLimit`), and `PerformanceComparisonReport`.
+- Added internal-construction `PerformanceComparisonDraft`, containing all
+  comparison inputs but no report kind/schema or caller-supplied report hashes.
 - Persisted the complete baseline/candidate `MeasurementIdentity` values in
   the comparison report, alongside their source IDs and typed provenance.
 - Persisted exact baseline/candidate `FixtureIdentity` values and enforced the
@@ -25,23 +27,24 @@ commit was created; the parent coordinator owns integration and phase commits.
   metric, paired-array, derived ratio/delta, bootstrap, manual evidence,
   resilience, and disposition checks.
 - Added `PerformanceComparisonHarness.preflight(...)` and the internal,
-  calculation-deferred `compare(...)` seam. The public report-bound
-  `writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
+  calculation-deferred `compare(...)` seam. The public draft-based
+  `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
   is the sole persistence API. Preflight validates both
   measurement reports to completion before checking pair eligibility, rejects
   content-manifest diagnostics and failed/unmeasured inputs, and revalidates
   roots, commit identities, host, fixture, configuration, foundation, and
   build contract.
 - The persisted-output URL writer decodes the exact input bytes, runs full
-  preflight, cross-checks IDs, full measurement identities, fixtures, build/run
-  provenance, hosts/configuration, versions, and pair eligibility, then writes
-  only with exact SHA-256 bindings. The decoded-value `compare` entry point is
-  internal and remains calculation-deferred for Task 3.
+  preflight, cross-checks draft IDs, full measurement identities, fixtures,
+  build/run provenance, hosts/configuration, versions, and pair eligibility,
+  then constructs the final report with exact SHA-256 bindings. The decoded-
+  value `compare` entry point is internal and remains calculation-deferred for
+  Task 3.
 - Kept Task 3's sampling, ratio/bootstrap calculation, manual-evidence file
-  loading, CLI, and pair orchestration out of this task. The plan-signature
+  loading, CLI, and pair orchestration out of this task. The internal
   `compare` entry point performs preflight and then throws a specific Task 3
   deferral; it does not fabricate a report. Persisted output is available only
-  through the report-bound URL writer after all binding checks pass.
+  through the draft-based URL writer after all binding checks pass.
 - Added comparison-specific baseline/candidate, eligibility, metric, manual
   evidence, and round-trip fixtures in
   `Tests/PointerAppKitTests/PerformanceFixtures.swift`.
@@ -90,9 +93,9 @@ commit was created; the parent coordinator owns integration and phase commits.
   boundary remains valid while a 10 ms + 10 ms renderer/compositor pair is
   rejected.
 - The internal `compare` seam remains non-writing until Task 3 owns calculation
-  and output mapping. The public report-bound writer hashes exact input bytes,
-  validates matching persisted bindings, and writes atomically; mismatch and
-  missing-input paths leave no partial output.
+  and output mapping. The public draft-based writer hashes exact input bytes,
+  constructs the final report with those hashes, validates bindings, and writes
+  atomically; mismatch and missing-input paths leave no partial output.
 
 ## Evidence
 

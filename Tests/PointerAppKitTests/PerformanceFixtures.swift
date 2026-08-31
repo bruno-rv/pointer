@@ -372,8 +372,44 @@ enum PerformanceFixtures {
         )
     }
 
+    static func draft(
+        baselineBuild: BuildProvenance = PerformanceFixtures.baselineBuild,
+        candidateBuild: BuildProvenance = PerformanceFixtures.build,
+        baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
+        candidateRun: PerformanceRunProvenance = PerformanceFixtures.run,
+        eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility,
+        baselineFixture: FixtureIdentity = PerformanceFixtures.fixture,
+        candidateFixture: FixtureIdentity = PerformanceFixtures.fixture,
+        baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
+        candidateMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.identity,
+        metrics: [MetricComparison] = PerformanceFixtures.metricComparisons(),
+        resilience: ResilienceMeasurement = PerformanceFixtures.resilience,
+        disposition: Disposition = .acceptedNoRegression
+    ) -> PerformanceComparisonDraft {
+        PerformanceComparisonDraft(
+            harnessVersion: configuration.harnessVersion,
+            foundationIdentity: foundation,
+            buildContractVersion: configuration.buildContractVersion,
+            baselineBuildProvenance: baselineBuild,
+            candidateBuildProvenance: candidateBuild,
+            baselineRunProvenance: baselineRun,
+            candidateRunProvenance: candidateRun,
+            pairEligibility: eligibility,
+            baselineFixture: baselineFixture,
+            candidateFixture: candidateFixture,
+            baselineMeasurementIdentity: baselineMeasurementIdentity,
+            candidateMeasurementIdentity: candidateMeasurementIdentity,
+            baselineID: baselineBuild.sourceIdentity.value,
+            candidateID: candidateBuild.sourceIdentity.value,
+            metrics: metrics,
+            resilience: resilience,
+            seed: configuration.bootstrapSeed,
+            resampleCount: configuration.bootstrapResamples,
+            disposition: disposition
+        )
+    }
+
     static func comparison(
-        reportKind: PerformanceReportKind = .comparison,
         baselineBuild: BuildProvenance = PerformanceFixtures.baselineBuild,
         candidateBuild: BuildProvenance = PerformanceFixtures.build,
         baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
@@ -390,29 +426,22 @@ enum PerformanceFixtures {
         disposition: Disposition = .acceptedNoRegression
     ) -> PerformanceComparisonReport {
         PerformanceComparisonReport(
-            reportKind: reportKind,
-            schemaVersion: PerformanceComparisonReport.currentSchemaVersion,
-            harnessVersion: configuration.harnessVersion,
-            foundationIdentity: foundation,
-            buildContractVersion: configuration.buildContractVersion,
-            baselineBuildProvenance: baselineBuild,
-            candidateBuildProvenance: candidateBuild,
-            baselineRunProvenance: baselineRun,
-            candidateRunProvenance: candidateRun,
-            pairEligibility: eligibility,
-            baselineFixture: baselineFixture,
-            candidateFixture: candidateFixture,
-            baselineMeasurementIdentity: baselineMeasurementIdentity,
-            candidateMeasurementIdentity: candidateMeasurementIdentity,
+            draft: draft(
+                baselineBuild: baselineBuild,
+                candidateBuild: candidateBuild,
+                baselineRun: baselineRun,
+                candidateRun: candidateRun,
+                eligibility: eligibility,
+                baselineFixture: baselineFixture,
+                candidateFixture: candidateFixture,
+                baselineMeasurementIdentity: baselineMeasurementIdentity,
+                candidateMeasurementIdentity: candidateMeasurementIdentity,
+                metrics: metrics,
+                resilience: resilience,
+                disposition: disposition
+            ),
             baselineMeasurementReportSHA256: baselineMeasurementReportSHA256,
-            candidateMeasurementReportSHA256: candidateMeasurementReportSHA256,
-            baselineID: baselineBuild.sourceIdentity.value,
-            candidateID: candidateBuild.sourceIdentity.value,
-            metrics: metrics,
-            resilience: resilience,
-            seed: configuration.bootstrapSeed,
-            resampleCount: configuration.bootstrapResamples,
-            disposition: disposition
+            candidateMeasurementReportSHA256: candidateMeasurementReportSHA256
         )
     }
 

@@ -52,13 +52,13 @@ public enum PerformanceComparisonHarness {
         candidate: PerformanceMeasurementReport,
         configuration: PerformanceConfiguration,
         eligibility: PerformancePairEligibility
-    ) throws -> PerformanceComparisonReport {
+    ) throws -> PerformanceComparisonDraft {
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
         throw PerformanceValidationError.invalid("comparison calculations are deferred to Task 3")
     }
 
     public static func writeComparison(
-        report: PerformanceComparisonReport,
+        draft: PerformanceComparisonDraft,
         baselineURL: URL,
         candidateURL: URL,
         outputDirectory: URL,
@@ -72,9 +72,8 @@ public enum PerformanceComparisonHarness {
         let baseline = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: baselineData)
         let candidate = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: candidateData)
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
-        try require(report.baselineMeasurementReportSHA256 == baselineHash, "baseline measurement report hash mismatch")
-        try require(report.candidateMeasurementReportSHA256 == candidateHash, "candidate measurement report hash mismatch")
-        try validateReportBindings(report, baseline: baseline, candidate: candidate, eligibility: eligibility)
+        try validateDraftBindings(draft, baseline: baseline, candidate: candidate, eligibility: eligibility)
+        let report = PerformanceComparisonReport(draft: draft, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash)
         try report.validateCompletion()
 
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -100,30 +99,30 @@ public enum PerformanceComparisonHarness {
             && baseline.buildConfiguration == candidate.buildConfiguration
     }
 
-    private static func validateReportBindings(
-        _ report: PerformanceComparisonReport,
+    private static func validateDraftBindings(
+        _ draft: PerformanceComparisonDraft,
         baseline: PerformanceMeasurementReport,
         candidate: PerformanceMeasurementReport,
         eligibility: PerformancePairEligibility
     ) throws {
-        try require(report.baselineID == baseline.identity.sourceCommitSHA, "baseline comparison ID does not match decoded measurement")
-        try require(report.candidateID == candidate.identity.sourceCommitSHA, "candidate comparison ID does not match decoded measurement")
-        try require(report.baselineMeasurementIdentity == baseline.identity, "baseline measurement identity mismatch")
-        try require(report.candidateMeasurementIdentity == candidate.identity, "candidate measurement identity mismatch")
-        try require(report.baselineFixture == baseline.fixture, "baseline fixture mismatch")
-        try require(report.candidateFixture == candidate.fixture, "candidate fixture mismatch")
-        try require(report.baselineBuildProvenance == baseline.buildProvenance, "baseline build provenance mismatch")
-        try require(report.candidateBuildProvenance == candidate.buildProvenance, "candidate build provenance mismatch")
-        try require(report.baselineRunProvenance == baseline.runProvenance, "baseline run provenance mismatch")
-        try require(report.candidateRunProvenance == candidate.runProvenance, "candidate run provenance mismatch")
-        try require(report.baselineRunProvenance.host == baseline.host, "baseline host mismatch")
-        try require(report.candidateRunProvenance.host == candidate.host, "candidate host mismatch")
-        try require(report.baselineRunProvenance.configuration == baseline.runProvenance.configuration, "baseline configuration mismatch")
-        try require(report.candidateRunProvenance.configuration == candidate.runProvenance.configuration, "candidate configuration mismatch")
-        try require(report.harnessVersion == baseline.harnessVersion && report.harnessVersion == candidate.harnessVersion, "comparison harness mismatch")
-        try require(report.foundationIdentity == baseline.foundationIdentity && report.foundationIdentity == candidate.foundationIdentity, "comparison foundation mismatch")
-        try require(report.buildContractVersion == baseline.buildContractVersion && report.buildContractVersion == candidate.buildContractVersion, "comparison build contract mismatch")
-        try require(report.pairEligibility == eligibility, "comparison pair eligibility mismatch")
+        try require(draft.baselineID == baseline.identity.sourceCommitSHA, "baseline comparison ID does not match decoded measurement")
+        try require(draft.candidateID == candidate.identity.sourceCommitSHA, "candidate comparison ID does not match decoded measurement")
+        try require(draft.baselineMeasurementIdentity == baseline.identity, "baseline measurement identity mismatch")
+        try require(draft.candidateMeasurementIdentity == candidate.identity, "candidate measurement identity mismatch")
+        try require(draft.baselineFixture == baseline.fixture, "baseline fixture mismatch")
+        try require(draft.candidateFixture == candidate.fixture, "candidate fixture mismatch")
+        try require(draft.baselineBuildProvenance == baseline.buildProvenance, "baseline build provenance mismatch")
+        try require(draft.candidateBuildProvenance == candidate.buildProvenance, "candidate build provenance mismatch")
+        try require(draft.baselineRunProvenance == baseline.runProvenance, "baseline run provenance mismatch")
+        try require(draft.candidateRunProvenance == candidate.runProvenance, "candidate run provenance mismatch")
+        try require(draft.baselineRunProvenance.host == baseline.host, "baseline host mismatch")
+        try require(draft.candidateRunProvenance.host == candidate.host, "candidate host mismatch")
+        try require(draft.baselineRunProvenance.configuration == baseline.runProvenance.configuration, "baseline configuration mismatch")
+        try require(draft.candidateRunProvenance.configuration == candidate.runProvenance.configuration, "candidate configuration mismatch")
+        try require(draft.harnessVersion == baseline.harnessVersion && draft.harnessVersion == candidate.harnessVersion, "comparison harness mismatch")
+        try require(draft.foundationIdentity == baseline.foundationIdentity && draft.foundationIdentity == candidate.foundationIdentity, "comparison foundation mismatch")
+        try require(draft.buildContractVersion == baseline.buildContractVersion && draft.buildContractVersion == candidate.buildContractVersion, "comparison build contract mismatch")
+        try require(draft.pairEligibility == eligibility, "comparison pair eligibility mismatch")
     }
 
     private static func sha256(_ data: Data) -> String {

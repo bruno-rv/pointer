@@ -113,6 +113,70 @@ public struct MetricComparison: Codable, Sendable, Equatable {
     }
 }
 
+public struct PerformanceComparisonDraft: Sendable, Equatable {
+    public let harnessVersion: String
+    public let foundationIdentity: FoundationIdentity
+    public let buildContractVersion: String
+    public let baselineBuildProvenance: BuildProvenance
+    public let candidateBuildProvenance: BuildProvenance
+    public let baselineRunProvenance: PerformanceRunProvenance
+    public let candidateRunProvenance: PerformanceRunProvenance
+    public let pairEligibility: PerformancePairEligibility
+    public let baselineFixture: FixtureIdentity
+    public let candidateFixture: FixtureIdentity
+    public let baselineMeasurementIdentity: MeasurementIdentity
+    public let candidateMeasurementIdentity: MeasurementIdentity
+    public let baselineID: String
+    public let candidateID: String
+    public let metrics: [MetricComparison]
+    public let resilience: ResilienceMeasurement
+    public let seed: UInt64
+    public let resampleCount: Int
+    public let disposition: Disposition
+
+    internal init(
+        harnessVersion: String,
+        foundationIdentity: FoundationIdentity,
+        buildContractVersion: String,
+        baselineBuildProvenance: BuildProvenance,
+        candidateBuildProvenance: BuildProvenance,
+        baselineRunProvenance: PerformanceRunProvenance,
+        candidateRunProvenance: PerformanceRunProvenance,
+        pairEligibility: PerformancePairEligibility,
+        baselineFixture: FixtureIdentity,
+        candidateFixture: FixtureIdentity,
+        baselineMeasurementIdentity: MeasurementIdentity,
+        candidateMeasurementIdentity: MeasurementIdentity,
+        baselineID: String,
+        candidateID: String,
+        metrics: [MetricComparison],
+        resilience: ResilienceMeasurement,
+        seed: UInt64,
+        resampleCount: Int,
+        disposition: Disposition
+    ) {
+        self.harnessVersion = harnessVersion
+        self.foundationIdentity = foundationIdentity
+        self.buildContractVersion = buildContractVersion
+        self.baselineBuildProvenance = baselineBuildProvenance
+        self.candidateBuildProvenance = candidateBuildProvenance
+        self.baselineRunProvenance = baselineRunProvenance
+        self.candidateRunProvenance = candidateRunProvenance
+        self.pairEligibility = pairEligibility
+        self.baselineFixture = baselineFixture
+        self.candidateFixture = candidateFixture
+        self.baselineMeasurementIdentity = baselineMeasurementIdentity
+        self.candidateMeasurementIdentity = candidateMeasurementIdentity
+        self.baselineID = baselineID
+        self.candidateID = candidateID
+        self.metrics = metrics
+        self.resilience = resilience
+        self.seed = seed
+        self.resampleCount = resampleCount
+        self.disposition = disposition
+    }
+}
+
 public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
     public static let currentSchemaVersion = 1
 
@@ -140,7 +204,7 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
     public let resampleCount: Int
     public let disposition: Disposition
 
-    public init(
+    internal init(
         reportKind: PerformanceReportKind,
         schemaVersion: Int,
         harnessVersion: String,
@@ -188,6 +252,38 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
         self.seed = seed
         self.resampleCount = resampleCount
         self.disposition = disposition
+    }
+
+    internal init(
+        draft: PerformanceComparisonDraft,
+        baselineMeasurementReportSHA256: String,
+        candidateMeasurementReportSHA256: String
+    ) {
+        self.init(
+            reportKind: .comparison,
+            schemaVersion: Self.currentSchemaVersion,
+            harnessVersion: draft.harnessVersion,
+            foundationIdentity: draft.foundationIdentity,
+            buildContractVersion: draft.buildContractVersion,
+            baselineBuildProvenance: draft.baselineBuildProvenance,
+            candidateBuildProvenance: draft.candidateBuildProvenance,
+            baselineRunProvenance: draft.baselineRunProvenance,
+            candidateRunProvenance: draft.candidateRunProvenance,
+            pairEligibility: draft.pairEligibility,
+            baselineFixture: draft.baselineFixture,
+            candidateFixture: draft.candidateFixture,
+            baselineMeasurementIdentity: draft.baselineMeasurementIdentity,
+            candidateMeasurementIdentity: draft.candidateMeasurementIdentity,
+            baselineMeasurementReportSHA256: baselineMeasurementReportSHA256,
+            candidateMeasurementReportSHA256: candidateMeasurementReportSHA256,
+            baselineID: draft.baselineID,
+            candidateID: draft.candidateID,
+            metrics: draft.metrics,
+            resilience: draft.resilience,
+            seed: draft.seed,
+            resampleCount: draft.resampleCount,
+            disposition: draft.disposition
+        )
     }
 
     public func validateStructure() throws {
