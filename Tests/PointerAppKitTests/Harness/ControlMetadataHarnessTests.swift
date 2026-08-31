@@ -272,6 +272,161 @@ final class ControlMetadataHarnessTests: XCTestCase {
         }
     }
 
+    func testCanonicalNarrowFixtureKeepsNativePaletteAndOverflowAccessible() throws {
+        let fixture = DeterministicInteractionFixture.narrow()
+        let harness = fixture.makeHarness()
+        let sync = harness.synchronizeDisplays()
+        let display = try XCTUnwrap(fixture.screenProvider.displays.first)
+        XCTAssertEqual(display.visibleFrame.width, 420)
+        XCTAssertTrue(sync.hasConnectedDisplays)
+        XCTAssertEqual(sync.connectedUUIDs, Set([display.uuid]))
+        guard case .shown = fixture.palette.show(on: display) else {
+            return XCTFail("Expected the canonical narrow display to show the palette")
+        }
+        defer {
+            fixture.palette.close()
+            fixture.shortcutController.stop()
+        }
+
+        XCTAssertEqual(fixture.palette.frame.width, 388, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(
+            fixture.palette.frame.width,
+            CGFloat(PaletteLayout.minimumSupportedWidth)
+        )
+        XCTAssertTrue(fixture.palette.isVisible)
+
+        let controller = fixture.palette.paletteViewController
+        XCTAssertGreaterThan(controller.view.bounds.width, 0)
+        let more = controller.control(identifier: "palette.tools.overflow")
+        XCTAssertFalse(more.isHidden)
+        XCTAssertTrue(more.isEnabled)
+        XCTAssertTrue(more.acceptsFirstResponder)
+        XCTAssertNotNil(more.target)
+        XCTAssertNotNil(more.action)
+        let visibleTools: Set<PointerTool> = [.select]
+        for tool in PointerTool.allCases {
+            let control = controller.control(identifier: "palette.tool.\(toolIdentifier(tool))")
+            XCTAssertEqual(control.isHidden, !visibleTools.contains(tool), tool.displayName)
+        }
+
+        let overflow = try XCTUnwrap(more as? NSPopUpButton)
+        let overflowMenu = try XCTUnwrap(overflow.menu)
+        XCTAssertEqual(
+            overflowMenu.items.map { $0.identifier?.rawValue },
+            [
+                "palette.overflow.header",
+                "palette.overflow.tool.arrow",
+                "palette.overflow.tool.rectangle",
+                "palette.overflow.tool.ellipse",
+                "palette.overflow.tool.pen",
+                "palette.overflow.tool.eraser",
+                "palette.overflow.tool.emoji",
+                "palette.overflow.tool.spotlight",
+            ]
+        )
+        for item in overflowMenu.items.dropFirst() {
+            XCTAssertTrue(item.isEnabled)
+            XCTAssertNotNil(item.target)
+            XCTAssertNotNil(item.action)
+        }
+
+        let metadata = harness.metadata()
+        let byID = assertCompleteMetadata(metadata)
+        XCTAssertEqual(
+            metadata.map(\.identifier).filter { $0.hasPrefix("palette.tool.") },
+            ["palette.tool.select"]
+        )
+        XCTAssertEqual(
+            metadata.map(\.identifier).filter { $0.hasPrefix("palette.overflow.tool.") },
+            [
+                "palette.overflow.tool.arrow",
+                "palette.overflow.tool.rectangle",
+                "palette.overflow.tool.ellipse",
+                "palette.overflow.tool.pen",
+                "palette.overflow.tool.eraser",
+                "palette.overflow.tool.emoji",
+                "palette.overflow.tool.spotlight",
+            ]
+        )
+        let overflowParentIndex = try XCTUnwrap(
+            metadata.firstIndex { $0.identifier == "palette.tools.overflow" }
+        )
+        XCTAssertEqual(
+            Array(metadata[overflowParentIndex...].prefix(9)).map(\.identifier),
+            [
+                "palette.tools.overflow",
+                "palette.overflow.header",
+                "palette.overflow.tool.arrow",
+                "palette.overflow.tool.rectangle",
+                "palette.overflow.tool.ellipse",
+                "palette.overflow.tool.pen",
+                "palette.overflow.tool.eraser",
+                "palette.overflow.tool.emoji",
+                "palette.overflow.tool.spotlight",
+            ]
+        )
+        XCTAssertTrue(byID["palette.tools.overflow"]?.isEnabled == true)
+        XCTAssertTrue(byID["palette.tools.overflow"]?.isKeyboardReachable == true)
+        XCTAssertEqual(
+            Set(metadata.map(\.identifier).filter {
+                $0 == "palette.style.color"
+                    || $0 == "palette.emoji"
+                    || $0 == "palette.style.stroke-width"
+                    || $0 == "palette.style.opacity"
+                    || $0 == "palette.spotlight.radius"
+                    || $0 == "palette.spotlight.dimness"
+            }),
+            Set([
+                "palette.style.color",
+                "palette.emoji",
+                "palette.style.stroke-width",
+                "palette.style.opacity",
+                "palette.spotlight.radius",
+                "palette.spotlight.dimness",
+            ])
+        )
+        XCTAssertTrue(metadata.filter {
+            $0.identifier == "palette.style.color"
+                || $0.identifier == "palette.emoji"
+                || $0.identifier == "palette.style.stroke-width"
+                || $0.identifier == "palette.style.opacity"
+                || $0.identifier == "palette.spotlight.radius"
+                || $0.identifier == "palette.spotlight.dimness"
+        }.allSatisfy { $0.value != nil && $0.help?.isEmpty == false })
+
+        controller.refresh(session: fixture.commandRouter.session)
+        controller.applyLayout(for: 388)
+        fixture.palette.window.contentView?.layoutSubtreeIfNeeded()
+        let expected = [
+            "palette.mode",
+            "palette.tool.select",
+            "palette.tools.overflow",
+            "palette.style.color",
+            "palette.style.stroke-width",
+            "palette.style.opacity",
+        ]
+        let start = controller.control(identifier: "palette.mode")
+        XCTAssertTrue(fixture.palette.makeFirstResponder(start))
+        var actual = [start.identifier!.rawValue]
+        for _ in 1..<expected.count {
+            fixture.palette.selectNextKeyView(nil)
+            let responder = try XCTUnwrap(fixture.palette.firstResponder as? NSView)
+            actual.append(try XCTUnwrap(responder.identifier?.rawValue))
+        }
+        XCTAssertEqual(actual, expected)
+        fixture.palette.selectNextKeyView(nil)
+        let wrapped = try XCTUnwrap(fixture.palette.firstResponder as? NSView)
+        XCTAssertEqual(wrapped.identifier?.rawValue, "palette.mode")
+
+        let styleScrollView = try XCTUnwrap(
+            descendantViews(of: controller.view)
+                .compactMap { $0 as? NSScrollView }
+                .first { $0.hasHorizontalScroller }
+        )
+        XCTAssertFalse(styleScrollView.isHidden)
+        XCTAssertTrue(styleScrollView.hasHorizontalScroller)
+    }
+
     func testPendingShortcutMetadataKeepsPAndOCandidatesActionable() throws {
         let fixture = DeterministicInteractionFixture.standard()
         let harness = fixture.makeHarness()
@@ -495,6 +650,10 @@ final class ControlMetadataHarnessTests: XCTestCase {
             .compactMap(\.submenu)
             .flatMap(\.items)
             .first { $0.identifier?.rawValue == identifier }
+    }
+
+    private func descendantViews(of root: NSView) -> [NSView] {
+        [root] + root.subviews.flatMap(descendantViews)
     }
 
     @discardableResult

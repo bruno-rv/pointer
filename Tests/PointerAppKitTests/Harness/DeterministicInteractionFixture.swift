@@ -108,6 +108,14 @@ final class DeterministicInteractionFixture {
         )
     }
 
+    static func narrow() -> DeterministicInteractionFixture {
+        let descriptor = DisplayFixtures.narrowDisplay()[0]
+        return DeterministicInteractionFixture(
+            displays: [descriptor],
+            pointerDisplay: descriptor.uuid
+        )
+    }
+
     static func twoDisplays() -> DeterministicInteractionFixture {
         let descriptors = DisplayFixtures.twoDisplays()
         return DeterministicInteractionFixture(
