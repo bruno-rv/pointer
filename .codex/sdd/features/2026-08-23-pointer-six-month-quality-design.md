@@ -915,9 +915,13 @@ Acceptance criteria:
   Pair preflight requires exact equality of host model, macOS, Xcode,
   developerDirectory, power/display state, and buildConfiguration across the
   two measurement identities; source commits remain distinct and each matches
-  its run/build provenance. Every metric has nonempty ratio/delta arrays with
-  exactly `totalPairs == pairsPerOrder * 2` entries; empty arrays never pass
-  schema validation.
+  its run/build provenance. Persisted `baselineFixture` and `candidateFixture`
+  values must equal each other and match their measurement reports. Every
+  metric has a finite positive `budgetLimit`, finite strictly positive baseline
+  and candidate samples, and nonempty ratio/delta arrays with exactly
+  `totalPairs == pairsPerOrder * 2` entries; completion recomputes ratio
+  median/p95 at most `1.10` and candidate p95 within the absolute budget.
+  Empty arrays never pass schema validation.
   No unsuffixed generic performance-report type is a valid schema or output.
 - Model, renderer, compositor, launch, and memory are separate actual harness
   runs exposed by `PerformanceHarness` and covered by

@@ -386,6 +386,7 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateSamples: [Double]
         public let ratios: [Double]
         public let deltas: [Double]
+        public let budgetLimit: Double
         public let bootstrapInterval: BootstrapInterval
         public let manualEvidence: ManualMetricEvidence?
         public let disposition: Disposition
@@ -480,6 +481,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateRunProvenance: PerformanceRunProvenance
         public let baselineMeasurementIdentity: MeasurementIdentity
         public let candidateMeasurementIdentity: MeasurementIdentity
+        public let baselineFixture: FixtureIdentity
+        public let candidateFixture: FixtureIdentity
         public let pairEligibility: PerformancePairEligibility
         public let baselineID: String
         public let candidateID: String
@@ -579,10 +582,19 @@ both typed `BuildProvenance` values, matching baseline/candidate
 match exactly for host model, macOS, Xcode, developerDirectory, power state,
 display state, and buildConfiguration; their clean source commit identities
 must be distinct, and each must match its run/build provenance. It requires
-one `MetricComparison` for every `PerformanceMetricID`, nonempty ratio/delta
-arrays with exactly `configuration.totalPairs` (`pairsPerOrder * 2`) entries
-for every metric, equal-length paired sample arrays, valid
-`BootstrapInterval` values, and the conditional manual-evidence rule. A manual metric requires
+full `baselineFixture` and `candidateFixture` values, equal in every field,
+and each matching its corresponding measurement report. It requires one
+`MetricComparison` for every `PerformanceMetricID`, a finite positive
+`budgetLimit`, nonempty ratio/delta arrays with exactly
+`configuration.totalPairs` (`pairsPerOrder * 2`) entries for every metric,
+equal-length paired sample arrays, and finite strictly positive baseline and
+candidate samples so each ratio is exact. `validateCompletion()` recomputes every ratio,
+the ratio median, the ratio p95, and the candidate-sample p95; both ratio
+summaries must be at most `1.10`, and candidate p95 must be at most the
+absolute `budgetLimit`. Empty arrays, nonfinite or nonpositive baseline or
+candidate samples, stale supplied ratios/deltas, or budget/ratio breaches are
+rejected. It also requires valid
+`BootstrapInterval` values and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
 steps, result, and evidence path); a deterministic metric must have nil manual
 evidence. Deterministic comparisons require at least 30 samples. Its
@@ -772,6 +784,9 @@ Expected: complete schema round-trip and rejection tests pass.
     func testDirectComparisonHarnessCannotBypassPairEligibility()
     func testComparisonCLIRequiresReportPathsAndPairEligibilityFile()
     func testComparisonCarriesFullMeasurementIdentitiesAndExactPairArrays()
+    func testComparisonPersistsEqualMatchingFixtures()
+    func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
+    func testComparisonCompletionRecomputesRatioAndCandidateP95()
     func testBootstrapIntervalOnlyClaimsImprovementWhenUpperBoundIsBelowZero()
     func testBudgetRegressionAndMissingMetricDispositionIsRevise()
     func testResilienceReportCoversModeToolsMarksClearUndoDisplayChurnAndShortcutTimeout()
@@ -786,6 +801,12 @@ Also assert full `baselineMeasurementIdentity` and
 Xcode, developerDirectory, power/display state, and buildConfiguration, with
 distinct source commits matching each run/build provenance. Require nonempty
 ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
+Round-trip persisted `baselineFixture` and `candidateFixture` values, assert
+they are equal and match the corresponding measurement reports, reject
+nonfinite or nonpositive baseline/candidate samples or
+nonfinite/nonpositive `budgetLimit`, and prove
+completion recomputes ratio median/p95 at most `1.10` and candidate p95 within
+the absolute budget.
 Also assert source/content identities, host/build/fixture fields, five
 warmups, `pairsPerOrder == 15`, derived `totalPairs == 30`, exactly 15
 baseline-first plus 15 candidate-first pairs, ratio
