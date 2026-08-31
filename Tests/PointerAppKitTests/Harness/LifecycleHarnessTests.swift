@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import PointerCore
 import XCTest
 @testable import PointerAppKit
@@ -142,6 +143,167 @@ final class LifecycleHarnessTests: XCTestCase {
         )
         XCTAssertFalse(fixture.guideStateStore.hasDismissedFirstUseGuide)
         XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+    }
+
+    func testRealGuidePanelStopsAppearanceObservationAndLeavesNoVisibleOrphan() throws {
+        _ = NSApplication.shared
+        let fixture = FirstUseGuideTestFixture()
+        let (catalog, bundleURL) = try makeTrackedGuideCatalog()
+        defer { try? FileManager.default.removeItem(at: bundleURL) }
+        let stateStore = FirstUseGuideTestStateStore()
+        let appearanceProvider = FirstUseGuideTestAppearanceProvider()
+        let controller = FirstUseGuideController(
+            stateStore: stateStore,
+            placementProvider: fixture.placementProvider,
+            assetCatalog: catalog,
+            appearanceProvider: appearanceProvider
+        )
+        defer {
+            controller.hideForApplicationStop()
+        }
+
+        XCTAssertEqual(controller.show(in: fixture.context), .shown)
+        XCTAssertTrue(controller.isVisible)
+        let panel = try XCTUnwrap(
+            NSApp.windows.first {
+                $0.identifier?.rawValue == "pointer.first-use-guide" && $0.isVisible
+            }
+        )
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertTrue(panel.isKeyWindow)
+        XCTAssertTrue(panel.firstResponder === (panel.contentViewController as? FirstUseGuideViewController)?.doneButton)
+        let viewController = try XCTUnwrap(
+            panel.contentViewController as? FirstUseGuideViewController
+        )
+        XCTAssertEqual(viewController.exampleImageViews.count, 8)
+        XCTAssertTrue(viewController.exampleImageViews.allSatisfy { $0.image != nil })
+        XCTAssertTrue(viewController.resolutionErrors.isEmpty)
+        XCTAssertTrue(viewController.isAppearanceObservationActive)
+        XCTAssertEqual(stateStore.markCount, 1)
+
+        controller.hideForApplicationStop()
+
+        XCTAssertFalse(controller.isVisible)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertFalse(panel.isKeyWindow)
+        XCTAssertFalse(viewController.isAppearanceObservationActive)
+        XCTAssertEqual(stateStore.markCount, 1)
+        XCTAssertFalse(NSApp.windows.contains { $0 === panel && $0.isVisible })
+        XCTAssertFalse(NSApp.keyWindow === panel)
+    }
+
+    func testStopCancelsUnfinishedRealGesturesWithoutCommittingDraftsOnOneAndTwoDisplays() throws {
+        for displayCount in [1, 2] {
+            let fixture = LifecycleInteractionFixture(displayCount: displayCount)
+            fixture.start()
+            defer { fixture.stop() }
+
+            let display = fixture.displayDescriptors[0]
+            let overlay = try XCTUnwrap(
+                fixture.coordinator.overlays[display.uuid] as? OverlayPanel
+            )
+            drawArrow(on: overlay, in: fixture)
+            let committedBeforeGesture = fixture.coordinator.session.canvas(for: display.uuid)
+            overlay.canvasView.beginGesture(at: NSPoint(x: 180, y: 160))
+            overlay.canvasView.continueGesture(to: NSPoint(x: 500, y: 360))
+
+            XCTAssertTrue(overlay.canvasView.hasActiveGesture)
+            XCTAssertNotNil(overlay.canvasView.renderPlan.activeDraft)
+            XCTAssertEqual(
+                fixture.coordinator.session.canvas(for: display.uuid),
+                committedBeforeGesture
+            )
+
+            fixture.stop()
+
+            let stopResult = try XCTUnwrap(fixture.controller.lastDisplayStopResult)
+            XCTAssertEqual(stopResult.closedOverlayCount, displayCount)
+            XCTAssertEqual(stopResult.activeGestureCount, 1)
+            XCTAssertEqual(stopResult.clearedHandlerCount, displayCount * 2)
+            XCTAssertEqual(stopResult.remainingOverlayCount, 0)
+            XCTAssertEqual(stopResult.boundHandlerCount, 0)
+            XCTAssertEqual(
+                fixture.coordinator.session.canvas(for: display.uuid),
+                committedBeforeGesture
+            )
+            XCTAssertNil(overlay.canvasView.renderPlan.activeDraft)
+            assertStoppedCheckpoint(fixture)
+        }
+    }
+
+    func testStaleShortcutEventsAfterStopCannotMutateStoppedCheckpointOrSession() throws {
+        let fixture = LifecycleInteractionFixture(displayCount: 1)
+        fixture.start()
+        fixture.shortcutController.setShortcut(.controlOptionCommandO)
+        let candidateToken = try XCTUnwrap(
+            fixture.shortcutController.pendingToken,
+            "Expected a captured pending token"
+        )
+        let activeToken = try XCTUnwrap(
+            fixture.shortcutController.activeToken,
+            "Expected a captured active token"
+        )
+        let storedBeforeStop = fixture.shortcutStore.stored
+
+        fixture.stop()
+        defer { fixture.stop() }
+        let stoppedSession = fixture.coordinator.session
+        let stoppedEvents = fixture.events
+        let stoppedResult = try XCTUnwrap(fixture.controller.lastDisplayStopResult)
+
+        fixture.shortcutScheduler.fireCanceled()
+        fixture.registrar.deliver(candidateToken)
+        fixture.registrar.deliver(activeToken)
+
+        XCTAssertEqual(fixture.coordinator.session, stoppedSession)
+        XCTAssertEqual(fixture.shortcutStore.stored, storedBeforeStop)
+        XCTAssertEqual(fixture.events, stoppedEvents)
+        XCTAssertEqual(fixture.controller.lastDisplayStopResult, stoppedResult)
+        assertStoppedCheckpoint(fixture)
+    }
+
+    func testUnseenPendingGuideStopStartClearsRestoreIntentAndKeepsStateUntilVisible() throws {
+        let fixture = LifecycleInteractionFixture(
+            displayCount: 1,
+            guideBecomesVisibleOnShow: false,
+            guideShowIfNeededResult: .shown,
+            guideRestoreAfterDisplayLossResult: .failed("panel unavailable")
+        )
+        fixture.start()
+        let mark = Mark(
+            geometry: .rectangle(
+                NormalizedRect(x: 0.2, y: 0.2, width: 0.3, height: 0.25)
+            ),
+            style: .default
+        )
+        fixture.coordinator.apply(.setTool(.rectangle))
+        fixture.coordinator.apply(.append(mark, to: fixture.display.uuid))
+        let sessionBeforeDisplayLoss = fixture.coordinator.session
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(fixture.guideStateStore.hasDismissedFirstUseGuide)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+
+        fixture.provider.displays = []
+        fixture.postScreenChange()
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(fixture.guideStateStore.hasDismissedFirstUseGuide)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+
+        fixture.controller.stop()
+        assertStoppedCheckpoint(fixture)
+        fixture.provider.displays = [fixture.display]
+        fixture.events.removeAll()
+
+        fixture.controller.start()
+        defer { fixture.stop() }
+
+        XCTAssertEqual(fixture.events, ["palette.show", "guide.showIfNeeded"])
+        XCTAssertFalse(fixture.events.contains("guide.restoreAfterDisplayLoss"))
+        XCTAssertFalse(fixture.guide.isVisible)
+        XCTAssertFalse(fixture.guideStateStore.hasDismissedFirstUseGuide)
+        XCTAssertEqual(fixture.guideStateStore.markCount, 0)
+        XCTAssertEqual(fixture.coordinator.session, sessionBeforeDisplayLoss)
+        assertRunningCheckpoint(fixture, displayCount: 1, guideVisible: false)
     }
 
     func testRepeatedStopIsIdempotentAndDoesNotReopenResources() throws {
@@ -342,6 +504,52 @@ final class LifecycleHarnessTests: XCTestCase {
         XCTAssertNil(fixture.shortcutController.registrar.onEvent, file: file, line: line)
         XCTAssertNil(fixture.shortcutController.onToggle, file: file, line: line)
         XCTAssertNil(fixture.shortcutController.onStateChange, file: file, line: line)
+    }
+
+    private func makeTrackedGuideCatalog() throws -> (GuideAssetCatalog, URL) {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let manifestURL = repositoryRoot.appendingPathComponent("Bundle/GuideAssetIdentity.json")
+        let envelope = try JSONDecoder().decode(
+            GuideAssetCatalogEnvelope.self,
+            from: Data(contentsOf: manifestURL)
+        )
+        let sourceRoot = repositoryRoot.appendingPathComponent("Bundle/Assets.xcassets/FirstUseGuide")
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PointerGuideAssets-\(UUID().uuidString).bundle")
+        try FileManager.default.createDirectory(
+            at: bundleURL,
+            withIntermediateDirectories: true
+        )
+        try Data(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict></dict></plist>".utf8
+        ).write(to: bundleURL.appendingPathComponent("Info.plist"))
+
+        for entry in envelope.entries {
+            for variant in entry.variants {
+                let sourcePath = GuideAssetSourceMapping.sourcePath(
+                    for: variant.assetIdentifier,
+                    variant: variant.variant
+                )
+                let sourceURL = try XCTUnwrap(
+                    FileManager.default
+                        .subpaths(atPath: sourceRoot.path)?
+                        .map(sourceRoot.appendingPathComponent)
+                        .first { $0.lastPathComponent == sourcePath }
+                )
+                try FileManager.default.copyItem(
+                    at: sourceURL,
+                    to: bundleURL.appendingPathComponent(sourcePath)
+                )
+            }
+        }
+
+        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+        let catalog = try GuideAssetCatalog(envelope: envelope, bundle: bundle)
+        return (catalog, bundleURL)
     }
 
     private func drawArrow(on overlay: OverlayPanel, in fixture: LifecycleInteractionFixture) {

@@ -59,6 +59,12 @@ parameter notification. The complete stopped checkpoint and the original
   proves repeated `start()` does not replace those objects.
 - After restart, one screen notification yields one display-sync callback and
   one delivered active shortcut yields one state publication.
+- An unfinished real CanvasView gesture is canceled on stop for both one- and
+  two-display fixtures: `activeGestureCount == 1`, no draft is committed, the
+  pre-gesture canvas remains, and `clearedHandlerCount == 2N`.
+- A captured stale candidate token, active token, and canceled scheduler action
+  are delivered after stop; none mutates the stopped session, shortcut store,
+  event log, stop result, or zero-resource checkpoint.
 - A successful first-use `.shown` presentation marks the guide seen only once
   after visibility; a later ordinary sync leaves the mark count unchanged.
 - A `.shown` guide that never becomes visible stays unseen through display loss
@@ -67,15 +73,28 @@ parameter notification. The complete stopped checkpoint and the original
 - Hides a visible guide on display loss without changing its seen state,
   restores it only after palette restoration, and clears the restoration intent
   on application stop so the next start does not replay a stale restore.
+- Uses a concrete `FirstUseGuideController` with the tracked
+  `GuideAssetIdentity.json` and all 24 copied PNGs in an injected temporary
+  bundle. The real `FirstUseGuidePanelWindow` is checked for visibility, key
+  focus, Done focus, eight resolved images, and an active appearance observer;
+  application-stop teardown removes visibility/key status and the observer.
+- Exercises an unseen hidden guide through display loss, deliberate application
+  stop, and restart. Restart emits only `palette.show` then a fresh
+  `guide.showIfNeeded`, never a stale restore; mode, tool, canvas, seen state,
+  and mark count remain unchanged until actual visibility.
 
 ## Evidence boundary
 
 This is deterministic AppKit/resource evidence, not physical multi-display or
 VoiceOver evidence. It proves production object composition, lifecycle counts,
 callback cleanup, real in-process CanvasView gesture routing, and guide event
-ordering. It does not prove WindowServer behavior across Spaces, physical
-pointer hit targets, or a person's live VoiceOver experience; those remain
-manual integration evidence.
+ordering. The concrete guide row exercises the D `FirstUseGuideController` and
+real panel in `PointerAppKit`, but does not claim executable launch or Release
+`Assets.car` proof: `Sources/Pointer/main.swift` composition and packaged
+resource validation remain F-owned integration evidence. This suite also does
+not prove WindowServer behavior across Spaces, physical pointer hit targets, or
+a person's live VoiceOver experience; those remain manual integration
+evidence.
 
 ## Verification
 
@@ -83,10 +102,11 @@ The focused lifecycle suite passed:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter LifecycleHarnessTests
-Executed 9 tests, with 0 failures
+Executed 13 tests, with 0 failures
 ```
 
 The initial RED run intentionally failed to compile because
 `LifecycleInteractionFixture` did not yet exist. The subsequent GREEN run
-passed all nine tests, including the post-restart callback oracles and the
-unseen/pending-guide state checks.
+passed all thirteen tests, including concrete guide-panel teardown, active
+gesture cancellation, stale shortcut delivery, post-restart callback oracles,
+and unseen/pending-guide state checks.
