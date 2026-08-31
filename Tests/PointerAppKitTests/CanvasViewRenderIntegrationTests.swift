@@ -190,6 +190,9 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
         XCTAssertEqual(observedSessionPlans.count, 2)
         XCTAssertNil(observedSessionPlans[1].activeDraft)
         XCTAssertEqual(observedSessionPlans[1].committedMarks.count, 1)
+        XCTAssertEqual(observedPlans.count, 3)
+        XCTAssertNil(observedPlans[2].activeDraft)
+        XCTAssertEqual(observedPlans[2].committedMarks.count, 1)
         XCTAssertEqual(observedBoundaryEvents, [.began, .committed])
         XCTAssertNil(observedBoundaryPlans[1].activeDraft)
         XCTAssertEqual(observedBoundaryPlans[1].committedMarks.count, 1)
@@ -212,6 +215,8 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
         XCTAssertNil(observedBoundaryPlans[3].activeDraft)
         XCTAssertEqual(observedBoundaryPlans[3].committedMarks.count, 1)
         XCTAssertEqual(observedPlans.count, 6)
+        XCTAssertNil(observedPlans[5].activeDraft)
+        XCTAssertEqual(observedPlans[5].committedMarks.count, 1)
         XCTAssertEqual(
             callbackOrder,
             [
@@ -250,10 +255,112 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
         let sourceURL = root.appendingPathComponent("Sources/PointerAppKit/CanvasView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        guard let drawBody = functionBody(
+            named: "public override func draw(_ dirtyRect: NSRect)",
+            in: source
+        ) else {
+            return XCTFail("CanvasView.draw(_:) body is missing")
+        }
         let planCallPattern = #"MarkRenderer\s*\.\s*draw\s*\(\s*plan\s*:"#
         let legacyCallPattern = #"MarkRenderer\s*\.\s*draw\s*\(\s*canvas\s*:"#
-        XCTAssertNotNil(source.range(of: planCallPattern, options: .regularExpression))
-        XCTAssertNil(source.range(of: legacyCallPattern, options: .regularExpression))
+        XCTAssertNotNil(drawBody.range(of: planCallPattern, options: .regularExpression))
+        XCTAssertNil(drawBody.range(of: legacyCallPattern, options: .regularExpression))
+
+        let committedIDSetPattern = #"committedMarkIDs\s*=\s*Set\s*\(\s*committedCanvas\s*\.\s*marks\s*\.\s*map\s*\(\s*\\\.id\s*\)\s*\)"#
+        let nestedCommittedScanPattern = #"committedCanvas\s*\.\s*marks\s*\.\s*contains"#
+        XCTAssertNotNil(source.range(of: committedIDSetPattern, options: .regularExpression))
+        XCTAssertNil(source.range(of: nestedCommittedScanPattern, options: .regularExpression))
+    }
+
+    private func functionBody(named signature: String, in source: String) -> String? {
+        guard let signatureRange = source.range(of: signature) else { return nil }
+        let suffix = Array(source[signatureRange.upperBound...])
+        guard let openingBrace = suffix.firstIndex(of: "{") else { return nil }
+
+        enum LexicalState {
+            case code
+            case lineComment
+            case blockComment(depth: Int)
+            case string(delimiterLength: Int, escaped: Bool)
+        }
+
+        var state = LexicalState.code
+        var depth = 1
+        var index = openingBrace + 1
+        while index < suffix.count {
+            let character = suffix[index]
+            let nextCharacter = index + 1 < suffix.count ? suffix[index + 1] : nil
+            let nextNextCharacter = index + 2 < suffix.count ? suffix[index + 2] : nil
+
+            switch state {
+            case .code:
+                if character == "/", nextCharacter == "/" {
+                    state = .lineComment
+                    index += 2
+                    continue
+                }
+                if character == "/", nextCharacter == "*" {
+                    state = .blockComment(depth: 1)
+                    index += 2
+                    continue
+                }
+                if character == "\"" {
+                    if nextCharacter == "\"", nextNextCharacter == "\"" {
+                        state = .string(delimiterLength: 3, escaped: false)
+                        index += 3
+                    } else {
+                        state = .string(delimiterLength: 1, escaped: false)
+                        index += 1
+                    }
+                    continue
+                }
+                if character == "{" {
+                    depth += 1
+                } else if character == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        return String(suffix[(openingBrace + 1)..<index])
+                    }
+                }
+                index += 1
+            case .lineComment:
+                if character == "\n" {
+                    state = .code
+                }
+                index += 1
+            case .blockComment(let commentDepth):
+                if character == "/", nextCharacter == "*" {
+                    state = .blockComment(depth: commentDepth + 1)
+                    index += 2
+                } else if character == "*", nextCharacter == "/" {
+                    state = commentDepth == 1 ? .code : .blockComment(depth: commentDepth - 1)
+                    index += 2
+                } else {
+                    index += 1
+                }
+            case .string(let delimiterLength, let escaped):
+                if escaped {
+                    state = .string(delimiterLength: delimiterLength, escaped: false)
+                    index += 1
+                } else if character == "\\" {
+                    state = .string(delimiterLength: delimiterLength, escaped: true)
+                    index += 1
+                } else if delimiterLength == 3,
+                          character == "\"",
+                          nextCharacter == "\"",
+                          nextNextCharacter == "\""
+                {
+                    state = .code
+                    index += 3
+                } else if delimiterLength == 1, character == "\"" {
+                    state = .code
+                    index += 1
+                } else {
+                    index += 1
+                }
+            }
+        }
+        return nil
     }
 
     private func annotationSession() -> PointerSession {

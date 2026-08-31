@@ -2,7 +2,8 @@
 
 ## Scope
 
-Implemented the reviewed B render seam on top of `99a7241` without changing
+The reviewed B render seam landed at commit `6af9073` (based on `99a7241`).
+This follow-up tightens that implementation without changing
 PointerCore gesture semantics, OverlayPanel forwarding, DisplayCoordinator
 lifecycle logic, or the D renderer/plan contracts.
 
@@ -10,8 +11,12 @@ Changed files:
 
 - `Sources/PointerAppKit/CanvasView.swift`
 - `Tests/PointerAppKitTests/CanvasViewRenderIntegrationTests.swift`
+- `.codex/sdd/reports/pointer-b-render-integration-report.md`
 
-The work remains uncommitted for the parent integration agent.
+The current worktree contains the follow-up production optimization (materialize
+committed mark IDs once per plan update), stronger source/callback tests, and
+the corrected report. These follow-up edits are uncommitted; no additional
+commit was created.
 
 ## Implementation
 
@@ -20,7 +25,8 @@ The plan is recomputed from the two session canvas views at one private seam:
 
 1. read the committed canvas for the view's display;
 2. read the preview canvas for that display;
-3. identify the first preview mark whose ID is not committed;
+3. materialize committed mark IDs once, then identify the first preview mark
+   whose ID is not committed;
 4. pass the preview canvas, mode, selection, draft, and hidden hover inventory
    to `RenderPlan.make`.
 
@@ -53,8 +59,10 @@ The suite proves:
   `onSessionUpdate`, and `onBoundaryEvent` callbacks observe the post-commit
   and post-cancel plans in the existing redraw → session → boundary order;
 - external session adoption recomputes the committed plan;
-- a whitespace-tolerant regex source guard requires the plan renderer overload
-  and rejects any legacy `MarkRenderer.draw(canvas: ...)` call;
+- a whitespace-tolerant regex source guard extracts the actual `draw(_:)` body,
+  requires the plan renderer overload there, and rejects any legacy
+  `MarkRenderer.draw(canvas: ...)` call there; a second guard verifies the
+  committed-ID `Set` avoids an O(N²) nested committed-mark scan;
 - the real view is attached to a non-visible borderless `NSWindow` and remains
   non-visible while rendered through a fixed 512×512 sRGB RGBA8 bitmap context.
 
@@ -76,9 +84,9 @@ git diff --check
 clean
 ```
 
-The explicit no-cycle source checks also passed: `CanvasView.swift` contains
-the plan overload and contains no legacy `MarkRenderer.draw(canvas: ...)`
-call.
+The explicit renderer-overload source checks also passed: the actual
+`draw(_:)` body contains the plan overload and contains no legacy
+`MarkRenderer.draw(canvas: ...)` call.
 
 ## Handoff and remaining risk
 

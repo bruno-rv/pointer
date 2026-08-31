@@ -165,10 +165,9 @@ public final class CanvasView: NSView {
     ) -> RenderPlan {
         let committedCanvas = session.canvas(for: display)
         let previewCanvas = session.previewCanvas(for: display)
+        let committedMarkIDs = Set(committedCanvas.marks.map(\.id))
         let activeDraft = previewCanvas.marks.first { previewMark in
-            !committedCanvas.marks.contains { committedMark in
-                committedMark.id == previewMark.id
-            }
+            !committedMarkIDs.contains(previewMark.id)
         }
         return RenderPlan.make(
             canvas: previewCanvas,
