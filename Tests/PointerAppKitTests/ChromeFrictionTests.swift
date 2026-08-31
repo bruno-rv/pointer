@@ -42,9 +42,9 @@ final class ChromeFrictionTests: XCTestCase {
         )
     }
 
-    func testFreshLaunchArrowDrawStandbyPathNeedsNoAdditionalClickOrKey() {
+    func testFreshLaunchArrowDrawStandbyPathNeedsNoAdditionalClickOrKey() throws {
         let baseline = CommonPathInventory(requiredClicks: 1, requiredKeys: 1, semanticSteps: 3)
-        let candidate = candidateCommonPathInventory()
+        let candidate = try candidateCommonPathInventory()
 
         XCTAssertLessThanOrEqual(candidate.requiredClicks, baseline.requiredClicks)
         XCTAssertLessThanOrEqual(candidate.requiredKeys, baseline.requiredKeys)
@@ -140,7 +140,7 @@ private func candidateInventory() -> ChromeInventory {
 }
 
 @MainActor
-private func candidateCommonPathInventory() -> CommonPathInventory {
+private func candidateCommonPathInventory() throws -> CommonPathInventory {
     let provider = ChromeFrictionScreenProvider()
     let coordinator = DisplayCoordinator(
         screenProvider: provider,
@@ -165,18 +165,33 @@ private func candidateCommonPathInventory() -> CommonPathInventory {
     arrow.performClick(nil)
     XCTAssertEqual(router.session.mode, .annotation)
 
-    var drawingSession = router.session
-    _ = drawingSession.beginGesture(
-        tool: .arrow,
-        at: NormalizedPoint(x: 0.2, y: 0.2),
-        on: ChromeFrictionScreenProvider.display.uuid
+    let overlay = try XCTUnwrap(
+        coordinator.overlays[ChromeFrictionScreenProvider.display.uuid]
+            as? ChromeFrictionOverlay
     )
-    _ = drawingSession.advanceGesture(to: NormalizedPoint(x: 0.8, y: 0.8))
-    let commit = drawingSession.commitGesture()
-    XCTAssertTrue(commit.didMutate)
+    overlay.canvasView.beginGesture(at: NSPoint(x: 384, y: 216))
+    overlay.canvasView.continueGesture(to: NSPoint(x: 1_536, y: 864))
+    overlay.canvasView.endGesture()
+    let committedMarks = router.session.canvas(
+        for: ChromeFrictionScreenProvider.display.uuid
+    ).marks
+    XCTAssertEqual(committedMarks.count, 1)
+    let committedMark = try XCTUnwrap(committedMarks.first)
+    guard case let .arrow(start, end) = committedMark.geometry else {
+        XCTFail("The CanvasView gesture must commit an arrow")
+        throw ChromeFrictionError.expectedArrow
+    }
+    XCTAssertEqual(start.x, 0.2, accuracy: 0.000_001)
+    XCTAssertEqual(start.y, 0.2, accuracy: 0.000_001)
+    XCTAssertEqual(end.x, 0.8, accuracy: 0.000_001)
+    XCTAssertEqual(end.y, 0.8, accuracy: 0.000_001)
     events.append(.semantic)
     XCTAssertTrue(router.routeLocalKeyEvent(keyCode: 53))
     XCTAssertEqual(router.session.mode, .standby)
+    XCTAssertEqual(
+        router.session.canvas(for: ChromeFrictionScreenProvider.display.uuid).marks.count,
+        1
+    )
     events.append(.key)
     events.append(.semantic)
 
@@ -191,6 +206,10 @@ private enum CommonPathEvent: Equatable {
     case click
     case key
     case semantic
+}
+
+private enum ChromeFrictionError: Error {
+    case expectedArrow
 }
 
 @MainActor
@@ -209,16 +228,44 @@ private final class ChromeFrictionScreenProvider: ScreenProviding {
 @MainActor
 private final class ChromeFrictionOverlay: OverlayPresenting {
     var display: DisplayDescriptor
+    let canvasView: CanvasView
 
     init(display: DisplayDescriptor) {
         self.display = display
+        canvasView = CanvasView(
+            frame: NSRect(origin: .zero, size: display.frame.cgRect.size),
+            display: display.uuid
+        )
     }
 
     func update(display: DisplayDescriptor) {
         self.display = display
+        canvasView.setFrameSize(display.frame.cgRect.size)
     }
 
-    func update(session: PointerSession) {}
-    func setMode(_ mode: PointerMode) {}
+    func update(session: PointerSession) {
+        canvasView.update(session: session)
+        canvasView.tool = session.toolState.tool
+    }
+
+    func setMode(_ mode: PointerMode) {
+        guard canvasView.session.mode != mode else { return }
+        var session = canvasView.session
+        session.apply(.setMode(mode))
+        canvasView.update(session: session)
+    }
+
+    func cancelActiveGesture() {
+        canvasView.cancelGesture()
+    }
+
+    func setEventHandlers(
+        onSessionUpdate: @escaping (PointerSession) -> Void,
+        onBoundaryEvent: @escaping (GestureBoundaryEvent) -> Void
+    ) {
+        canvasView.onSessionUpdate = onSessionUpdate
+        canvasView.onBoundaryEvent = onBoundaryEvent
+    }
+
     func close() {}
 }

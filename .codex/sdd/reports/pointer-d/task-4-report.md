@@ -9,8 +9,11 @@ source, C-owned palette/menu/controller source, or Task 3 asset was edited.
 
 - Baseline: `caa2bd0` (`fix: preserve Pointer gesture boundary delivery`), the
   accepted B-core commit immediately before C product-surface work.
-- Candidate: `b3cef8c` (`test: verify Pointer asset identity`), the worktree
-  HEAD used for the measurement.
+- Candidate: `9b65454` (`test: reject alpha guide assets`), the current
+  worktree HEAD used for the repaired measurement.
+- Coordinator Task 4 artifact commit: `48aef59` (`test: measure Pointer chrome
+  reduction`). This repair updates that coordinator-owned test/report pair in
+  the working tree and creates no additional commit.
 - Worktree: `/Users/bruno/Dev/pointer/.worktrees/stable-app`, branch
   `codex/stable-app`.
 - Added: `Tests/PointerAppKitTests/ChromeFrictionTests.swift`.
@@ -38,6 +41,17 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter Chr
 GREEN: 2 tests, 0 failures.
 ```
 
+The reviewer P1 correction was then written test-first. The focused RED run
+failed to compile because the existing test overlay had no `canvasView`, and
+the new non-void geometry failure branch was not yet throwable. Adding only a
+test-owned `CanvasView` overlay with `DisplayCoordinator` callback wiring and
+the explicit test error produced GREEN:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter ChromeFrictionTests/testFreshLaunchArrowDrawStandbyPathNeedsNoAdditionalClickOrKey
+GREEN: 1 test, 0 failures.
+```
+
 ## Inventory method and exact counts
 
 The comparison uses the baseline's 760-point palette width for both sides.
@@ -47,7 +61,7 @@ preferred width as an improvement. Candidate counts are measured from a real
 `PaletteViewController`, `loadViewIfNeeded()`, `refresh(session:)`,
 `applyLayout(for: 760)`, and `layoutSubtreeIfNeeded()`.
 
-| Dimension | Baseline `caa2bd0` | Candidate `b3cef8c` | Change |
+| Dimension | Baseline `caa2bd0` | Candidate `9b65454` | Change |
 | --- | ---: | ---: | ---: |
 | Always-visible palette controls | 17 | 15 | -2 |
 | Palette layout rows | 2 | 1 | -1 |
@@ -116,13 +130,19 @@ them into the one semantic status count.
 
 The test creates the fresh default session (standby, Arrow tool), synchronizes
 one display, loads the real palette at the comparison width, performs the
-visible Arrow control action, draws one real `PointerSession` arrow gesture
-(begin/advance/commit), then sends the real Escape key route (`keyCode: 53`).
-The route assertions prove:
+visible Arrow control action, then uses the synchronized test overlay's real
+`CanvasView` gesture (begin/continue/end). `ChromeFrictionOverlay` owns that
+CanvasView and forwards its `onSessionUpdate`/`onBoundaryEvent` callbacks to
+the closures installed by `DisplayCoordinator`, matching the production
+overlay ownership route. The test then reads the committed mark from
+`router.session.canvas(for:)` before sending the real Escape key route
+(`keyCode: 53`). The route assertions prove:
 
 1. one Arrow control activation enters annotation without a separate mode
    click;
-2. one draw gesture commits an arrow; and
+2. one CanvasView gesture commits an arrow through DisplayCoordinator into the
+   router session, with normalized endpoints `(0.2, 0.2)` and `(0.8, 0.8)`;
+   and
 3. one Escape key returns the router to standby.
 
 The resulting inventory is exactly 1 required click, 1 required key, and 3
@@ -149,5 +169,7 @@ git diff --check
 GREEN: no whitespace errors (exit 0).
 ```
 
-No commit was created. Physical fresh-launch/manual VoiceOver proof remains
+Coordinator commit `48aef59` contains the original Task 4 artifacts. This
+review repair leaves the modified test/report pair uncommitted; no commit was
+created by this worker. Physical fresh-launch/manual VoiceOver proof remains
 outside this deterministic test-only task and belongs to the later F gate.
