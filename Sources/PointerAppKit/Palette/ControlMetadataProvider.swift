@@ -113,7 +113,7 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
     }
 
     private func role(of control: NSControl) -> String {
-        if let role = control.accessibilityRole()?.rawValue {
+        if let role = control.accessibilityRole()?.rawValue, role != "AXUnknown" {
             return role
         }
         switch control {
@@ -133,7 +133,10 @@ public final class ControlMetadataInventory: ControlMetadataProviding {
     }
 
     private func role(of item: NSMenuItem) -> String {
-        item.accessibilityRole()?.rawValue ?? "AXMenuItem"
+        if let role = item.accessibilityRole()?.rawValue, role != "AXUnknown" {
+            return role
+        }
+        return "AXMenuItem"
     }
 
     private func nonEmpty(_ value: String?) -> String? {

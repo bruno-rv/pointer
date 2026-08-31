@@ -5,6 +5,71 @@ import XCTest
 
 @MainActor
 final class AccessibilityMetadataTests: XCTestCase {
+    func testRealPaletteAndMenuMetadataUsesConcreteNativeRoles() throws {
+        let provider = AccessibilityScreenProvider()
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        let menuBar = MenuBarController(router: router)
+        menuBar.install()
+        defer {
+            menuBar.remove()
+            palette.close()
+        }
+
+        _ = coordinator.synchronize()
+        palette.paletteViewController.loadViewIfNeeded()
+        palette.refresh(session: coordinator.session)
+        let inventory = ControlMetadataInventory(palette: palette, menuBar: menuBar)
+        let metadata = inventory.metadata()
+        let byIdentifier = Dictionary(uniqueKeysWithValues: metadata.map { ($0.identifier, $0) })
+
+        let expectedPaletteRoles = [
+            "palette.mode": "AXButton",
+            "palette.tool.select": "AXButton",
+            "palette.tool.arrow": "AXButton",
+            "palette.tool.rectangle": "AXButton",
+            "palette.tool.ellipse": "AXButton",
+            "palette.tool.pen": "AXButton",
+            "palette.tool.eraser": "AXButton",
+            "palette.tool.emoji": "AXButton",
+            "palette.tool.spotlight": "AXButton",
+            "palette.tools.overflow": "AXPopUpButton",
+            "palette.emoji": "AXPopUpButton",
+            "palette.style.color": "AXColorWell",
+            "palette.style.stroke-width": "AXSlider",
+            "palette.style.opacity": "AXSlider",
+            "palette.spotlight.radius": "AXSlider",
+            "palette.spotlight.dimness": "AXSlider",
+            "palette.undo": "AXButton",
+            "palette.clear": "AXButton",
+            "palette.delete": "AXButton",
+            "palette.status": "AXStaticText",
+            "pointer.menu-bar": "AXButton",
+        ]
+        for (identifier, expectedRole) in expectedPaletteRoles {
+            let row = try XCTUnwrap(byIdentifier[identifier], identifier)
+            XCTAssertNotEqual(row.role, "AXUnknown", identifier)
+            XCTAssertEqual(row.role, expectedRole, identifier)
+        }
+
+        palette.paletteViewController.applyLayout(for: 760)
+        let compactMetadata = inventory.metadata()
+        let overflowRows = compactMetadata.filter {
+            $0.identifier == "palette.overflow.header"
+                || $0.identifier.hasPrefix("palette.overflow.tool.")
+        }
+        XCTAssertFalse(overflowRows.isEmpty)
+        XCTAssertTrue(overflowRows.allSatisfy { $0.role == "AXMenuItem" })
+        XCTAssertTrue(overflowRows.allSatisfy { $0.role != "AXUnknown" })
+    }
+
     func testPaletteAndMenuMetadataIsCompleteAndKeyboardReachable() throws {
         let provider = AccessibilityScreenProvider()
         let coordinator = DisplayCoordinator(

@@ -234,6 +234,7 @@ Changed paths in this worker diff:
 - `Tests/PointerAppKitTests/CommandRouterTests.swift`
 - `Tests/PointerAppKitTests/GuideIntegrationTests.swift`
 - `Tests/PointerAppKitTests/PaletteInteractionTests.swift`
+- `Tests/PointerAppKitTests/AccessibilityMetadataTests.swift`
 - `Tests/PointerAppKitTests/PointerApplicationControllerTests.swift`
 - `.codex/sdd/reports/pointer-c-phase-reconciliation.md`
 
@@ -268,6 +269,40 @@ trialCount=30, rendererTimed=false, compositorTimed=false
 git diff --check
 exit 0
 ```
+
+## Metadata role correction
+
+The real AppKit metadata fixture exposed a host-specific accessibility gap: the
+native role query returns `AXUnknown` as a non-`nil` value for several palette
+controls and the status-item button. The previous helper treated that value as
+authoritative, so the type fallback was skipped. The helper now treats both
+`nil` and `AXUnknown` as missing, preserves any other native role, and maps
+known control types to their concrete roles (`NSButton` to `AXButton`,
+`NSPopUpButton` to `AXPopUpButton`, `NSColorWell` to `AXColorWell`, `NSSlider`
+to `AXSlider`, and `NSTextField` to `AXStaticText`). Menu items use the same
+missing-role rule and retain their `AXMenuItem` fallback.
+
+The regression test was written and run RED before the production change:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'AccessibilityMetadataTests/testRealPaletteAndMenuMetadataUsesConcreteNativeRoles'
+exit 1
+20 real palette/menu-bar controls reported AXUnknown (40 role assertions)
+```
+
+After the minimal helper change, the same fixture ran GREEN:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'AccessibilityMetadataTests/testRealPaletteAndMenuMetadataUsesConcreteNativeRoles'
+exit 0
+1 passed, 0 failed
+```
+
+The matrix covers mode, all eight tools, overflow, emoji, color, all four
+sliders, undo, clear, delete, status, and `pointer.menu-bar`; compact-layout
+overflow headers and tool rows are also asserted as `AXMenuItem`. The existing
+dirty A-owned `ControlMetadataHarnessTests.swift` and
+`pointer-a-harness-metadata-report.md` paths were preserved and not edited.
 
 ## Remaining verification / concerns
 
