@@ -10,9 +10,10 @@ WindowServer composition, launch, allocations, or memory.
 No production source was changed. The focused test now runs the default
 benchmark configuration and checks the complete serialized shape. The Release
 script now decodes the JSON with Foundation and validates typed fields,
-top-level key identity, array lengths and values, positive finite trial/median/
-p95 timings, non-negative finite MAD, publication boundaries, checksum/final
-state, and model-only exclusions.
+top-level key identity, duplicate-key rejection, array lengths and values,
+positive finite trial/median/p95 timings, non-negative finite MAD, exact
+median/nearest-rank p95/MAD recomputation, publication boundaries,
+checksum/final state, and model-only exclusions.
 
 ## Observed Release result
 
@@ -30,9 +31,9 @@ Result: passed.
 | Continuation samples | 240 |
 | Warmups | 5 |
 | Measured trials | 30 |
-| Median | 139812.5 ns |
-| p95 | 149417 ns |
-| MAD | 1229 ns |
+| Median | 113375 ns |
+| p95 | 123750 ns |
+| MAD | 562.5 ns |
 | Publications per gesture | 30 entries, each `2` |
 | Model checksum | `882b4fb5d86096de` |
 | Checksum stable | `true` |
@@ -49,16 +50,26 @@ The MAD validator accepts an exact zero (absolute deviation can legitimately
 be zero), rejects negative values, and rejects non-finite JSON input. The
 focused regression fixture covers all four cases.
 
+Both XCTest and the Release validator recompute aggregates from the 30 trial
+samples using the benchmark's exact median, nearest-rank p95, and MAD
+algorithms. Literal tampered-median, tampered-p95, and tampered-MAD fixtures
+are rejected. The Release validator scans the raw top-level object before
+Foundation decoding, rejects duplicate names including escaped-equivalent
+`warmupCount`, and self-checks escaped strings plus nested arrays/objects.
+
 ## Verification
 
 - TDD RED: a temporary `trialCount == 29` assertion failed with the observed
   value `30`; it was restored to the required literal before GREEN.
+- TDD RED: aggregate assertions initially referenced missing recomputation and
+  tamper-validation helpers; the compile failure was resolved by adding the
+  independent literal algorithms and fixtures.
 - Focused GREEN:
   `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter GestureBenchmarkTests`
-  — 2 tests, 0 failures.
+  — 3 tests, 0 failures.
 - Full suite:
   `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test`
-  — 341 tests, 0 failures.
+  — 342 tests, 0 failures.
 - Build:
   `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build`
   — passed.
