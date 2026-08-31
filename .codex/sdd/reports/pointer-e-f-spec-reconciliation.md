@@ -26,8 +26,8 @@ claim that E/F implementation or physical evidence exists.
 | Clean clone | Canonical input cleanliness is captured before any source-root write, excluding generated reports/build products and the final evidence output; temporary evidence stays under `$fixture`. The script validates `checkpointCommitSHA` and foundation/current manifests, build provenance, then tests, directly invokes the built executable with `--smoke --format json`, and runs `verify.sh`; it atomically publishes final `CleanCloneIdentity.md` on success or failure, and an immediate rerun must remain reproducible. |
 | Chrome friction | F reruns the authoritative `ChromeFrictionReport` against the final F candidate and records the full immutable E baseline hash. D's Chrome checkpoint is historical provenance only and is never silently relabeled as final evidence. |
 | Pair eligibility | E defines typed `PerformancePairEligibility`/validated foundation provenance arguments. The CLI/script constructs eligibility only after root/ref/clean/head/ancestry/foundation checks and exact `pairsPerOrder == 15`/derived `totalPairs == 30`; the harness revalidates report/provenance equality and direct fabricated eligibility cannot bypass it. |
-| Measurement identities | `PerformanceComparisonReport` carries full `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values, plus equal persisted `baselineFixture`/`candidateFixture` values matching the measurement reports. Pair preflight requires exact equality for host model, macOS, Xcode, developerDirectory, power/display state, and buildConfiguration; source commits remain distinct and provenance-matched. Every metric has its canonical `PerformanceMetricUnit`, finite strictly positive baseline/candidate samples, and nonempty ratio/delta arrays of exactly `totalPairs` entries. |
-| Metric budgets | `budgetLimit` is optional and canonical: 16.7 milliseconds for `combinedFrame`, 100 milliseconds for `responsiveness` and `inputToVisible`, nil for other metrics, and never an absolute RSS p95 for `memoryRSS`. Completion recomputes ratio median/p95 ≤1.10 and candidate p95 only for the three budgeted metrics; wrong, huge, missing, or unexpected budgets/units are rejected. |
+| Measurement identities | `PerformanceComparisonReport` carries full `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values, plus equal persisted `baselineFixture`/`candidateFixture` values matching the measurement reports. Pair preflight requires exact equality for host model, macOS, Xcode, developerDirectory, power/display state, and buildConfiguration; source commits remain distinct and provenance-matched. Every metric has its canonical `PerformanceMetricUnit`, finite strictly positive baseline/candidate samples, and nonempty ratio/delta arrays of exactly `totalPairs` entries. It also carries lowercase 64-hex `baselineMeasurementReportSHA256` and `candidateMeasurementReportSHA256` values computed from and verified against the exact input report bytes before the comparison is written; F retains those input reports unchanged. For `memoryRSS`, comparison samples are strictly positive absolute RSS bytes; signed `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) remain measurement-report fields validated during pair preflight, not comparison sample units. |
+| Metric budgets | `budgetLimit` is optional and canonical: 16.7 milliseconds for `combinedFrame`, 100 milliseconds for `responsiveness` and `inputToVisible`, nil for other metrics, and never an absolute RSS p95 for `memoryRSS`. Completion recomputes ratio median/p95 ≤1.10 and candidate p95 only for the three budgeted metrics. It also requires candidate renderer p95 plus compositor p95 ≤16.7 milliseconds and candidate `combinedFrame` p95 ≤16.7 milliseconds; wrong, huge, missing, or unexpected budgets/units are rejected. |
 | Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies typed eligibility from the shell's roots/refs/foundation checks and then rejects any failed/unmeasured required input before constructing or writing a comparison; the CLI consumes only `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`, `--manual-evidence-dir`, and `--output-dir`, and persisted comparison reports contain measured comparisons only. |
 | Required prerequisites | F-final requires accepted A-harness real-guide lifecycle evidence from `pointer-a-harness-lifecycle-report.md` and `pointer-a-harness-phase-report.md`, where the real `FirstUseGuideController`/panel is injected through controller start/stop/restart, plus the canonical 420-point narrow-display evidence. A static guide/catalog test or stale narrow-display report cannot substitute for either prerequisite. |
 
@@ -86,6 +86,10 @@ claim that E/F implementation or physical evidence exists.
   measurement identities, fixture equality, positive budgets/baselines, and
   exact nonempty arrays with canonical units, optional metric budgets, and
   recomputed ratio/p95 gates.
+- Clarified that `memoryRSS` comparison samples are strictly positive absolute
+  RSS bytes while signed final-window delta and post-warmup slope remain
+  preflight-validated measurement fields; added exact input-report SHA fields,
+  writer verification, and renderer-plus-compositor/`combinedFrame` p95 gates.
 
 ### F integration plan
 
@@ -110,6 +114,9 @@ claim that E/F implementation or physical evidence exists.
   build-provenance validation and direct built-executable smoke before
   `verify.sh` in clean-clone order. Clean-clone now captures canonical input
   cleanliness before writes and keeps temporary evidence under `$fixture`.
+- F retains the exact E measurement reports used to compute the comparison and
+  verifies their persisted SHA fields; final completion also enforces the
+  renderer-plus-compositor and `combinedFrame` 16.7 ms p95 gates.
 
 ## Remaining unknowns and explicit follow-up
 

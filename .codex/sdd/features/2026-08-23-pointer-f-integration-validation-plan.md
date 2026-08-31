@@ -77,9 +77,9 @@ pair ancestry or baseline/candidate claim. E's
 - F's final aggregation consumes E's variant reports only from
   `.codex/sdd/reports/quality-campaign/performance/measurements/**`, their
   typed provenance artifacts from `provenance/**`, paired reports from
-  `comparisons/**`, and resilience evidence from `resilience/**`; F writes
-  links/summaries under `final/**` and never creates direct-root performance
-  JSON.
+  `comparisons/**`, and resilience evidence from `resilience/**`; F retains the
+  exact E input reports unchanged, writes links/summaries under `final/**`,
+  and never creates direct-root performance JSON.
 - The clean-clone gate observes its committed source identity and clean status
   at execution time. It is unavailable until the coordinator provides a
   committed campaign identity containing the reconciled implementation, tests,
@@ -562,15 +562,24 @@ proof and marks missing/indirect/unsupported rows incomplete. It validates the
 comparison's full `baselineMeasurementIdentity` and
 `candidateMeasurementIdentity`, exact host/macOS/Xcode/developerDirectory/
 power/display/buildConfiguration equality, distinct source commits matching
-run/build provenance, and nonempty ratio/delta arrays of exactly
-`totalPairs == pairsPerOrder * 2`. It also validates equal persisted
+run/build provenance, persisted lowercase 64-hex
+`baselineMeasurementReportSHA256`/`candidateMeasurementReportSHA256` hashes
+bound to the exact input report bytes; `writeComparison` computes and verifies
+those hashes before output, and F retains the exact input reports unchanged.
+It also requires nonempty ratio/delta arrays of
+exactly `totalPairs == pairsPerOrder * 2`. It also validates equal persisted
 `baselineFixture`/`candidateFixture` values against their measurement reports,
 the canonical `PerformanceMetricUnit`, finite strictly positive baseline and
 candidate samples, and recomputed ratio median/p95 at most `1.10`. Absolute
 `budgetLimit` is optional and must equal the canonical value only for
 `combinedFrame` (16.7 ms), `responsiveness` (100 ms), and `inputToVisible`
-(100 ms); other metrics must carry nil budgets, and `memoryRSS` uses delta/
-slope rather than absolute RSS p95. The report also
+(100 ms); other metrics must carry nil budgets. For `memoryRSS`, comparison
+samples are strictly positive absolute RSS bytes; signed
+`finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) remain
+measurement-report fields validated during pair preflight, not comparison
+sample units or an absolute RSS p95. It also rejects a candidate whose renderer
+p95 plus compositor p95 exceeds 16.7 ms or whose combinedFrame p95 exceeds
+16.7 ms. The report also
 links the canonical 420-point narrow-display evidence and accepted A-harness
 real-guide evidence before marking F-final complete.
 

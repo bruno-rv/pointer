@@ -476,6 +476,11 @@ neither a previous report nor a documentation claim can satisfy it.
         ) throws -> PerformanceComparisonReport
     }
 
+`writeComparison` hashes the exact bytes at `baselineURL` and `candidateURL`,
+requires lowercase 64-hex values, verifies those values before writing the
+comparison, and stores them as
+`baselineMeasurementReportSHA256`/`candidateMeasurementReportSHA256`.
+
     public struct PerformanceComparisonReport: Codable, Sendable {
         public let reportKind: PerformanceReportKind
         public let schemaVersion: Int
@@ -490,6 +495,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateMeasurementIdentity: MeasurementIdentity
         public let baselineFixture: FixtureIdentity
         public let candidateFixture: FixtureIdentity
+        public let baselineMeasurementReportSHA256: String
+        public let candidateMeasurementReportSHA256: String
         public let pairEligibility: PerformancePairEligibility
         public let baselineID: String
         public let candidateID: String
@@ -552,12 +559,15 @@ neither a previous report nor a documentation claim can satisfy it.
 
 The canonical metric map is a private validator table, not a public Codable
 type: `model` uses nanoseconds with no absolute
-budget; `renderer`, `compositor`, `launchCold`, `launchWarm`, `redrawLayout`,
+budget; `renderer`, `compositor`, `combinedFrame`, `launchCold`, `launchWarm`,
+`redrawLayout`,
 `responsiveness`, and `inputToVisible` use milliseconds, with absolute budgets
 only for `combinedFrame` (`16.7`) and `responsiveness`/`inputToVisible`
 (`100`). `allocations` uses bytes with no absolute budget. `memoryRSS` uses
-bytes for the final-window delta and post-warmup slope, never an absolute RSS
-p95, and has no absolute `budgetLimit`. The unit and optional budget are
+strictly positive absolute RSS bytes for `MetricComparison` samples; its
+signed `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) remain
+measurement-report fields validated during pair preflight, never comparison
+sample units or an absolute-p95 budget. The unit and optional budget are
 serialized in each `MetricComparison`; the validator rejects a wrong unit,
 missing required budget, huge/wrong value, or unexpected budget on an
 unbudgeted metric. These are canonical values, not report-supplied thresholds.
@@ -609,19 +619,28 @@ positive only when that metric has an absolute budget). It requires nonempty
 ratio/delta arrays with exactly
 `configuration.totalPairs` (`pairsPerOrder * 2`) entries for every metric,
 equal-length paired sample arrays, and finite strictly positive baseline and
-candidate samples so each ratio is exact. `validateCompletion()` recomputes every ratio,
+candidate samples so each ratio is exact; for `memoryRSS`, comparison samples
+are strictly positive absolute RSS bytes while signed
+`finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) stay in the
+measurement report and are validated during pair preflight, not as comparison
+sample units.
+`validateCompletion()` recomputes every ratio,
 the ratio median, and the ratio p95; both ratio summaries must be at most
 `1.10`. For metrics with a canonical absolute budget, it also recomputes
 candidate p95 in that metric's unit and requires it to be at most the canonical
-limit. `memoryRSS` is validated using its delta/slope fields and never an
-absolute RSS p95. Empty arrays, nonfinite or nonpositive baseline or candidate
+limit. `memoryRSS` is validated using absolute-RSS comparison samples plus its
+report-level delta/slope, never an absolute-RSS p95 budget. Empty arrays,
+nonfinite or nonpositive baseline or candidate
 samples, stale supplied ratios/deltas, wrong units, missing/huge/unexpected
 budgets, or budget/ratio breaches are rejected. It also requires valid
 `BootstrapInterval` values and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
 steps, result, and evidence path); a deterministic metric must have nil manual
 evidence. Deterministic comparisons require at least 30 samples. Its
-`validateCompletion()` validates only this measured comparison shape and never
+`validateCompletion()` also requires the candidate renderer p95 plus candidate
+compositor p95 to be at most the canonical `combinedFrame` limit of 16.7 ms,
+and requires candidate combinedFrame p95 to be at most 16.7 ms. It validates
+only this measured comparison shape and never
 turns a rejected input into a persisted failed/unmeasured status. The
 `PerformancePairEligibility` argument is constructed only after the CLI/script
 verifies both explicit output roots, clean checkout/head-to-commit
@@ -812,6 +831,7 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonCompletionRecomputesRatioAndCandidateP95()
     func testMetricComparisonRejectsWrongUnitAndUnexpectedBudget()
     func testMemoryComparisonUsesDeltaAndSlopeNotAbsoluteP95()
+    func testComparisonRejectsRendererPlusCompositorBudgetBreach()
     func testBootstrapIntervalOnlyClaimsImprovementWhenUpperBoundIsBelowZero()
     func testBudgetRegressionAndMissingMetricDispositionIsRevise()
     func testResilienceReportCoversModeToolsMarksClearUndoDisplayChurnAndShortcutTimeout()
@@ -826,6 +846,9 @@ Also assert full `baselineMeasurementIdentity` and
 Xcode, developerDirectory, power/display state, and buildConfiguration, with
 distinct source commits matching each run/build provenance. Require nonempty
 ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
+Round-trip lowercase 64-hex `baselineMeasurementReportSHA256` and
+`candidateMeasurementReportSHA256` fields, and assert the writer computes and
+verifies them against the exact input report bytes before emitting output.
 Round-trip persisted `baselineFixture` and `candidateFixture` values, assert
 they are equal and match the corresponding measurement reports, reject
 nonfinite or nonpositive baseline/candidate samples or
@@ -833,8 +856,12 @@ nonfinite/nonpositive `budgetLimit`, and prove
 completion recomputes ratio median/p95 at most `1.10` and candidate p95 within
 the canonical absolute budget. Round-trip `MetricComparison.unit`, reject
 wrong-unit and unexpected/huge/missing budgets against the canonical metric
-map, and verify `memoryRSS` uses delta/slope evidence rather than absolute RSS
-p95.
+map, and verify `memoryRSS` comparison samples are strictly positive absolute
+RSS bytes while signed `finalWindowDeltaBytes` and
+`postWarmupSlopeBytesPerSecond` (B/s) remain measurement-report fields
+validated during pair preflight, not comparison sample units.
+Reject a candidate whose renderer p95 plus compositor p95 exceeds 16.7 ms,
+or whose combinedFrame p95 exceeds 16.7 ms.
 Also assert source/content identities, host/build/fixture fields, five
 warmups, `pairsPerOrder == 15`, derived `totalPairs == 30`, exactly 15
 baseline-first plus 15 candidate-first pairs, ratio

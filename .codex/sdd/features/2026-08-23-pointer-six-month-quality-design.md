@@ -900,6 +900,10 @@ Acceptance criteria:
   `.codex/sdd/reports/quality-campaign/performance/comparisons/**` with
   a typed `reportKind: .comparison`, full
   `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values,
+  lowercase 64-hex `baselineMeasurementReportSHA256` and
+  `candidateMeasurementReportSHA256` values binding the persisted comparison
+  to the exact input report bytes; `writeComparison` computes and verifies
+  those hashes before output, and F retains the exact input reports unchanged,
   paired ratios, bootstrap intervals, budget results, and an unambiguous
   disposition. `Pointer --quality-performance --format json` emits one
   `PerformanceMeasurementReport`, and `Pointer --quality-compare --format
@@ -924,8 +928,12 @@ Acceptance criteria:
   nonempty ratio/delta arrays of exactly
   `totalPairs == pairsPerOrder * 2` entries; completion recomputes ratio
   median/p95 at most `1.10` and candidate p95 within the canonical budget only
-  for those three budgeted metrics; `memoryRSS` uses delta/slope, not absolute
-  RSS p95.
+  for those three budgeted metrics. For `memoryRSS`, comparison samples are
+  strictly positive absolute RSS bytes; signed `finalWindowDeltaBytes` and
+  `postWarmupSlopeBytesPerSecond` (B/s) remain measurement-report fields
+  validated during pair preflight, not comparison sample units or an absolute
+  RSS p95. Completion also requires candidate renderer p95 plus compositor p95
+  and candidate combinedFrame p95 each to be at most 16.7 ms.
   Empty arrays never pass schema validation.
   No unsuffixed generic performance-report type is a valid schema or output.
 - Model, renderer, compositor, launch, and memory are separate actual harness
