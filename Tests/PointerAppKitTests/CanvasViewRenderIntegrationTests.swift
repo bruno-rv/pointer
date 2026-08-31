@@ -270,6 +270,57 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
         let nestedCommittedScanPattern = #"committedCanvas\s*\.\s*marks\s*\.\s*contains"#
         XCTAssertNotNil(source.range(of: committedIDSetPattern, options: .regularExpression))
         XCTAssertNil(source.range(of: nestedCommittedScanPattern, options: .regularExpression))
+
+        let commentAndStringFixture = """
+        public override func draw(_ dirtyRect: NSRect) {
+            // MarkRenderer.draw(plan: renderPlan)
+            /* MarkRenderer.draw(plan: renderPlan) */
+            let message = "MarkRenderer.draw(plan: \\\"renderPlan\\\")"
+        }
+        """
+        let commentAndStringBody = try XCTUnwrap(
+            functionBody(
+                named: "public override func draw(_ dirtyRect: NSRect)",
+                in: commentAndStringFixture
+            )
+        )
+        XCTAssertFalse(commentAndStringBody.contains("MarkRenderer"))
+        XCTAssertNil(commentAndStringBody.range(of: planCallPattern, options: .regularExpression))
+
+        let executablePlanFixture = """
+        public override func draw(_ dirtyRect: NSRect) {
+            MarkRenderer.draw(
+                plan: renderPlan,
+                in: bounds,
+                context: context
+            )
+        }
+        """
+        let executablePlanBody = try XCTUnwrap(
+            functionBody(
+                named: "public override func draw(_ dirtyRect: NSRect)",
+                in: executablePlanFixture
+            )
+        )
+        XCTAssertNotNil(executablePlanBody.range(of: planCallPattern, options: .regularExpression))
+
+        let executableCanvasFixture = """
+        public override func draw(_ dirtyRect: NSRect) {
+            MarkRenderer.draw(
+                canvas: canvas,
+                in: bounds,
+                context: context
+            )
+        }
+        """
+        let executableCanvasBody = try XCTUnwrap(
+            functionBody(
+                named: "public override func draw(_ dirtyRect: NSRect)",
+                in: executableCanvasFixture
+            )
+        )
+        XCTAssertNil(executableCanvasBody.range(of: planCallPattern, options: .regularExpression))
+        XCTAssertNotNil(executableCanvasBody.range(of: legacyCallPattern, options: .regularExpression))
     }
 
     private func functionBody(named signature: String, in source: String) -> String? {
@@ -286,6 +337,7 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
 
         var state = LexicalState.code
         var depth = 1
+        var codeOnly: [Character] = []
         var index = openingBrace + 1
         while index < suffix.count {
             let character = suffix[index]
@@ -295,16 +347,19 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
             switch state {
             case .code:
                 if character == "/", nextCharacter == "/" {
+                    codeOnly.append(" ")
                     state = .lineComment
                     index += 2
                     continue
                 }
                 if character == "/", nextCharacter == "*" {
+                    codeOnly.append(" ")
                     state = .blockComment(depth: 1)
                     index += 2
                     continue
                 }
                 if character == "\"" {
+                    codeOnly.append(" ")
                     if nextCharacter == "\"", nextNextCharacter == "\"" {
                         state = .string(delimiterLength: 3, escaped: false)
                         index += 3
@@ -319,13 +374,15 @@ final class CanvasViewRenderIntegrationTests: XCTestCase {
                 } else if character == "}" {
                     depth -= 1
                     if depth == 0 {
-                        return String(suffix[(openingBrace + 1)..<index])
+                        return String(codeOnly)
                     }
                 }
+                codeOnly.append(character)
                 index += 1
             case .lineComment:
                 if character == "\n" {
                     state = .code
+                    codeOnly.append(character)
                 }
                 index += 1
             case .blockComment(let commentDepth):

@@ -2,8 +2,10 @@
 
 ## Scope
 
-The reviewed B render seam landed at commit `6af9073` (based on `99a7241`).
-This follow-up tightens that implementation without changing
+The reviewed B render seam and performance hardening are committed on the
+branch at `6f4a7ab` (based on `99a7241` through `6af9073`). The review
+checkpoint used a clean worktree. This reconciliation preserves that result
+without changing
 PointerCore gesture semantics, OverlayPanel forwarding, DisplayCoordinator
 lifecycle logic, or the D renderer/plan contracts.
 
@@ -13,10 +15,10 @@ Changed files:
 - `Tests/PointerAppKitTests/CanvasViewRenderIntegrationTests.swift`
 - `.codex/sdd/reports/pointer-b-render-integration-report.md`
 
-The current worktree contains the follow-up production optimization (materialize
-committed mark IDs once per plan update), stronger source/callback tests, and
-the corrected report. These follow-up edits are uncommitted; no additional
-commit was created.
+The reviewed branch state is committed at `6f4a7ab`, and the review checkpoint
+was clean. This report records that state and its reconciled acceptance
+evidence; repository history remains authoritative for the final reviewed
+artifact.
 
 ## Implementation
 
@@ -62,7 +64,10 @@ The suite proves:
 - a whitespace-tolerant regex source guard extracts the actual `draw(_:)` body,
   requires the plan renderer overload there, and rejects any legacy
   `MarkRenderer.draw(canvas: ...)` call there; a second guard verifies the
-  committed-ID `Set` avoids an O(N²) nested committed-mark scan;
+  committed-ID `Set` avoids an O(N²) nested committed-mark scan; adversarial
+  fixtures prove comment, block-comment, and escaped string text cannot satisfy
+  the guard while executable plan code does and executable canvas code is
+  rejected;
 - the real view is attached to a non-visible borderless `NSWindow` and remains
   non-visible while rendered through a fixed 512×512 sRGB RGBA8 bitmap context.
 
