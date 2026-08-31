@@ -15,7 +15,8 @@ Synchronized contract documentation: `121fdbf`.
   immutable source/build/run/foundation identities, fixed configuration (with
   `pairsPerOrder` and derived `totalPairs`), all measurement payloads,
   resilience/resource types, and the shared bootstrap interval value type for
-  later comparison work.
+  later comparison work. Schema v1 now also carries raw frame, redraw/layout,
+  responsiveness, and input-to-visible timing arrays.
 
 ## Validation decisions
 
@@ -58,8 +59,10 @@ Synchronized contract documentation: `121fdbf`.
   positive slope within the tolerance remains acceptable, while NaN or
   infinity is rejected even for failed/unmeasured reports with no samples.
 - Measured model, frame, launch, allocation, redraw/layout, and input evidence
-  counts must match the fixture/trial configuration; diagnostic failed or
-  unmeasured objects may retain partial arrays. Completion additionally
+  counts must match the fixture/trial configuration, and each raw timing
+  array is finite, strictly positive, cardinality-aligned, and the source of
+  truth for its p95 value. Diagnostic failed or unmeasured objects carry empty
+  raw arrays while retaining finite scalar diagnostics. Completion additionally
   requires the exact standard configuration, Release build identity and
   provenance, and a valid non-nil accepted foundation artifact hash echoed by
   run provenance.
@@ -82,8 +85,12 @@ configuration cardinality, diagnostic status preservation, nonstandard/debug
 diagnostic configurations, named authoritative accepted-foundation rejection,
 and completion acceptance/rejection.
 
-Current verification remains 20 focused tests and 362 tests across the full
-suite; the implementation and synchronized contract documentation are
+Three selected raw-array/round-trip schema tests pass in the focused target.
+The shared branch currently has 27 Task3-integrated tests; its remaining
+integration failure is the separately owned OffscreenCanvasRendererAdapter
+still emitting a measured frame with no raw samples. The raw-array schema
+addition is a pre-release working-tree change pending that adapter handoff;
+the prior implementation and synchronized contract documentation are
 committed as noted above.
 
 The implementation intentionally stops at schema/validation. Instrumentation,

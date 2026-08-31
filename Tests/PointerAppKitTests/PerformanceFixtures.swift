@@ -143,7 +143,7 @@ enum PerformanceFixtures {
         steps: "Trigger the first-use guide and record input-to-visible latency.",
         samples: Array(repeating: 25, count: configuration.trialCount),
         result: "All samples remained below the 100 ms budget.",
-        evidencePath: "comparisons/manual/inputToVisible.json"
+        evidencePath: "inputToVisible.json"
     )
 
     static func metricComparisons(manualMetric: PerformanceMetricID? = nil) -> [MetricComparison] {
@@ -164,7 +164,10 @@ enum PerformanceFixtures {
             let baselineSamples = (0..<configuration.trialCount).map { index in
                 startingValue + ((metricID == .renderer || metricID == .compositor) ? 0 : Double(index) * 0.1)
             }
-            let candidateSamples = baselineSamples.map { $0 - delta }
+            let candidateSamples = metricID == manualMetric ? manualEvidence.samples : baselineSamples.map { $0 - delta }
+            let ratios = zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline }
+            let deltas = zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline }
+            let bootstrap = PerformanceComparisonBootstrap.interval(deltas: deltas, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples)
             let evidenceClass: MetricEvidenceClass = metricID == manualMetric ? .manual : .deterministic
             return MetricComparison(
                 metricID: metricID,
@@ -174,12 +177,13 @@ enum PerformanceFixtures {
                 candidateID: commit,
                 baselineSamples: baselineSamples,
                 candidateSamples: candidateSamples,
-                ratios: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline },
-                deltas: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline },
+                ratios: ratios,
+                deltas: deltas,
                 budgetLimit: metricID.canonicalBudgetLimit,
-                bootstrapInterval: BootstrapInterval(lowerDelta: -delta, upperDelta: -delta, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
+                bootstrapInterval: bootstrap,
                 manualEvidence: metricID == manualMetric ? manualEvidence : nil,
-                disposition: .acceptedNoRegression
+                disposition: .acceptedNoRegression,
+                improvementClaimed: bootstrap.upperDelta < 0
             )
         }
     }
@@ -203,6 +207,7 @@ enum PerformanceFixtures {
         status: .measured,
         sampleCount: 30,
         p95Milliseconds: 3.0,
+        frameMilliseconds: Array(repeating: 2.0, count: 28) + [3.0, 3.0],
         frameCount: 30,
         missedFrameCount: 0,
         instrumentationStatus: "offscreen-cgcontext"
@@ -212,6 +217,7 @@ enum PerformanceFixtures {
         status: .measured,
         sampleCount: 30,
         p95Milliseconds: 2.0,
+        frameMilliseconds: Array(repeating: 1.0, count: 28) + [2.0, 2.0],
         frameCount: 30,
         missedFrameCount: 0,
         instrumentationStatus: "windowserver-signpost"
@@ -221,6 +227,7 @@ enum PerformanceFixtures {
         status: .measured,
         sampleCount: 30,
         p95Milliseconds: 5.0,
+        frameMilliseconds: Array(repeating: 4.0, count: 28) + [5.0, 5.0],
         frameCount: 30,
         missedFrameCount: 0,
         instrumentationStatus: "render-plus-compositor"
@@ -242,21 +249,24 @@ enum PerformanceFixtures {
         status: .measured,
         redrawsPerSample: Array(repeating: 1, count: configuration.trialCount),
         layoutPasses: Array(repeating: 1, count: configuration.trialCount),
-        p95Milliseconds: 1.5
+        p95Milliseconds: 1.5,
+        sampleMilliseconds: Array(repeating: 1.0, count: 28) + [1.5, 1.5]
     )
 
     static let responsiveness = ResponsivenessMeasurement(
         status: .measured,
         stallCount: 0,
         maximumMainThreadStallMilliseconds: 20,
-        p95ResponseMilliseconds: 10
+        p95ResponseMilliseconds: 10,
+        responseMilliseconds: Array(repeating: 8.0, count: 28) + [10.0, 10.0]
     )
 
     static let inputToVisible = InputToVisibleMeasurement(
         status: .measured,
         sampleCount: 30,
         p95Milliseconds: 25,
-        missedSampleCount: 0
+        missedSampleCount: 0,
+        sampleMilliseconds: Array(repeating: 20.0, count: 28) + [25.0, 25.0]
     )
 
     static let resources = ResourceCounts(
@@ -453,7 +463,7 @@ enum PerformanceFixtures {
             ModelMeasurement(status: measurementStatus, trialNanoseconds: value.trialNanoseconds, medianNanoseconds: value.medianNanoseconds, p95Nanoseconds: value.p95Nanoseconds, madNanoseconds: value.madNanoseconds, publicationCount: value.publicationCount, modelChecksum: value.modelChecksum, finalStateValid: value.finalStateValid)
         }
         func frameWithStatus(_ value: FrameMeasurement) -> FrameMeasurement {
-            FrameMeasurement(status: measurementStatus, sampleCount: value.sampleCount, p95Milliseconds: value.p95Milliseconds, frameCount: value.frameCount, missedFrameCount: value.missedFrameCount, instrumentationStatus: value.instrumentationStatus)
+            FrameMeasurement(status: measurementStatus, sampleCount: measurementStatus == .measured ? value.sampleCount : 0, p95Milliseconds: value.p95Milliseconds, frameMilliseconds: measurementStatus == .measured ? value.frameMilliseconds : [], frameCount: measurementStatus == .measured ? value.frameCount : 0, missedFrameCount: measurementStatus == .measured ? value.missedFrameCount : 0, instrumentationStatus: value.instrumentationStatus)
         }
         return PerformanceMeasurementReport(
             reportKind: report.reportKind,
@@ -472,9 +482,9 @@ enum PerformanceFixtures {
             combinedFrame: frameWithStatus(report.combinedFrame),
             launch: LaunchMeasurement(status: measurementStatus, coldMilliseconds: report.launch.coldMilliseconds, warmMilliseconds: report.launch.warmMilliseconds),
             allocations: AllocationMeasurement(status: measurementStatus, bytesPerGesture: report.allocations.bytesPerGesture, peakAllocationBytes: report.allocations.peakAllocationBytes),
-            redrawLayout: RedrawLayoutMeasurement(status: measurementStatus, redrawsPerSample: report.redrawLayout.redrawsPerSample, layoutPasses: report.redrawLayout.layoutPasses, p95Milliseconds: report.redrawLayout.p95Milliseconds),
-            responsiveness: ResponsivenessMeasurement(status: measurementStatus, stallCount: report.responsiveness.stallCount, maximumMainThreadStallMilliseconds: report.responsiveness.maximumMainThreadStallMilliseconds, p95ResponseMilliseconds: report.responsiveness.p95ResponseMilliseconds),
-            inputToVisible: InputToVisibleMeasurement(status: measurementStatus, sampleCount: report.inputToVisible.sampleCount, p95Milliseconds: report.inputToVisible.p95Milliseconds, missedSampleCount: report.inputToVisible.missedSampleCount),
+            redrawLayout: RedrawLayoutMeasurement(status: measurementStatus, redrawsPerSample: measurementStatus == .measured ? report.redrawLayout.redrawsPerSample : [], layoutPasses: measurementStatus == .measured ? report.redrawLayout.layoutPasses : [], p95Milliseconds: report.redrawLayout.p95Milliseconds, sampleMilliseconds: measurementStatus == .measured ? report.redrawLayout.sampleMilliseconds : []),
+            responsiveness: ResponsivenessMeasurement(status: measurementStatus, stallCount: measurementStatus == .measured ? report.responsiveness.stallCount : 0, maximumMainThreadStallMilliseconds: report.responsiveness.maximumMainThreadStallMilliseconds, p95ResponseMilliseconds: report.responsiveness.p95ResponseMilliseconds, responseMilliseconds: measurementStatus == .measured ? report.responsiveness.responseMilliseconds : []),
+            inputToVisible: InputToVisibleMeasurement(status: measurementStatus, sampleCount: measurementStatus == .measured ? report.inputToVisible.sampleCount : 0, p95Milliseconds: report.inputToVisible.p95Milliseconds, missedSampleCount: measurementStatus == .measured ? report.inputToVisible.missedSampleCount : 0, sampleMilliseconds: measurementStatus == .measured ? report.inputToVisible.sampleMilliseconds : []),
             memory: MemoryMeasurement(status: measurementStatus, windowSeconds: report.memory.windowSeconds, sampleIntervalSeconds: report.memory.sampleIntervalSeconds, samples: report.memory.samples, aggregates: report.memory.aggregates, peakRSSBytes: report.memory.peakRSSBytes, finalWindowDeltaBytes: report.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: report.memory.finalWindowDeltaPercent, postWarmupSlopeBytesPerSecond: report.memory.postWarmupSlopeBytesPerSecond, matchedBaselineSeries: report.memory.matchedBaselineSeries, matchedBaselineValues: report.memory.matchedBaselineValues, peakLiveResourceCounts: report.memory.peakLiveResourceCounts, endLiveResourceCounts: report.memory.endLiveResourceCounts),
             resilience: ResilienceMeasurement(status: measurementStatus, cases: report.resilience.cases.map { ResilienceCase(identifier: $0.identifier, status: measurementStatus, iterationCount: $0.iterationCount, peakResourceCounts: $0.peakResourceCounts, endResourceCounts: $0.endResourceCounts, leakedResource: $0.leakedResource, unexpectedGrowth: $0.unexpectedGrowth) }, disposition: report.resilience.disposition),
             disposition: report.disposition

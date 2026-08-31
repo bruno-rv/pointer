@@ -110,6 +110,13 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: shortDerived).validateStructure())
     }
 
+    func testComparisonRejectsPairOrderWithoutBothFixedOrders() throws {
+        var malformed = PerformanceFixtures.comparison().metrics
+        let value = malformed[0]
+        malformed[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: nil, disposition: value.disposition, pairOrders: Array(repeating: .baselineFirst, count: 30))
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: malformed).validateStructure())
+    }
+
     func testComparisonRejectsNonPositiveMetricSamples() throws {
         var zeroBaseline = PerformanceFixtures.comparison().metrics
         let value = zeroBaseline[0]
@@ -286,8 +293,10 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         let outputURL = temp.appendingPathComponent("comparisons/paired-comparison.json")
         try JSONEncoder().encode(PerformanceFixtures.baseline).write(to: baselineURL)
         try JSONEncoder().encode(PerformanceFixtures.candidate).write(to: candidateURL)
+        let manualEvidenceDirectory = temp.appendingPathComponent("manual", isDirectory: true)
+        try FileManager.default.createDirectory(at: manualEvidenceDirectory, withIntermediateDirectories: true)
 
-        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(draft: PerformanceFixtures.draft(), baselineURL: baselineURL, candidateURL: temp.appendingPathComponent("missing-candidate.json"), outputDirectory: outputURL.deletingLastPathComponent(), configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
+        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(draft: PerformanceFixtures.draft(), baselineURL: baselineURL, candidateURL: temp.appendingPathComponent("missing-candidate.json"), manualEvidenceDirectory: manualEvidenceDirectory, outputDirectory: outputURL.deletingLastPathComponent(), configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outputURL.path))
     }
 
@@ -303,7 +312,10 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         try baselineData.write(to: baselineURL)
         try candidateData.write(to: candidateURL)
         let outputDirectory = temp.appendingPathComponent("bound-output", isDirectory: true)
-        _ = try PerformanceComparisonHarness.writeComparison(draft: PerformanceFixtures.draft(), baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility)
+        let manualEvidenceDirectory = temp.appendingPathComponent("manual", isDirectory: true)
+        try FileManager.default.createDirectory(at: manualEvidenceDirectory, withIntermediateDirectories: true)
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: manualEvidenceDirectory)
+        _ = try PerformanceComparisonHarness.writeComparison(draft: draft, baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: manualEvidenceDirectory, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility)
         XCTAssertTrue(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
 
         let writtenData = try Data(contentsOf: outputDirectory.appendingPathComponent("paired-comparison.json"))
@@ -323,9 +335,11 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         let candidateData = try JSONEncoder().encode(PerformanceFixtures.candidate)
         try baselineData.write(to: baselineURL)
         try candidateData.write(to: candidateURL)
+        let manualEvidenceDirectory = temp.appendingPathComponent("manual", isDirectory: true)
+        try FileManager.default.createDirectory(at: manualEvidenceDirectory, withIntermediateDirectories: true)
         func assertRejected(_ label: String, draft: PerformanceComparisonDraft, eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility) {
             let outputDirectory = temp.appendingPathComponent(label, isDirectory: true)
-            XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(draft: draft, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: eligibility), "Expected \(label) mismatch to be rejected")
+            XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(draft: draft, baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: manualEvidenceDirectory, outputDirectory: outputDirectory, configuration: PerformanceFixtures.configuration, eligibility: eligibility), "Expected \(label) mismatch to be rejected")
             XCTAssertFalse(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
         }
 
@@ -356,7 +370,212 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
     func testValidPairPassesMeasuredPreflightButCompareRemainsTask3Owned() throws {
         XCTAssertNoThrow(try PerformanceComparisonHarness.preflight(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
         let manualEvidenceDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-manual-evidence-\(UUID().uuidString)", isDirectory: true)
-        XCTAssertThrowsError(try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: manualEvidenceDirectory))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: manualEvidenceDirectory.path))
+        try FileManager.default.createDirectory(at: manualEvidenceDirectory, withIntermediateDirectories: true)
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: manualEvidenceDirectory)
+        XCTAssertEqual(draft.metrics.count, PerformanceMetricID.allCases.count)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(at: manualEvidenceDirectory, includingPropertiesForKeys: nil).isEmpty)
+    }
+
+    func testComparisonCalculatesExactlyFifteenPairsPerOrderAndDerivedValues() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let draft = try PerformanceComparisonHarness.compare(
+            baseline: PerformanceFixtures.baseline,
+            candidate: PerformanceFixtures.candidate,
+            configuration: PerformanceConfiguration.standard,
+            eligibility: PerformanceFixtures.eligibility,
+            manualEvidenceDirectory: directory
+        )
+
+        XCTAssertEqual(draft.seed, 48271)
+        XCTAssertEqual(draft.resampleCount, 10_000)
+        for metric in draft.metrics {
+            XCTAssertEqual(metric.baselineSamples.count, 30, metric.metricID.rawValue)
+            XCTAssertEqual(metric.candidateSamples.count, 30, metric.metricID.rawValue)
+            XCTAssertEqual(metric.pairOrders.filter { $0 == .baselineFirst }.count, 15, metric.metricID.rawValue)
+            XCTAssertEqual(metric.pairOrders.filter { $0 == .candidateFirst }.count, 15, metric.metricID.rawValue)
+            XCTAssertEqual(metric.ratios, zip(metric.baselineSamples, metric.candidateSamples).map { $1 / $0 })
+            XCTAssertEqual(metric.deltas, zip(metric.baselineSamples, metric.candidateSamples).map { $1 - $0 })
+            XCTAssertEqual(metric.disposition, .acceptedNoRegression)
+        }
+    }
+
+    func testComparisonPreservesVariedRawTimingArraysInsteadOfRepeatingP95() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .renderer }?.baselineSamples, PerformanceFixtures.baseline.renderer.frameMilliseconds)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .compositor }?.baselineSamples, PerformanceFixtures.baseline.compositor.frameMilliseconds)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .combinedFrame }?.baselineSamples, PerformanceFixtures.baseline.combinedFrame.frameMilliseconds)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .redrawLayout }?.baselineSamples, PerformanceFixtures.baseline.redrawLayout.sampleMilliseconds)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .responsiveness }?.baselineSamples, PerformanceFixtures.baseline.responsiveness.responseMilliseconds)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .inputToVisible }?.baselineSamples, PerformanceFixtures.baseline.inputToVisible.sampleMilliseconds)
+        XCTAssertNotEqual(draft.metrics.first { $0.metricID == .renderer }?.baselineSamples, Array(repeating: PerformanceFixtures.baseline.renderer.p95Milliseconds, count: 30))
+    }
+
+    func testComparisonBootstrapUsesKnownDeterministicVectorAndChangesWithSeed() throws {
+        let deltas = [-2.0, -1.0, 0.0, 1.0]
+        let expected = BootstrapInterval(lowerDelta: -1.75, upperDelta: 1.0, seed: 48271, resampleCount: 32)
+        XCTAssertEqual(PerformanceComparisonHarness.bootstrapInterval(deltas: deltas, seed: 48271, resampleCount: 32), expected)
+        XCTAssertEqual(
+            PerformanceComparisonHarness.bootstrapInterval(deltas: deltas, seed: 48271, resampleCount: 32),
+            PerformanceComparisonHarness.bootstrapInterval(deltas: deltas, seed: 48271, resampleCount: 32)
+        )
+        XCTAssertNotEqual(
+            PerformanceComparisonHarness.bootstrapInterval(deltas: deltas, seed: 48271, resampleCount: 32),
+            PerformanceComparisonHarness.bootstrapInterval(deltas: deltas, seed: 48272, resampleCount: 32)
+        )
+    }
+
+    func testComparisonImprovementClaimRequiresStrictlyNegativeBootstrapUpperBound() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unchanged = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        XCTAssertTrue(unchanged.metrics.allSatisfy { !$0.improvementClaimed })
+
+        let improvedModel = ModelMeasurement(status: .measured, trialNanoseconds: Array(repeating: 1_000_000, count: 30), medianNanoseconds: 1_000_000, p95Nanoseconds: 1_000_000, madNanoseconds: 0, publicationCount: PerformanceFixtures.model.publicationCount, modelChecksum: PerformanceFixtures.model.modelChecksum, finalStateValid: true)
+        let improved = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.report(model: improvedModel), configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        XCTAssertTrue(try XCTUnwrap(improved.metrics.first { $0.metricID == .model }).improvementClaimed)
+    }
+
+    func testComparisonRejectsTamperedBootstrapSummary() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        let value = draft.metrics[0]
+        var tampered = draft.metrics
+        tampered[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: value.candidateSamples, ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: BootstrapInterval(lowerDelta: value.bootstrapInterval.lowerDelta + 1, upperDelta: value.bootstrapInterval.upperDelta + 1, seed: value.bootstrapInterval.seed, resampleCount: value.bootstrapInterval.resampleCount), manualEvidence: value.manualEvidence, disposition: value.disposition, pairOrders: value.pairOrders, improvementClaimed: value.improvementClaimed)
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: tampered).validateStructure())
+    }
+
+    func testComparisonLoadsOnlyExactValidManualEvidenceAndKeepsDeterministicMetricsSeparate() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeManualEvidence(to: directory, evidence: PerformanceFixtures.manualEvidence)
+
+        let draft = try PerformanceComparisonHarness.compare(
+            baseline: PerformanceFixtures.baseline,
+            candidate: PerformanceFixtures.candidate,
+            configuration: PerformanceConfiguration.standard,
+            eligibility: PerformanceFixtures.eligibility,
+            manualEvidenceDirectory: directory
+        )
+        let manual = try XCTUnwrap(draft.metrics.first { $0.metricID == .inputToVisible })
+        XCTAssertEqual(manual.evidenceClass, .manual)
+        XCTAssertEqual(manual.manualEvidence, PerformanceFixtures.manualEvidence)
+        XCTAssertNil(draft.metrics.first { $0.metricID == .model }?.manualEvidence)
+    }
+
+    func testComparisonRejectsMalformedUnknownDuplicateAndMismatchedManualEvidenceFiles() throws {
+        let cases: [(String, (URL) throws -> Void)] = [
+            ("malformed", { directory in
+                try Data("not-json".utf8).write(to: directory.appendingPathComponent("inputToVisible.json"))
+            }),
+            ("unknown", { directory in
+                try Data("{}".utf8).write(to: directory.appendingPathComponent("model.json"))
+            }),
+            ("wrong-file-name", { directory in
+                try self.writeManualEvidence(to: directory, evidence: PerformanceFixtures.manualEvidence, fileName: "compositor.json")
+            }),
+            ("wrong-host", { directory in
+                let evidence = ManualMetricEvidence(metricID: .inputToVisible, evidenceClass: .manual, host: "another-host", recordedAt: PerformanceFixtures.manualEvidence.recordedAt, permissions: PerformanceFixtures.manualEvidence.permissions, steps: PerformanceFixtures.manualEvidence.steps, samples: PerformanceFixtures.manualEvidence.samples, result: PerformanceFixtures.manualEvidence.result, evidencePath: "inputToVisible.json")
+                try self.writeManualEvidence(to: directory, evidence: evidence)
+            }),
+            ("missing-permission", { directory in
+                let evidence = ManualMetricEvidence(metricID: .inputToVisible, evidenceClass: .manual, host: PerformanceFixtures.host.machineIdentifier, recordedAt: PerformanceFixtures.manualEvidence.recordedAt, permissions: [], steps: PerformanceFixtures.manualEvidence.steps, samples: PerformanceFixtures.manualEvidence.samples, result: PerformanceFixtures.manualEvidence.result, evidencePath: "inputToVisible.json")
+                try self.writeManualEvidence(to: directory, evidence: evidence)
+            }),
+            ("wrong-path", { directory in
+                let evidence = ManualMetricEvidence(metricID: .inputToVisible, evidenceClass: .manual, host: PerformanceFixtures.host.machineIdentifier, recordedAt: PerformanceFixtures.manualEvidence.recordedAt, permissions: PerformanceFixtures.manualEvidence.permissions, steps: PerformanceFixtures.manualEvidence.steps, samples: PerformanceFixtures.manualEvidence.samples, result: PerformanceFixtures.manualEvidence.result, evidencePath: "other.json")
+                try self.writeManualEvidence(to: directory, evidence: evidence)
+            }),
+            ("hidden-unknown", { directory in
+                try Data("{}".utf8).write(to: directory.appendingPathComponent(".extra.json"))
+            }),
+            ("symlink", { directory in
+                let backingDirectory = directory.deletingLastPathComponent().appendingPathComponent("pointer-manual-back-(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: backingDirectory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: backingDirectory) }
+                try self.writeManualEvidence(to: backingDirectory, evidence: PerformanceFixtures.manualEvidence, fileName: "backing.json")
+                try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("inputToVisible.json"), withDestinationURL: backingDirectory.appendingPathComponent("backing.json"))
+            }),
+        ]
+
+        for (label, populate) in cases {
+            let directory = try makeManualEvidenceDirectory()
+            try populate(directory)
+            XCTAssertThrowsError(try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory), label)
+            try? FileManager.default.removeItem(at: directory)
+        }
+    }
+
+    func testComparisonMapsCompletedResilienceWithoutFabricatingAcceptance() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        XCTAssertEqual(draft.resilience, PerformanceFixtures.candidate.resilience)
+        XCTAssertTrue(draft.resilience.cases.allSatisfy { $0.status == .measured && !$0.leakedResource && !$0.unexpectedGrowth })
+        XCTAssertEqual(draft.disposition, .acceptedNoRegression)
+    }
+
+    func testComparisonProducesReviseDispositionForRatioRegression() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let slowerModel = ModelMeasurement(status: .measured, trialNanoseconds: Array(repeating: 2_000_000, count: 30), medianNanoseconds: 2_000_000, p95Nanoseconds: 2_000_000, madNanoseconds: 0, publicationCount: PerformanceFixtures.model.publicationCount, modelChecksum: PerformanceFixtures.model.modelChecksum, finalStateValid: true)
+        let slowerCandidate = PerformanceFixtures.report(model: slowerModel)
+
+        let draft = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: slowerCandidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        let model = try XCTUnwrap(draft.metrics.first { $0.metricID == .model })
+        XCTAssertEqual(model.disposition, .revise)
+        XCTAssertEqual(draft.disposition, .revise)
+    }
+
+    func testWriterRecomputesSuppliedDraftBeforePersisting() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-recompute-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        let baselineURL = temp.appendingPathComponent("baseline.json")
+        let candidateURL = temp.appendingPathComponent("candidate.json")
+        try JSONEncoder().encode(PerformanceFixtures.baseline).write(to: baselineURL)
+        try JSONEncoder().encode(PerformanceFixtures.candidate).write(to: candidateURL)
+        let manualDirectory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: manualDirectory) }
+        let expected = try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: manualDirectory)
+        _ = try PerformanceComparisonHarness.writeComparison(draft: expected, baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: manualDirectory, outputDirectory: temp.appendingPathComponent("valid"), configuration: .standard, eligibility: PerformanceFixtures.eligibility)
+
+        var syntheticMetrics = expected.metrics
+        let value = syntheticMetrics[0]
+        syntheticMetrics[0] = MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: value.baselineSamples, candidateSamples: Array(repeating: value.candidateSamples[0], count: value.candidateSamples.count), ratios: value.ratios, deltas: value.deltas, budgetLimit: value.budgetLimit, bootstrapInterval: value.bootstrapInterval, manualEvidence: value.manualEvidence, disposition: value.disposition, pairOrders: value.pairOrders, improvementClaimed: value.improvementClaimed)
+        let stale = PerformanceComparisonDraft(harnessVersion: expected.harnessVersion, foundationIdentity: expected.foundationIdentity, buildContractVersion: expected.buildContractVersion, baselineBuildProvenance: expected.baselineBuildProvenance, candidateBuildProvenance: expected.candidateBuildProvenance, baselineRunProvenance: expected.baselineRunProvenance, candidateRunProvenance: expected.candidateRunProvenance, pairEligibility: expected.pairEligibility, baselineFixture: expected.baselineFixture, candidateFixture: expected.candidateFixture, baselineMeasurementIdentity: expected.baselineMeasurementIdentity, candidateMeasurementIdentity: expected.candidateMeasurementIdentity, baselineID: expected.baselineID, candidateID: expected.candidateID, metrics: syntheticMetrics, resilience: expected.resilience, seed: expected.seed, resampleCount: expected.resampleCount, disposition: expected.disposition)
+        let outputDirectory = temp.appendingPathComponent("stale")
+        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(draft: stale, baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: manualDirectory, outputDirectory: outputDirectory, configuration: .standard, eligibility: PerformanceFixtures.eligibility))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
+    }
+
+    func testManualCompositorSamplesParticipateInTheFrameBudgetGate() throws {
+        let directory = try makeManualEvidenceDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let baselineCompositor = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 13.7, frameMilliseconds: Array(repeating: 13.7, count: 30), frameCount: 30, missedFrameCount: 0, instrumentationStatus: "windowserver-signpost")
+        let baseline = PerformanceFixtures.report(identity: PerformanceFixtures.baselineIdentity, build: PerformanceFixtures.baselineBuild, run: PerformanceFixtures.baselineRun, compositor: baselineCompositor)
+        let manual = ManualMetricEvidence(metricID: .compositor, evidenceClass: .manual, host: PerformanceFixtures.host.machineIdentifier, recordedAt: PerformanceFixtures.recordedAtUTC, permissions: ["Screen Recording"], steps: "Measure compositor latency.", samples: Array(repeating: 15, count: 30), result: "Manual compositor samples recorded.", evidencePath: "compositor.json")
+        try writeManualEvidence(to: directory, evidence: manual, fileName: "compositor.json")
+
+        let draft = try PerformanceComparisonHarness.compare(baseline: baseline, candidate: PerformanceFixtures.candidate, configuration: .standard, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: directory)
+        XCTAssertEqual(draft.metrics.first { $0.metricID == .compositor }?.disposition, .acceptedNoRegression)
+        XCTAssertEqual(draft.disposition, .revise)
+    }
+
+    private func makeManualEvidenceDirectory() throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-manual-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func writeManualEvidence(to directory: URL, evidence: ManualMetricEvidence, fileName: String = "inputToVisible.json") throws {
+        let data = try JSONEncoder().encode(ManualMetricAdapter(evidence: evidence))
+        try data.write(to: directory.appendingPathComponent(fileName))
     }
 }

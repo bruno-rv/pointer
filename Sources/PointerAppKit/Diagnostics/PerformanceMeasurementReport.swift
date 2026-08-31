@@ -197,9 +197,31 @@ public struct FrameMeasurement: Codable, Sendable, Equatable {
     public let status: MeasurementStatus
     public let sampleCount: Int
     public let p95Milliseconds: Double
+    public let frameMilliseconds: [Double]
     public let frameCount: Int
     public let missedFrameCount: Int
     public let instrumentationStatus: String
+}
+
+public extension FrameMeasurement {
+    init(
+        status: MeasurementStatus,
+        sampleCount: Int,
+        p95Milliseconds: Double,
+        frameCount: Int,
+        missedFrameCount: Int,
+        instrumentationStatus: String
+    ) {
+        self.init(
+            status: status,
+            sampleCount: sampleCount,
+            p95Milliseconds: p95Milliseconds,
+            frameMilliseconds: [],
+            frameCount: frameCount,
+            missedFrameCount: missedFrameCount,
+            instrumentationStatus: instrumentationStatus
+        )
+    }
 }
 
 public struct LaunchMeasurement: Codable, Sendable, Equatable {
@@ -219,6 +241,24 @@ public struct RedrawLayoutMeasurement: Codable, Sendable, Equatable {
     public let redrawsPerSample: [Int]
     public let layoutPasses: [Int]
     public let p95Milliseconds: Double
+    public let sampleMilliseconds: [Double]
+}
+
+public extension RedrawLayoutMeasurement {
+    init(
+        status: MeasurementStatus,
+        redrawsPerSample: [Int],
+        layoutPasses: [Int],
+        p95Milliseconds: Double
+    ) {
+        self.init(
+            status: status,
+            redrawsPerSample: redrawsPerSample,
+            layoutPasses: layoutPasses,
+            p95Milliseconds: p95Milliseconds,
+            sampleMilliseconds: []
+        )
+    }
 }
 
 public struct ResponsivenessMeasurement: Codable, Sendable, Equatable {
@@ -226,6 +266,24 @@ public struct ResponsivenessMeasurement: Codable, Sendable, Equatable {
     public let stallCount: Int
     public let maximumMainThreadStallMilliseconds: Double
     public let p95ResponseMilliseconds: Double
+    public let responseMilliseconds: [Double]
+}
+
+public extension ResponsivenessMeasurement {
+    init(
+        status: MeasurementStatus,
+        stallCount: Int,
+        maximumMainThreadStallMilliseconds: Double,
+        p95ResponseMilliseconds: Double
+    ) {
+        self.init(
+            status: status,
+            stallCount: stallCount,
+            maximumMainThreadStallMilliseconds: maximumMainThreadStallMilliseconds,
+            p95ResponseMilliseconds: p95ResponseMilliseconds,
+            responseMilliseconds: []
+        )
+    }
 }
 
 public struct InputToVisibleMeasurement: Codable, Sendable, Equatable {
@@ -233,6 +291,24 @@ public struct InputToVisibleMeasurement: Codable, Sendable, Equatable {
     public let sampleCount: Int
     public let p95Milliseconds: Double
     public let missedSampleCount: Int
+    public let sampleMilliseconds: [Double]
+}
+
+public extension InputToVisibleMeasurement {
+    init(
+        status: MeasurementStatus,
+        sampleCount: Int,
+        p95Milliseconds: Double,
+        missedSampleCount: Int
+    ) {
+        self.init(
+            status: status,
+            sampleCount: sampleCount,
+            p95Milliseconds: p95Milliseconds,
+            missedSampleCount: missedSampleCount,
+            sampleMilliseconds: []
+        )
+    }
 }
 
 public struct ResourceCounts: Codable, Sendable, Equatable {
@@ -570,6 +646,11 @@ private enum PerformanceReportValidator {
             try require(frame.sampleCount > 0, "measured frame requires samples")
             try require(frame.frameCount > 0, "measured frame requires frames")
             try require(frame.p95Milliseconds > 0, "measured frame p95 must be positive")
+            try require(frame.frameMilliseconds.count == frame.sampleCount, "frame raw samples must match sampleCount")
+            try require(frame.frameMilliseconds.allSatisfy { $0.isFinite && $0 > 0 }, "frame raw samples must be finite and positive")
+            try require(frame.p95Milliseconds == nearestRankP95(frame.frameMilliseconds), "frame p95 does not match raw samples")
+        } else {
+            try require(frame.frameMilliseconds.isEmpty, "diagnostic frame raw samples must be empty")
         }
         try require(frame.sampleCount >= 0, "frame sampleCount must be nonnegative")
         try require(frame.frameCount >= 0, "frameCount must be nonnegative")
@@ -601,6 +682,11 @@ private enum PerformanceReportValidator {
     private static func validateRedrawLayout(_ redraw: RedrawLayoutMeasurement) throws {
         if redraw.status == .measured {
             try require(!redraw.redrawsPerSample.isEmpty, "measured redraw/layout requires samples")
+            try require(redraw.sampleMilliseconds.count == redraw.redrawsPerSample.count, "redraw raw samples must match redraw counts")
+            try require(redraw.sampleMilliseconds.allSatisfy { $0.isFinite && $0 > 0 }, "redraw raw samples must be finite and positive")
+            try require(redraw.p95Milliseconds == nearestRankP95(redraw.sampleMilliseconds), "redraw p95 does not match raw samples")
+        } else {
+            try require(redraw.sampleMilliseconds.isEmpty, "diagnostic redraw raw samples must be empty")
         }
         try require(redraw.redrawsPerSample.allSatisfy { $0 >= 0 }, "redraw counts must be nonnegative")
         try require(redraw.layoutPasses.allSatisfy { $0 >= 0 }, "layout counts must be nonnegative")
@@ -609,6 +695,15 @@ private enum PerformanceReportValidator {
     }
 
     private static func validateResponsiveness(_ responsiveness: ResponsivenessMeasurement) throws {
+        if responsiveness.status == .measured {
+            try require(!responsiveness.responseMilliseconds.isEmpty, "measured responsiveness requires samples")
+            try require(responsiveness.responseMilliseconds.allSatisfy { $0.isFinite && $0 > 0 }, "response raw samples must be finite and positive")
+            try require(responsiveness.p95ResponseMilliseconds == nearestRankP95(responsiveness.responseMilliseconds), "response p95 does not match raw samples")
+            try require(responsiveness.maximumMainThreadStallMilliseconds >= responsiveness.responseMilliseconds.max()!, "maximum stall is below a response sample")
+            try require(responsiveness.stallCount <= responsiveness.responseMilliseconds.count, "stallCount exceeds response samples")
+        } else {
+            try require(responsiveness.responseMilliseconds.isEmpty, "diagnostic response raw samples must be empty")
+        }
         try require(responsiveness.stallCount >= 0, "stallCount must be nonnegative")
         try require(responsiveness.maximumMainThreadStallMilliseconds.isFinite && responsiveness.maximumMainThreadStallMilliseconds >= 0, "maximum stall must be finite and nonnegative")
         try require(responsiveness.p95ResponseMilliseconds.isFinite && responsiveness.p95ResponseMilliseconds >= 0, "response p95 must be finite and nonnegative")
@@ -618,6 +713,11 @@ private enum PerformanceReportValidator {
         if input.status == .measured {
             try require(input.sampleCount > 0, "measured input requires samples")
             try require(input.p95Milliseconds > 0, "measured input p95 must be positive")
+            try require(input.sampleMilliseconds.count == input.sampleCount, "input raw samples must match sampleCount")
+            try require(input.sampleMilliseconds.allSatisfy { $0.isFinite && $0 > 0 }, "input raw samples must be finite and positive")
+            try require(input.p95Milliseconds == nearestRankP95(input.sampleMilliseconds), "input p95 does not match raw samples")
+        } else {
+            try require(input.sampleMilliseconds.isEmpty, "diagnostic input raw samples must be empty")
         }
         try require(input.sampleCount >= 0, "input sampleCount must be nonnegative")
         try require(input.missedSampleCount >= 0 && input.missedSampleCount <= input.sampleCount, "missedSampleCount is incoherent")
@@ -764,6 +864,7 @@ private enum PerformanceReportValidator {
         let frames = [report.renderer, report.compositor, report.combinedFrame]
         for frame in frames where frame.status == .measured {
             try require(frame.sampleCount == configuration.trialCount, "frame sample count does not match configuration")
+            try require(frame.frameMilliseconds.count == configuration.trialCount, "frame raw sample count does not match configuration")
             try require(frame.frameCount == configuration.trialCount, "frame count does not match configuration")
         }
         let measuredFrames = frames.filter { $0.status == .measured }
@@ -778,11 +879,16 @@ private enum PerformanceReportValidator {
             try require(report.allocations.bytesPerGesture.count == configuration.trialCount, "allocation sample count does not match configuration")
         }
         if report.redrawLayout.status == .measured {
+            try require(report.redrawLayout.sampleMilliseconds.count == configuration.trialCount, "redraw raw sample count does not match configuration")
             try require(report.redrawLayout.redrawsPerSample.count == configuration.trialCount, "redraw sample count does not match configuration")
             try require(report.redrawLayout.layoutPasses.count == configuration.trialCount, "layout sample count does not match configuration")
         }
         if report.inputToVisible.status == .measured {
             try require(report.inputToVisible.sampleCount == configuration.trialCount, "input sample count does not match configuration")
+            try require(report.inputToVisible.sampleMilliseconds.count == configuration.trialCount, "input raw sample count does not match configuration")
+        }
+        if report.responsiveness.status == .measured {
+            try require(report.responsiveness.responseMilliseconds.count == configuration.trialCount, "response raw sample count does not match configuration")
         }
     }
 

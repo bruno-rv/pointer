@@ -6,6 +6,61 @@ public enum PerformanceMetricUnit: String, Codable, Sendable, Equatable {
     case bytes
 }
 
+public enum PairOrder: String, Codable, Sendable, Equatable {
+    case baselineFirst
+    case candidateFirst
+
+    internal static func canonicalSequence(pairCount: Int) -> [PairOrder] {
+        let firstHalf = pairCount / 2
+        return Array(repeating: .baselineFirst, count: firstHalf)
+            + Array(repeating: .candidateFirst, count: pairCount - firstHalf)
+    }
+}
+
+internal enum PerformanceComparisonBootstrap {
+    static func interval(deltas: [Double], seed: UInt64, resampleCount: Int) -> BootstrapInterval {
+        guard !deltas.isEmpty, resampleCount > 0 else {
+            return BootstrapInterval(lowerDelta: .nan, upperDelta: .nan, seed: seed, resampleCount: resampleCount)
+        }
+        var generator = SplitMix64(seed: seed)
+        var means: [Double] = []
+        means.reserveCapacity(resampleCount)
+        for _ in 0..<resampleCount {
+            var total = 0.0
+            for _ in deltas.indices {
+                let index = Int(generator.next() % UInt64(deltas.count))
+                total += deltas[index]
+            }
+            means.append(total / Double(deltas.count))
+        }
+        let sorted = means.sorted()
+        let lowerIndex = max(0, min(sorted.count - 1, Int(ceil(Double(sorted.count) * 0.025)) - 1))
+        let upperIndex = max(0, min(sorted.count - 1, Int(ceil(Double(sorted.count) * 0.975)) - 1))
+        return BootstrapInterval(
+            lowerDelta: sorted[lowerIndex],
+            upperDelta: sorted[upperIndex],
+            seed: seed,
+            resampleCount: resampleCount
+        )
+    }
+
+    private struct SplitMix64 {
+        private var state: UInt64
+
+        init(seed: UInt64) {
+            state = seed
+        }
+
+        mutating func next() -> UInt64 {
+            state &+= 0x9E3779B97F4A7C15
+            var value = state
+            value = (value ^ (value >> 30)) &* 0xBF58476D1CE4E5B9
+            value = (value ^ (value >> 27)) &* 0x94D049BB133111EB
+            return value ^ (value >> 31)
+        }
+    }
+}
+
 extension PerformanceMetricID {
     var canonicalUnit: PerformanceMetricUnit {
         switch self {
@@ -81,6 +136,8 @@ public struct MetricComparison: Codable, Sendable, Equatable {
     public let bootstrapInterval: BootstrapInterval
     public let manualEvidence: ManualMetricEvidence?
     public let disposition: Disposition
+    public let pairOrders: [PairOrder]
+    public let improvementClaimed: Bool
 
     public init(
         metricID: PerformanceMetricID,
@@ -95,7 +152,9 @@ public struct MetricComparison: Codable, Sendable, Equatable {
         budgetLimit: Double?,
         bootstrapInterval: BootstrapInterval,
         manualEvidence: ManualMetricEvidence?,
-        disposition: Disposition
+        disposition: Disposition,
+        pairOrders: [PairOrder]? = nil,
+        improvementClaimed: Bool = false
     ) {
         self.metricID = metricID
         self.evidenceClass = evidenceClass
@@ -110,6 +169,8 @@ public struct MetricComparison: Codable, Sendable, Equatable {
         self.bootstrapInterval = bootstrapInterval
         self.manualEvidence = manualEvidence
         self.disposition = disposition
+        self.pairOrders = pairOrders ?? PairOrder.canonicalSequence(pairCount: baselineSamples.count)
+        self.improvementClaimed = improvementClaimed
     }
 }
 
@@ -450,6 +511,7 @@ enum PerformanceComparisonReportValidator {
             try require(metric.candidateID == candidateID, "metric candidate ID mismatch")
             try require(metric.unit == metric.metricID.canonicalUnit, "metric unit does not match its canonical unit")
             try require(metric.baselineSamples.count == expectedPairCount && metric.candidateSamples.count == expectedPairCount, "paired metric arrays must contain exactly totalPairs samples")
+            try require(metric.pairOrders == PairOrder.canonicalSequence(pairCount: expectedPairCount), "paired metric order must contain exactly baseline-first and candidate-first pairs")
             try require(metric.baselineSamples.allSatisfy { $0.isFinite && $0 > 0 } && metric.candidateSamples.allSatisfy { $0.isFinite && $0 > 0 }, "metric samples must be finite and positive")
             if let canonicalBudget = metric.metricID.canonicalBudgetLimit {
                 guard let budgetLimit = metric.budgetLimit else {
@@ -463,8 +525,11 @@ enum PerformanceComparisonReportValidator {
             try require(metric.bootstrapInterval.lowerDelta <= metric.bootstrapInterval.upperDelta, "bootstrap bounds are incoherent")
             try require(metric.bootstrapInterval.seed == seed, "metric bootstrap seed mismatch")
             try require(metric.bootstrapInterval.resampleCount == resampleCount && resampleCount > 0, "metric bootstrap resample count mismatch")
+            let expectedBootstrap = PerformanceComparisonBootstrap.interval(deltas: metric.deltas, seed: seed, resampleCount: resampleCount)
+            try require(metric.bootstrapInterval == expectedBootstrap, "bootstrap interval does not match paired deltas")
+            try require(metric.improvementClaimed == (expectedBootstrap.upperDelta < 0), "improvement claim does not match bootstrap interval")
             try validateDerivedArrays(metric)
-            try validateEvidence(metric, host: host)
+            try validateEvidence(metric, host: host, expectedPairCount: expectedPairCount)
         }
     }
 
@@ -483,7 +548,7 @@ enum PerformanceComparisonReportValidator {
         }
     }
 
-    private static func validateEvidence(_ metric: MetricComparison, host: String) throws {
+    private static func validateEvidence(_ metric: MetricComparison, host: String, expectedPairCount: Int) throws {
         switch metric.evidenceClass {
         case .deterministic:
             try require(metric.manualEvidence == nil, "deterministic metrics cannot carry manual evidence")
@@ -491,6 +556,7 @@ enum PerformanceComparisonReportValidator {
             guard let evidence = metric.manualEvidence else {
                 throw PerformanceValidationError.invalid("manual metrics require evidence")
             }
+            try require(metric.metricID == .compositor || metric.metricID == .inputToVisible, "manual evidence is not permitted for this metric")
             try require(evidence.metricID == metric.metricID, "manual evidence metric ID mismatch")
             try require(evidence.evidenceClass == .manual, "manual evidence class mismatch")
             try require(evidence.host == host, "manual evidence host mismatch")
@@ -498,9 +564,12 @@ enum PerformanceComparisonReportValidator {
             try validateUTC(evidence.recordedAt)
             try require(!evidence.permissions.isEmpty && evidence.permissions.allSatisfy { !$0.isEmpty }, "manual evidence permissions are required")
             try require(!evidence.steps.isEmpty, "manual evidence steps are required")
-            try require(!evidence.samples.isEmpty && evidence.samples.allSatisfy { $0.isFinite }, "manual evidence samples are required and finite")
+            try require(evidence.samples.count == expectedPairCount && evidence.samples.allSatisfy { $0.isFinite && $0 > 0 }, "manual evidence samples must match positive paired candidate samples")
+            try require(evidence.samples == metric.candidateSamples, "manual evidence samples do not match candidate samples")
             try require(!evidence.result.isEmpty, "manual evidence result is required")
             try require(!evidence.evidencePath.isEmpty, "manual evidence path is required")
+            try require(!evidence.evidencePath.hasPrefix("/") && !evidence.evidencePath.split(separator: "/").contains(".."), "manual evidence path must be relative")
+            try require(evidence.evidencePath == "\(metric.metricID.rawValue).json", "manual evidence path does not match its metric")
         }
     }
 
