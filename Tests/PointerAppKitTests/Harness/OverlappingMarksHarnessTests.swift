@@ -38,6 +38,22 @@ final class OverlappingMarksHarnessTests: XCTestCase {
 
         harness.route(.setTool(.select))
         assertConvergence(fixture, harness, on: [display])
+        let underlyingOnlyPoint = NSPoint(x: 450, y: 300)
+        try harness.beginGesture(at: underlyingOnlyPoint, on: display)
+        assertConvergence(fixture, harness, on: [display])
+        XCTAssertEqual(harness.snapshot().selection, underlyingID)
+        try harness.endGesture(on: display)
+        assertConvergence(fixture, harness, on: [display])
+        XCTAssertEqual(harness.snapshot().selection, underlyingID)
+
+        let outsideBothPoint = NSPoint(x: 100, y: 100)
+        try harness.beginGesture(at: outsideBothPoint, on: display)
+        assertConvergence(fixture, harness, on: [display])
+        XCTAssertNil(harness.snapshot().selection)
+        try harness.endGesture(on: display)
+        assertConvergence(fixture, harness, on: [display])
+        XCTAssertNil(harness.snapshot().selection)
+
         let sharedPoint = NSPoint(x: 850, y: 560)
         try harness.beginGesture(at: sharedPoint, on: display)
         assertConvergence(fixture, harness, on: [display])
@@ -62,12 +78,20 @@ final class OverlappingMarksHarnessTests: XCTestCase {
         try harness.continueGesture(to: NSPoint(x: 900, y: 600), on: display)
         let duringMove = harness.snapshot()
         assertConvergence(fixture, harness, on: [display])
+        let coordinatorCommittedDuringMove = fixture.displayCoordinator.session
+            .canvas(for: display)
+            .marks
+        let previewDuringMove = duringMove.previewMarksByDisplay[display, default: []]
+        XCTAssertEqual(coordinatorCommittedDuringMove, created)
+        XCTAssertEqual(duringMove.marksByDisplay[display, default: []], created)
+        XCTAssertNotEqual(previewDuringMove, created)
+        XCTAssertEqual(previewDuringMove.first, created.first)
+        XCTAssertNotEqual(previewDuringMove.last, created.last)
         XCTAssertEqual(
-            duringMove.previewMarksByDisplay[display, default: []].map(\.id),
+            previewDuringMove.map(\.id),
             orderBeforeMove
         )
         XCTAssertEqual(duringMove.selection, topmostID)
-        XCTAssertEqual(fixture.displayCoordinator.session.canvas(for: display).marks.map(\.id), orderBeforeMove)
         try harness.endGesture(on: display)
         assertConvergence(fixture, harness, on: [display])
         let afterMove = harness.snapshot().marksByDisplay[display, default: []]
@@ -178,6 +202,7 @@ final class OverlappingMarksHarnessTests: XCTestCase {
         let topBID = try XCTUnwrap(marksB.last?.id)
         XCTAssertEqual(selectedB.selection, topBID)
         XCTAssertEqual(fixture.displayCoordinator.session.selectedDisplay, displayB)
+        XCTAssertEqual(fixture.commandRouter.pointerDisplay, displayA)
         XCTAssertEqual(selectedB.marksByDisplay[displayA], marksA)
         XCTAssertEqual(selectedB.marksByDisplay[displayB], marksB)
         let overlayA = try XCTUnwrap(fixture.displayCoordinator.overlays[displayA] as? OverlayPanel)
@@ -185,6 +210,17 @@ final class OverlappingMarksHarnessTests: XCTestCase {
         XCTAssertFalse(overlayA.canvasView.renderPlan.handles.selection.isVisible)
         XCTAssertEqual(overlayB.canvasView.renderPlan.handles.selection.selectedMarkID, topBID)
         XCTAssertTrue(overlayB.canvasView.renderPlan.handles.selection.isVisible)
+
+        XCTAssertTrue(harness.routeLocalKey(keyCode: 51))
+        assertConvergence(fixture, harness, on: displays)
+        let afterDelete = harness.snapshot()
+        let marksBAfterDelete = Array(marksB.dropLast())
+        XCTAssertNil(afterDelete.selection)
+        XCTAssertNil(fixture.displayCoordinator.session.selectedDisplay)
+        XCTAssertEqual(afterDelete.marksByDisplay[displayA], marksA)
+        XCTAssertEqual(afterDelete.previewMarksByDisplay[displayA], marksA)
+        XCTAssertEqual(afterDelete.marksByDisplay[displayB], marksBAfterDelete)
+        XCTAssertEqual(afterDelete.previewMarksByDisplay[displayB], marksBAfterDelete)
 
         try harness.beginGesture(at: sharedPoint, on: displayA)
         assertConvergence(fixture, harness, on: displays)
@@ -195,7 +231,7 @@ final class OverlappingMarksHarnessTests: XCTestCase {
         XCTAssertEqual(selectedA.selection, topAID)
         XCTAssertEqual(fixture.displayCoordinator.session.selectedDisplay, displayA)
         XCTAssertEqual(selectedA.marksByDisplay[displayA], marksA)
-        XCTAssertEqual(selectedA.marksByDisplay[displayB], marksB)
+        XCTAssertEqual(selectedA.marksByDisplay[displayB], marksBAfterDelete)
         XCTAssertEqual(overlayA.canvasView.renderPlan.handles.selection.selectedMarkID, topAID)
         XCTAssertTrue(overlayA.canvasView.renderPlan.handles.selection.isVisible)
         XCTAssertFalse(overlayB.canvasView.renderPlan.handles.selection.isVisible)

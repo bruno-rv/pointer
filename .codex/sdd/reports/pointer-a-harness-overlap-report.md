@@ -1,6 +1,11 @@
 # Pointer A Overlap Harness Report
 
-Status: `DONE`
+Status: `FOLLOW_UP_UNCOMMITTED`
+
+The accepted checkpoint `85f5b7b` is committed and was clean before this
+adversarial follow-up. The changes described below are intentionally
+uncommitted until the independent reviewer and adversarial review reconcile
+them.
 
 ## Scope
 
@@ -38,6 +43,23 @@ The fixture oracle is invoked after synchronization, every route, every draw
 gesture boundary, every gesture continuation, deletion, move, cancellation,
 and re-selection transition.
 
+## Adversarial follow-up
+
+The follow-up closes three review gaps without changing production behavior:
+
+- Before the shared-point click, a real CanvasView gesture at a point inside
+  only the underlying rectangle selects that rectangle, and a real gesture
+  outside both marks clears selection. Only then does the shared point verify
+  latest/topmost ellipse selection.
+- During the selected-mark move, the coordinator's committed marks and the
+  snapshot's committed marks must equal the original full `Mark` values, the
+  preview must differ, the underlying `Mark` must remain identical, and only
+  the selected top mark may change geometry.
+- With display A still the accepted pointer display, local Delete after
+  selecting display B leaves display A's complete mark array unchanged and
+  removes only display B's top mark. The underlying B mark remains and
+  selection clears before A is selected.
+
 ## Deterministic verification
 
 The first focused run was:
@@ -59,5 +81,6 @@ Final verification:
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build` — PASS.
 - `git diff --check` — PASS.
 
-The final worktree boundary contains only the two paths listed above as
-untracked changes; no production or pre-existing harness files were touched.
+The current follow-up worktree is intentionally uncommitted with only the
+existing overlap test and report modified relative to `85f5b7b`; no
+production or pre-existing harness files were touched.
