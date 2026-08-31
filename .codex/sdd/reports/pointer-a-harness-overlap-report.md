@@ -2,8 +2,10 @@
 
 Status: `DONE`
 
-Final reconciliation head: `d7f1b6e` is committed and clean after the
-independent reviewer and adversarial review.
+Implementation/test checkpoint: `d7f1b6e` is the committed checkpoint for the
+overlap implementation and tests. The documentation commit containing this
+report records the evidence correction; the worktree is expected to be clean
+after that commit.
 
 ## Scope
 
@@ -79,5 +81,6 @@ Final verification:
 - `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build` — PASS.
 - `git diff --check` — PASS.
 
-The final reconciliation is committed at `d7f1b6e` with a clean worktree; no
-production or pre-existing harness files were touched.
+The implementation/test checkpoint remains `d7f1b6e`; no production or
+pre-existing harness files were touched. The documentation commit containing
+this report is expected to leave the worktree clean.
