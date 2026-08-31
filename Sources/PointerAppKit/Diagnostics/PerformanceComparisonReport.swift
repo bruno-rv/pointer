@@ -51,6 +51,7 @@ public struct MetricComparison: Codable, Sendable, Equatable {
     public let candidateSamples: [Double]
     public let ratios: [Double]
     public let deltas: [Double]
+    public let budgetLimit: Double
     public let bootstrapInterval: BootstrapInterval
     public let manualEvidence: ManualMetricEvidence?
     public let disposition: Disposition
@@ -64,6 +65,7 @@ public struct MetricComparison: Codable, Sendable, Equatable {
         candidateSamples: [Double],
         ratios: [Double],
         deltas: [Double],
+        budgetLimit: Double,
         bootstrapInterval: BootstrapInterval,
         manualEvidence: ManualMetricEvidence?,
         disposition: Disposition
@@ -76,6 +78,7 @@ public struct MetricComparison: Codable, Sendable, Equatable {
         self.candidateSamples = candidateSamples
         self.ratios = ratios
         self.deltas = deltas
+        self.budgetLimit = budgetLimit
         self.bootstrapInterval = bootstrapInterval
         self.manualEvidence = manualEvidence
         self.disposition = disposition
@@ -95,6 +98,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
     public let baselineRunProvenance: PerformanceRunProvenance
     public let candidateRunProvenance: PerformanceRunProvenance
     public let pairEligibility: PerformancePairEligibility
+    public let baselineFixture: FixtureIdentity
+    public let candidateFixture: FixtureIdentity
     public let baselineMeasurementIdentity: MeasurementIdentity
     public let candidateMeasurementIdentity: MeasurementIdentity
     public let baselineID: String
@@ -116,6 +121,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
         baselineRunProvenance: PerformanceRunProvenance,
         candidateRunProvenance: PerformanceRunProvenance,
         pairEligibility: PerformancePairEligibility,
+        baselineFixture: FixtureIdentity,
+        candidateFixture: FixtureIdentity,
         baselineMeasurementIdentity: MeasurementIdentity,
         candidateMeasurementIdentity: MeasurementIdentity,
         baselineID: String,
@@ -136,6 +143,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
         self.baselineRunProvenance = baselineRunProvenance
         self.candidateRunProvenance = candidateRunProvenance
         self.pairEligibility = pairEligibility
+        self.baselineFixture = baselineFixture
+        self.candidateFixture = candidateFixture
         self.baselineMeasurementIdentity = baselineMeasurementIdentity
         self.candidateMeasurementIdentity = candidateMeasurementIdentity
         self.baselineID = baselineID
@@ -167,13 +176,14 @@ enum PerformanceComparisonReportValidator {
         try validateFoundation(report.foundationIdentity)
         try validateBuild(report.baselineBuildProvenance)
         try validateBuild(report.candidateBuildProvenance)
-        try validateRun(report.baselineRunProvenance)
-        try validateRun(report.candidateRunProvenance)
+        try validateRun(report.baselineRunProvenance, expectedVariant: "baseline")
+        try validateRun(report.candidateRunProvenance, expectedVariant: "candidate")
         try require(report.baselineRunProvenance.build == report.baselineBuildProvenance, "baseline run/build provenance mismatch")
         try require(report.candidateRunProvenance.build == report.candidateBuildProvenance, "candidate run/build provenance mismatch")
         try require(report.baselineRunProvenance.host == report.candidateRunProvenance.host, "baseline/candidate host mismatch")
         try require(report.baselineRunProvenance.configuration == report.candidateRunProvenance.configuration, "baseline/candidate configuration mismatch")
         try require(report.baselineRunProvenance.configuration == PerformanceConfiguration.standard, "comparison requires the standard configuration")
+        try validateFixtures(report.baselineFixture, report.candidateFixture, configuration: report.baselineRunProvenance.configuration)
         try require(report.harnessVersion == report.baselineRunProvenance.harnessVersion, "comparison/baseline harness mismatch")
         try require(report.harnessVersion == report.candidateRunProvenance.harnessVersion, "comparison/candidate harness mismatch")
         try require(report.harnessVersion == report.baselineBuildProvenance.harnessVersion, "comparison/baseline build harness mismatch")
@@ -206,6 +216,11 @@ enum PerformanceComparisonReportValidator {
         try require(report.metrics.allSatisfy { $0.disposition == .acceptedNoRegression }, "a metric disposition is not accepted")
         try require(report.resilience.disposition == .acceptedNoRegression, "resilience disposition is not accepted")
         try require(report.resilience.cases.allSatisfy { $0.status == .measured && !$0.leakedResource && !$0.unexpectedGrowth }, "resilience evidence is incomplete")
+        for metric in report.metrics {
+            try require(median(metric.ratios) <= 1.10, "metric ratio median exceeds the 1.10 budget")
+            try require(nearestRankP95(metric.ratios) <= 1.10, "metric ratio p95 exceeds the 1.10 budget")
+            try require(nearestRankP95(metric.candidateSamples) <= metric.budgetLimit, "metric candidate p95 exceeds its budget")
+        }
     }
 
     private static func validateIdentity(_ id: String, measurement: MeasurementIdentity, build: BuildProvenance, run: PerformanceRunProvenance) throws {
@@ -242,8 +257,8 @@ enum PerformanceComparisonReportValidator {
         try require(isHex(accepted, count: 64), "comparison foundation artifact must be lowercase 64-hex")
     }
 
-    private static func validateRun(_ run: PerformanceRunProvenance) throws {
-        try require(!run.variant.isEmpty, "comparison run variant is required")
+    private static func validateRun(_ run: PerformanceRunProvenance, expectedVariant: String) throws {
+        try require(run.variant == expectedVariant, "comparison run variant must be \(expectedVariant)")
         try require(!run.outputRoot.isEmpty, "comparison run output root is required")
         try require(!run.foundationProvenancePath.isEmpty, "comparison foundation provenance path is required")
         try require(!run.harnessVersion.isEmpty, "comparison run harnessVersion is required")
@@ -289,7 +304,8 @@ enum PerformanceComparisonReportValidator {
             try require(metric.baselineID == baselineID, "metric baseline ID mismatch")
             try require(metric.candidateID == candidateID, "metric candidate ID mismatch")
             try require(metric.baselineSamples.count == expectedPairCount && metric.candidateSamples.count == expectedPairCount, "paired metric arrays must contain exactly totalPairs samples")
-            try require(metric.baselineSamples.allSatisfy { $0.isFinite } && metric.candidateSamples.allSatisfy { $0.isFinite }, "metric samples must be finite")
+            try require(metric.baselineSamples.allSatisfy { $0.isFinite && $0 > 0 } && metric.candidateSamples.allSatisfy { $0.isFinite && $0 > 0 }, "metric samples must be finite and positive")
+            try require(metric.budgetLimit.isFinite && metric.budgetLimit > 0, "metric budget limit must be finite and positive")
             try require(metric.bootstrapInterval.lowerDelta.isFinite && metric.bootstrapInterval.upperDelta.isFinite, "bootstrap bounds must be finite")
             try require(metric.bootstrapInterval.lowerDelta <= metric.bootstrapInterval.upperDelta, "bootstrap bounds are incoherent")
             try require(metric.bootstrapInterval.seed == seed, "metric bootstrap seed mismatch")
@@ -309,10 +325,8 @@ enum PerformanceComparisonReportValidator {
             let delta = metric.deltas[index]
             try require(ratio.isFinite && delta.isFinite, "derived metric values must be finite")
             try require(abs(delta - (candidate - baseline)) <= max(1e-12, abs(candidate - baseline) * 1e-12), "metric delta is not derived from samples")
-            if baseline != 0 {
-                let expectedRatio = candidate / baseline
-                try require(abs(ratio - expectedRatio) <= max(1e-12, abs(expectedRatio) * 1e-12), "metric ratio is not derived from samples")
-            }
+            let expectedRatio = candidate / baseline
+            try require(abs(ratio - expectedRatio) <= max(1e-12, abs(expectedRatio) * 1e-12), "metric ratio is not derived from samples")
         }
     }
 
@@ -354,6 +368,31 @@ enum PerformanceComparisonReportValidator {
             try require(testCase.peakResourceCounts.windows >= testCase.endResourceCounts.windows, "resilience window counts are incoherent")
             try require(testCase.peakResourceCounts.observers >= testCase.endResourceCounts.observers, "resilience observer counts are incoherent")
         }
+    }
+
+    private static func validateFixtures(_ baseline: FixtureIdentity, _ candidate: FixtureIdentity, configuration: PerformanceConfiguration) throws {
+        try require(baseline == candidate, "baseline/candidate fixture mismatch")
+        try require(!baseline.identifier.isEmpty, "comparison fixture identifier is required")
+        try require(baseline.markCount > 0 && baseline.continuationSamples > 0 && baseline.warmupCount >= 0 && baseline.trialCount > 0, "comparison fixture values are invalid")
+        try require(baseline.markCount == configuration.fixtureMarkCount, "comparison fixture mark count does not match configuration")
+        try require(baseline.continuationSamples == configuration.samplesPerGesture, "comparison fixture sample count does not match configuration")
+        try require(baseline.warmupCount == configuration.warmupCount, "comparison fixture warmup count does not match configuration")
+        try require(baseline.trialCount == configuration.trialCount, "comparison fixture trial count does not match configuration")
+    }
+
+    private static func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
+    }
+
+    private static func nearestRankP95(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        let rank = max(1, Int(ceil(0.95 * Double(sorted.count))))
+        return sorted[rank - 1]
     }
 
     private static func sameMeasurementEnvironment(_ baseline: MeasurementIdentity, _ candidate: MeasurementIdentity) -> Bool {

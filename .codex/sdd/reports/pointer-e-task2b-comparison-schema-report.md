@@ -7,10 +7,12 @@ commit was created; the parent coordinator owns integration and phase commits.
 
 - Added the explicit Codable/Equatable comparison payloads in
   `Sources/PointerAppKit/Diagnostics/PerformanceComparisonReport.swift`:
-  `ManualMetricEvidence`, `ManualMetricAdapter`, `MetricComparison`, and
-  `PerformanceComparisonReport`.
+  `ManualMetricEvidence`, `ManualMetricAdapter`, `MetricComparison` (including
+  its typed absolute `budgetLimit`), and `PerformanceComparisonReport`.
 - Persisted the complete baseline/candidate `MeasurementIdentity` values in
   the comparison report, alongside their source IDs and typed provenance.
+- Persisted exact baseline/candidate `FixtureIdentity` values and enforced the
+  canonical `baseline` and `candidate` run variants.
 - Reused `ValidatedFoundationProvenance`, `PerformancePairEligibility`,
   `BootstrapInterval`, `ResilienceCase`, and `ResilienceMeasurement` from the
   measurement-owned schema. No duplicate wire types were introduced.
@@ -45,6 +47,8 @@ commit was created; the parent coordinator owns integration and phase commits.
   `pairsPerOrder * 2` (30 standard) finite samples. Ratios and deltas must
   equal candidate/baseline and candidate-minus-baseline respectively within a
   small floating-point tolerance; empty or short derived arrays are rejected.
+  Baseline and candidate samples must be strictly positive, and every metric
+  carries a finite positive absolute `budgetLimit`.
 - Full baseline/candidate measurement environments must match across host
   model, macOS, Xcode, developer directory, power state, display state, and
   Release build configuration. Each persisted identity must also agree with
@@ -57,6 +61,9 @@ commit was created; the parent coordinator owns integration and phase commits.
 - Resilience evidence is measured, nonempty, uniquely identified, and resource
   coherent. Completion requires accepted overall/metric/resilience dispositions
   and no leaked or unexpected-growth case.
+- Completion independently recomputes each metric's ratio median and
+  nearest-rank p95, requiring both ratio statistics to be at most 1.10 and the
+  candidate p95 to remain at or below that metric's `budgetLimit`.
 - `writeComparison` is intentionally non-mutating until Task 3 owns valid
   calculation/output mapping. Both invalid inputs and the explicit deferral
   leave no partial output.
@@ -71,10 +78,12 @@ fixture members. GREEN was then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceComparisonHarnessTests
 ```
 
-Result: 13 focused tests passed, covering full Codable round-trip and
+Result: 16 focused tests passed, covering full Codable round-trip and
 completion, wrong/missing report kind, duplicate/missing IDs, exact 30-pair
 array cardinality, every measurement-environment compatibility dimension,
-host/config and eligibility mismatch, content-manifest rejection,
+positive-sample and ratio/budget regression rejection, persisted fixture and
+baseline/candidate variant mismatch, host/config and eligibility mismatch,
+content-manifest rejection,
 failed/unmeasured preflight, array/ratio/bootstrap errors, manual evidence and
 host matching, resilience coherence, disposition rejection, atomic no-output
 behavior, and valid-pair preflight with the Task 3 deferral.

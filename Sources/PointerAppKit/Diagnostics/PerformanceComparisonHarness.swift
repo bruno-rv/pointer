@@ -16,6 +16,8 @@ public enum PerformanceComparisonHarness {
 
         try require(configuration == .standard, "comparison requires the standard configuration")
         try require(baseline.reportKind == .measurement && candidate.reportKind == .measurement, "comparison inputs must be measurement reports")
+        try require(baseline.runProvenance.variant == "baseline", "baseline run variant must be baseline")
+        try require(candidate.runProvenance.variant == "candidate", "candidate run variant must be candidate")
         try require(baseline.fixture == candidate.fixture, "baseline/candidate fixture mismatch")
         try require(baseline.host == candidate.host, "baseline/candidate host mismatch")
         try require(baseline.harnessVersion == candidate.harnessVersion, "baseline/candidate harness mismatch")

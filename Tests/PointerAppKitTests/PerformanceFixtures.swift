@@ -153,6 +153,7 @@ enum PerformanceFixtures {
                 candidateSamples: candidateSamples,
                 ratios: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline },
                 deltas: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline },
+                budgetLimit: 130,
                 bootstrapInterval: BootstrapInterval(lowerDelta: -10, upperDelta: -10, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
                 manualEvidence: metricID == manualMetric ? manualEvidence : nil,
                 disposition: .acceptedNoRegression
@@ -319,6 +320,7 @@ enum PerformanceFixtures {
         inputToVisible: InputToVisibleMeasurement = PerformanceFixtures.inputToVisible,
         memory: MemoryMeasurement = PerformanceFixtures.memory,
         resilience: ResilienceMeasurement = PerformanceFixtures.resilience,
+        fixture: FixtureIdentity = PerformanceFixtures.fixture,
         disposition: Disposition = .acceptedNoRegression
     ) -> PerformanceMeasurementReport {
         return PerformanceMeasurementReport(
@@ -354,6 +356,8 @@ enum PerformanceFixtures {
         baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
         candidateRun: PerformanceRunProvenance = PerformanceFixtures.run,
         eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility,
+        baselineFixture: FixtureIdentity = PerformanceFixtures.fixture,
+        candidateFixture: FixtureIdentity = PerformanceFixtures.fixture,
         baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
         candidateMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.identity,
         metrics: [MetricComparison] = PerformanceFixtures.metricComparisons(),
@@ -371,6 +375,8 @@ enum PerformanceFixtures {
             baselineRunProvenance: baselineRun,
             candidateRunProvenance: candidateRun,
             pairEligibility: eligibility,
+            baselineFixture: baselineFixture,
+            candidateFixture: candidateFixture,
             baselineMeasurementIdentity: baselineMeasurementIdentity,
             candidateMeasurementIdentity: candidateMeasurementIdentity,
             baselineID: baselineBuild.sourceIdentity.value,
