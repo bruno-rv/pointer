@@ -130,6 +130,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
     public let candidateFixture: FixtureIdentity
     public let baselineMeasurementIdentity: MeasurementIdentity
     public let candidateMeasurementIdentity: MeasurementIdentity
+    public let baselineMeasurementReportSHA256: String
+    public let candidateMeasurementReportSHA256: String
     public let baselineID: String
     public let candidateID: String
     public let metrics: [MetricComparison]
@@ -153,6 +155,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
         candidateFixture: FixtureIdentity,
         baselineMeasurementIdentity: MeasurementIdentity,
         candidateMeasurementIdentity: MeasurementIdentity,
+        baselineMeasurementReportSHA256: String,
+        candidateMeasurementReportSHA256: String,
         baselineID: String,
         candidateID: String,
         metrics: [MetricComparison],
@@ -175,6 +179,8 @@ public struct PerformanceComparisonReport: Codable, Sendable, Equatable {
         self.candidateFixture = candidateFixture
         self.baselineMeasurementIdentity = baselineMeasurementIdentity
         self.candidateMeasurementIdentity = candidateMeasurementIdentity
+        self.baselineMeasurementReportSHA256 = baselineMeasurementReportSHA256
+        self.candidateMeasurementReportSHA256 = candidateMeasurementReportSHA256
         self.baselineID = baselineID
         self.candidateID = candidateID
         self.metrics = metrics
@@ -229,6 +235,7 @@ enum PerformanceComparisonReportValidator {
 
         try validateIdentity(report.baselineID, measurement: report.baselineMeasurementIdentity, build: report.baselineBuildProvenance, run: report.baselineRunProvenance)
         try validateIdentity(report.candidateID, measurement: report.candidateMeasurementIdentity, build: report.candidateBuildProvenance, run: report.candidateRunProvenance)
+        try validateMeasurementReportHashes(report.baselineMeasurementReportSHA256, report.candidateMeasurementReportSHA256)
         try require(sameMeasurementEnvironment(report.baselineMeasurementIdentity, report.candidateMeasurementIdentity), "baseline/candidate measurement environment mismatch")
         try require(report.baselineID != report.candidateID, "baseline and candidate identities must differ")
         try validateEligibility(report.pairEligibility, baseline: report.baselineRunProvenance, candidate: report.candidateRunProvenance, foundation: report.foundationIdentity, harnessVersion: report.harnessVersion, buildContractVersion: report.buildContractVersion)
@@ -244,6 +251,12 @@ enum PerformanceComparisonReportValidator {
         try require(report.metrics.allSatisfy { $0.disposition == .acceptedNoRegression }, "a metric disposition is not accepted")
         try require(report.resilience.disposition == .acceptedNoRegression, "resilience disposition is not accepted")
         try require(report.resilience.cases.allSatisfy { $0.status == .measured && !$0.leakedResource && !$0.unexpectedGrowth }, "resilience evidence is incomplete")
+        guard let renderer = report.metrics.first(where: { $0.metricID == .renderer }),
+              let compositor = report.metrics.first(where: { $0.metricID == .compositor })
+        else {
+            throw PerformanceValidationError.invalid("renderer and compositor comparisons are required")
+        }
+        try require(nearestRankP95(renderer.candidateSamples) + nearestRankP95(compositor.candidateSamples) <= 16.7, "renderer/compositor frame budget breached")
         for metric in report.metrics {
             try require(median(metric.ratios) <= 1.10, "metric ratio median exceeds the 1.10 budget")
             try require(nearestRankP95(metric.ratios) <= 1.10, "metric ratio p95 exceeds the 1.10 budget")
@@ -285,6 +298,12 @@ enum PerformanceComparisonReportValidator {
             throw PerformanceValidationError.invalid("comparison build requires accepted foundation artifact")
         }
         try require(isHex(accepted, count: 64), "comparison foundation artifact must be lowercase 64-hex")
+    }
+
+    private static func validateMeasurementReportHashes(_ baseline: String, _ candidate: String) throws {
+        try require(isHex(baseline, count: 64), "baseline measurement report hash must be lowercase 64-hex")
+        try require(isHex(candidate, count: 64), "candidate measurement report hash must be lowercase 64-hex")
+        try require(baseline != candidate, "baseline and candidate measurement report hashes must differ")
     }
 
     private static func validateRun(_ run: PerformanceRunProvenance, expectedVariant: String) throws {

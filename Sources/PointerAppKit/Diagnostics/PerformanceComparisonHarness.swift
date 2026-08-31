@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @MainActor
 public enum PerformanceComparisonHarness {
@@ -57,6 +58,27 @@ public enum PerformanceComparisonHarness {
     }
 
     public static func writeComparison(
+        report: PerformanceComparisonReport,
+        baselineURL: URL,
+        candidateURL: URL,
+        outputDirectory: URL
+    ) throws -> PerformanceComparisonReport {
+        let baselineData = try Data(contentsOf: baselineURL)
+        let candidateData = try Data(contentsOf: candidateURL)
+        let baselineHash = sha256(baselineData)
+        let candidateHash = sha256(candidateData)
+        try require(report.baselineMeasurementReportSHA256 == baselineHash, "baseline measurement report hash mismatch")
+        try require(report.candidateMeasurementReportSHA256 == candidateHash, "candidate measurement report hash mismatch")
+        try report.validateCompletion()
+
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        let outputURL = outputDirectory.appendingPathComponent("paired-comparison.json")
+        let comparisonData = try JSONEncoder().encode(report)
+        try comparisonData.write(to: outputURL, options: .atomic)
+        return report
+    }
+
+    public static func writeComparison(
         baselineURL: URL,
         candidateURL: URL,
         manualEvidenceDirectory: URL,
@@ -66,8 +88,11 @@ public enum PerformanceComparisonHarness {
     ) throws -> PerformanceComparisonReport {
         let baselineData = try Data(contentsOf: baselineURL)
         let candidateData = try Data(contentsOf: candidateURL)
+        let baselineHash = sha256(baselineData)
+        let candidateHash = sha256(candidateData)
         let baseline = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: baselineData)
         let candidate = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: candidateData)
+        try require(baselineHash != candidateHash, "baseline and candidate measurement report hashes must differ")
         _ = manualEvidenceDirectory
         _ = outputDirectory
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
@@ -88,5 +113,9 @@ public enum PerformanceComparisonHarness {
             && baseline.powerState == candidate.powerState
             && baseline.displayState == candidate.displayState
             && baseline.buildConfiguration == candidate.buildConfiguration
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }

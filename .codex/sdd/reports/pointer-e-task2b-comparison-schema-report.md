@@ -14,6 +14,9 @@ commit was created; the parent coordinator owns integration and phase commits.
   the comparison report, alongside their source IDs and typed provenance.
 - Persisted exact baseline/candidate `FixtureIdentity` values and enforced the
   canonical `baseline` and `candidate` run variants.
+- Persisted lowercase-64hex SHA-256 bindings for the exact baseline and
+  candidate measurement-report bytes. Added an atomic report-bound writer that
+  hashes and matches both input files before writing `paired-comparison.json`.
 - Reused `ValidatedFoundationProvenance`, `PerformancePairEligibility`,
   `BootstrapInterval`, `ResilienceCase`, and `ResilienceMeasurement` from the
   measurement-owned schema. No duplicate wire types were introduced.
@@ -55,6 +58,9 @@ commit was created; the parent coordinator owns integration and phase commits.
   The canonical unit table uses milliseconds for `redrawLayout` (as well as
   frame, launch, responsiveness, and input metrics), nanoseconds for `model`,
   and bytes for allocation and memory metrics.
+- `memoryRSS` comparisons use strictly positive absolute RSS samples in bytes
+  and no absolute budget; signed memory deltas and post-warmup slopes remain
+  governed by the measurement report's completion validator.
 - Full baseline/candidate measurement environments must match across host
   model, macOS, Xcode, developer directory, power state, display state, and
   Release build configuration. Each persisted identity must also agree with
@@ -71,9 +77,14 @@ commit was created; the parent coordinator owns integration and phase commits.
   nearest-rank p95, requiring both ratio statistics to be at most 1.10. For
   the three contract-defined absolute budgets, candidate p95 must also remain
   at or below the canonical `budgetLimit`.
-- `writeComparison` is intentionally non-mutating until Task 3 owns valid
-  calculation/output mapping. Both invalid inputs and the explicit deferral
-  leave no partial output.
+- Completion also recomputes candidate renderer and compositor p95 values and
+  requires their sum to remain at or below 16.7 ms. A 16 ms combined-frame
+  boundary remains valid while a 10 ms + 10 ms renderer/compositor pair is
+  rejected.
+- The plan-signature `writeComparison` remains non-mutating until Task 3 owns
+  calculation/output mapping. The report-bound writer hashes exact input bytes,
+  validates matching persisted bindings, and writes atomically; mismatch,
+  missing-input, and deferred paths leave no partial output.
 
 ## Evidence
 
@@ -85,13 +96,15 @@ fixture members. GREEN was then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceComparisonHarnessTests
 ```
 
-Result: 18 focused tests passed, covering full Codable round-trip and
+Result: 21 focused tests passed, covering full Codable round-trip and
 completion, wrong/missing report kind, duplicate/missing IDs, exact 30-pair
 array cardinality, every measurement-environment compatibility dimension,
 positive-sample, canonical-unit, non-spoofable budget, ratio regression, and
 16.7/100 ms budget breach rejection, persisted fixture and
-baseline/candidate variant mismatch, host/config and eligibility mismatch,
-content-manifest rejection,
+baseline/candidate variant mismatch, absolute RSS semantics, exact input-byte
+SHA-256 binding and mismatch rejection, renderer/compositor and combined-frame
+budget boundaries, host/config and eligibility mismatch, content-manifest
+rejection,
 failed/unmeasured preflight, array/ratio/bootstrap errors, manual evidence and
 host matching, resilience coherence, disposition rejection, atomic no-output
 behavior, and valid-pair preflight with the Task 3 deferral.

@@ -1,7 +1,12 @@
 import Foundation
+import CryptoKit
 @testable import PointerAppKit
 
 enum PerformanceFixtures {
+    static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     static let configuration = PerformanceConfiguration.standard
     static let foundation = configuration.foundationIdentity
     static let commit = String(repeating: "a", count: 40)
@@ -9,6 +14,8 @@ enum PerformanceFixtures {
     static let executable = String(repeating: "c", count: 64)
     static let bundle = String(repeating: "d", count: 64)
     static let foundationArtifact = String(repeating: "e", count: 64)
+    static let baselineMeasurementReportSHA256 = String(repeating: "6", count: 64)
+    static let candidateMeasurementReportSHA256 = String(repeating: "7", count: 64)
     static let recordedAtUTC = "2026-08-31T12:00:00Z"
 
     static let build = BuildProvenance(
@@ -141,9 +148,23 @@ enum PerformanceFixtures {
 
     static func metricComparisons(manualMetric: PerformanceMetricID? = nil) -> [MetricComparison] {
         PerformanceMetricID.allCases.map { metricID in
-            let startingValue = metricID.canonicalBudgetLimit.map { $0 * 0.5 } ?? 100
-            let baselineSamples = (0..<configuration.trialCount).map { startingValue + Double($0) * 0.1 }
-            let candidateSamples = baselineSamples.map { $0 - 1 }
+            let startingValue: Double
+            let delta: Double
+            switch metricID {
+            case .renderer:
+                startingValue = 10
+                delta = 0
+            case .compositor:
+                startingValue = 6.7
+                delta = 0
+            default:
+                startingValue = metricID.canonicalBudgetLimit.map { $0 * 0.5 } ?? 100
+                delta = 1
+            }
+            let baselineSamples = (0..<configuration.trialCount).map { index in
+                startingValue + ((metricID == .renderer || metricID == .compositor) ? 0 : Double(index) * 0.1)
+            }
+            let candidateSamples = baselineSamples.map { $0 - delta }
             let evidenceClass: MetricEvidenceClass = metricID == manualMetric ? .manual : .deterministic
             return MetricComparison(
                 metricID: metricID,
@@ -156,7 +177,7 @@ enum PerformanceFixtures {
                 ratios: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline },
                 deltas: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline },
                 budgetLimit: metricID.canonicalBudgetLimit,
-                bootstrapInterval: BootstrapInterval(lowerDelta: -1, upperDelta: -1, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
+                bootstrapInterval: BootstrapInterval(lowerDelta: -delta, upperDelta: -delta, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
                 manualEvidence: metricID == manualMetric ? manualEvidence : nil,
                 disposition: .acceptedNoRegression
             )
@@ -362,6 +383,8 @@ enum PerformanceFixtures {
         candidateFixture: FixtureIdentity = PerformanceFixtures.fixture,
         baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
         candidateMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.identity,
+        baselineMeasurementReportSHA256: String = PerformanceFixtures.baselineMeasurementReportSHA256,
+        candidateMeasurementReportSHA256: String = PerformanceFixtures.candidateMeasurementReportSHA256,
         metrics: [MetricComparison] = PerformanceFixtures.metricComparisons(),
         resilience: ResilienceMeasurement = PerformanceFixtures.resilience,
         disposition: Disposition = .acceptedNoRegression
@@ -381,6 +404,8 @@ enum PerformanceFixtures {
             candidateFixture: candidateFixture,
             baselineMeasurementIdentity: baselineMeasurementIdentity,
             candidateMeasurementIdentity: candidateMeasurementIdentity,
+            baselineMeasurementReportSHA256: baselineMeasurementReportSHA256,
+            candidateMeasurementReportSHA256: candidateMeasurementReportSHA256,
             baselineID: baselineBuild.sourceIdentity.value,
             candidateID: candidateBuild.sourceIdentity.value,
             metrics: metrics,

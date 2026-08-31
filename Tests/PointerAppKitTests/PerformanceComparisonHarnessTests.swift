@@ -20,6 +20,8 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         XCTAssertEqual(decoded.candidateFixture, PerformanceFixtures.fixture)
         XCTAssertEqual(decoded.baselineMeasurementIdentity, PerformanceFixtures.baselineIdentity)
         XCTAssertEqual(decoded.candidateMeasurementIdentity, PerformanceFixtures.identity)
+        XCTAssertEqual(decoded.baselineMeasurementReportSHA256, PerformanceFixtures.baselineMeasurementReportSHA256)
+        XCTAssertEqual(decoded.candidateMeasurementReportSHA256, PerformanceFixtures.candidateMeasurementReportSHA256)
         XCTAssertEqual(decoded.baselineRunProvenance, PerformanceFixtures.baselineRun)
         XCTAssertEqual(decoded.candidateRunProvenance, PerformanceFixtures.run)
     }
@@ -164,6 +166,39 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         XCTAssertNoThrow(try PerformanceFixtures.comparison().validateCompletion())
     }
 
+    func testMemoryComparisonUsesPositiveAbsoluteRSSSamplesWithoutAnAbsoluteBudget() throws {
+        let memory = PerformanceFixtures.comparison().metrics.first { $0.metricID == .memoryRSS }!
+        XCTAssertEqual(memory.unit, .bytes)
+        XCTAssertNil(memory.budgetLimit)
+        XCTAssertTrue(memory.baselineSamples.allSatisfy { $0 > 0 })
+        XCTAssertTrue(memory.candidateSamples.allSatisfy { $0 > 0 })
+
+        let signed = MetricComparison(metricID: memory.metricID, evidenceClass: memory.evidenceClass, unit: memory.unit, baselineID: memory.baselineID, candidateID: memory.candidateID, baselineSamples: Array(repeating: -1, count: 30), candidateSamples: memory.candidateSamples, ratios: memory.ratios, deltas: memory.deltas, budgetLimit: nil, bootstrapInterval: memory.bootstrapInterval, manualEvidence: nil, disposition: memory.disposition)
+        var metrics = PerformanceFixtures.comparison().metrics
+        metrics[metrics.firstIndex { $0.metricID == .memoryRSS }!] = signed
+        XCTAssertThrowsError(try PerformanceFixtures.comparison(metrics: metrics).validateStructure())
+    }
+
+    func testComparisonCompletionHonorsRendererCompositorSumAndCombinedFrameBoundary() throws {
+        let baseline = PerformanceFixtures.comparison()
+        let combined = baseline.metrics.first { $0.metricID == .combinedFrame }!
+        let combinedBoundary = MetricComparison(metricID: combined.metricID, evidenceClass: combined.evidenceClass, unit: combined.unit, baselineID: combined.baselineID, candidateID: combined.candidateID, baselineSamples: Array(repeating: 16, count: 30), candidateSamples: Array(repeating: 16, count: 30), ratios: Array(repeating: 1, count: 30), deltas: Array(repeating: 0, count: 30), budgetLimit: 16.7, bootstrapInterval: BootstrapInterval(lowerDelta: 0, upperDelta: 0, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
+        var boundaryMetrics = baseline.metrics
+        boundaryMetrics[boundaryMetrics.firstIndex { $0.metricID == .combinedFrame }!] = combinedBoundary
+        let boundaryReport = PerformanceFixtures.comparison(metrics: boundaryMetrics)
+        XCTAssertNoThrow(try boundaryReport.validateCompletion())
+
+        func capped(_ value: MetricComparison) -> MetricComparison {
+            MetricComparison(metricID: value.metricID, evidenceClass: value.evidenceClass, unit: value.unit, baselineID: value.baselineID, candidateID: value.candidateID, baselineSamples: Array(repeating: 10, count: 30), candidateSamples: Array(repeating: 10, count: 30), ratios: Array(repeating: 1, count: 30), deltas: Array(repeating: 0, count: 30), budgetLimit: nil, bootstrapInterval: BootstrapInterval(lowerDelta: 0, upperDelta: 0, seed: 48271, resampleCount: 10_000), manualEvidence: nil, disposition: .acceptedNoRegression)
+        }
+        var overBudgetMetrics = baseline.metrics
+        overBudgetMetrics[overBudgetMetrics.firstIndex { $0.metricID == .renderer }!] = capped(baseline.metrics.first { $0.metricID == .renderer }!)
+        overBudgetMetrics[overBudgetMetrics.firstIndex { $0.metricID == .compositor }!] = capped(baseline.metrics.first { $0.metricID == .compositor }!)
+        let overBudgetReport = PerformanceFixtures.comparison(metrics: overBudgetMetrics)
+        XCTAssertNoThrow(try overBudgetReport.validateStructure())
+        XCTAssertThrowsError(try overBudgetReport.validateCompletion())
+    }
+
     func testComparisonCompletionRejectsResponsivenessAndInputToVisibleBudgetBreaches() throws {
         for metricID in [PerformanceMetricID.responsiveness, .inputToVisible] {
             let value = PerformanceFixtures.comparison().metrics.first { $0.metricID == metricID }!
@@ -251,6 +286,36 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
 
         XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(baselineURL: baselineURL, candidateURL: candidateURL, manualEvidenceDirectory: temp.appendingPathComponent("manual"), outputDirectory: outputURL.deletingLastPathComponent(), configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outputURL.path))
+    }
+
+    func testWriteComparisonBindsExactInputBytesAndRejectsHashMismatchBeforeOutput() throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-bound-comparison-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let baselineURL = temp.appendingPathComponent("baseline.json")
+        let candidateURL = temp.appendingPathComponent("candidate.json")
+        let baselineData = try JSONEncoder().encode(PerformanceFixtures.baseline)
+        let candidateData = try JSONEncoder().encode(PerformanceFixtures.candidate)
+        try baselineData.write(to: baselineURL)
+        try candidateData.write(to: candidateURL)
+        let bound = PerformanceFixtures.comparison(
+            baselineMeasurementReportSHA256: PerformanceFixtures.sha256(baselineData),
+            candidateMeasurementReportSHA256: PerformanceFixtures.sha256(candidateData)
+        )
+
+        let outputDirectory = temp.appendingPathComponent("bound-output", isDirectory: true)
+        let written = try PerformanceComparisonHarness.writeComparison(report: bound, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: outputDirectory)
+        XCTAssertEqual(written, bound)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputDirectory.appendingPathComponent("paired-comparison.json").path))
+
+        let mismatch = PerformanceFixtures.comparison(
+            baselineMeasurementReportSHA256: String(repeating: "0", count: 64),
+            candidateMeasurementReportSHA256: PerformanceFixtures.sha256(candidateData)
+        )
+        let mismatchOutput = temp.appendingPathComponent("mismatch-output", isDirectory: true)
+        XCTAssertThrowsError(try PerformanceComparisonHarness.writeComparison(report: mismatch, baselineURL: baselineURL, candidateURL: candidateURL, outputDirectory: mismatchOutput))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: mismatchOutput.appendingPathComponent("paired-comparison.json").path))
     }
 
     func testValidPairPassesMeasuredPreflightButCompareRemainsTask3Owned() throws {
