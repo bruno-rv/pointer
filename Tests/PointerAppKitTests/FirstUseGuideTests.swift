@@ -120,6 +120,58 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertEqual(viewController.doneButton?.accessibilityLabel(), "Done")
     }
 
+    func testGuideToolCopyUsesPaletteSelectionInsteadOfUnsupportedPerToolShortcut() {
+        for example in FirstUseGuideViewController.examples {
+            XCTAssertFalse(
+                example.selectionInstruction.localizedCaseInsensitiveContains("shortcut"),
+                "\(example.assetIdentifier) must not advertise an unsupported keyboard shortcut"
+            )
+            XCTAssertTrue(
+                example.selectionInstruction.contains("Pointer palette"),
+                "\(example.assetIdentifier) should teach palette selection"
+            )
+        }
+    }
+
+    func testGuideShortcutCopyMatchesCommandRouterProductionRoutes() throws {
+        XCTAssertEqual(
+            FirstUseGuideViewController.essentialShortcutGuidance,
+            "In annotation mode, Escape returns to standby · ⌘Z undoes the last mark"
+        )
+
+        _ = NSApplication.shared
+        let display = try XCTUnwrap(DisplayFixtures.oneDisplay().first)
+        let provider = DeterministicScreenProvider(
+            displays: [display],
+            pointerUUID: display.uuid
+        )
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
+        _ = coordinator.synchronize()
+
+        router.route(.setMode(.annotation))
+        XCTAssertEqual(router.session.mode, .annotation)
+        let overlay = try XCTUnwrap(coordinator.overlays[display.uuid] as? OverlayPanel)
+        overlay.canvasView.beginGesture(at: NSPoint(x: 100, y: 100))
+        overlay.canvasView.continueGesture(to: NSPoint(x: 900, y: 600))
+        overlay.canvasView.endGesture()
+        let committedMark = try XCTUnwrap(router.session.canvas(for: display.uuid).marks.first)
+
+        XCTAssertTrue(router.routeLocalKeyEvent(keyCode: 53))
+        XCTAssertEqual(router.session.mode, .standby)
+        XCTAssertTrue(
+            router.session.canvas(for: display.uuid).marks.contains { $0.id == committedMark.id }
+        )
+        XCTAssertTrue(router.routeLocalKeyEvent(keyCode: 6, modifierFlags: [.command]))
+        XCTAssertFalse(
+            router.session.canvas(for: display.uuid).marks.contains { $0.id == committedMark.id }
+        )
+        XCTAssertFalse(router.routeLocalKeyEvent(keyCode: 0))
+    }
+
     func testGuideProtocolIsDeclaredOnlyInCAndConcreteCatalogStaysDLocal() throws {
         let sourceRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -656,15 +708,30 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertTrue(viewController.scrollView?.hasVerticalScroller == true)
         XCTAssertEqual(viewController.exampleImageViews.count, 8)
         XCTAssertEqual(viewController.doneButton?.accessibilityLabel(), "Done")
+        XCTAssertEqual(viewController.keyboardShortcutLabel?.accessibilityLabel(), "Keyboard shortcuts")
+        XCTAssertEqual(
+            viewController.keyboardShortcutLabel?.accessibilityValue(),
+            FirstUseGuideViewController.essentialShortcutGuidance
+        )
         XCTAssertTrue(viewController.accessibilityOrderLabels.first == "Learn Pointer")
         XCTAssertEqual(viewController.accessibilityOrderLabels.last, "Done")
-        let exampleNames = viewController.accessibilityOrderLabels
-            .dropFirst(2)
-            .dropLast()
-            .enumerated()
-            .filter { $0.offset.isMultiple(of: 3) }
-            .map(\.element)
-        XCTAssertEqual(exampleNames.count, 8)
+        XCTAssertEqual(viewController.accessibilityOrderLabels[2], "Keyboard shortcuts")
+        let instructionsByID = Dictionary(
+            uniqueKeysWithValues: FirstUseGuideViewController.examples.map {
+                ($0.assetIdentifier, $0.selectionInstruction)
+            }
+        )
+        let expectedExampleLabels = fixture.catalog.entries.flatMap { entry in
+            [
+                entry.accessibleName,
+                entry.accessibleDescription,
+                instructionsByID[entry.id] ?? "",
+            ]
+        }
+        XCTAssertEqual(
+            Array(viewController.accessibilityOrderLabels.dropFirst(3).dropLast()),
+            expectedExampleLabels
+        )
     }
 
     func testWorkspaceCenterNotificationReloadsHighContrastAndDefaultCenterDoesNot() {

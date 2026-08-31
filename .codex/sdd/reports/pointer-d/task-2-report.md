@@ -99,8 +99,9 @@ edited.
   intent without committing seen state. Dismiss/Escape only closes the guide.
 - `FirstUseGuideViewController` builds a non-modal guide with eight examples,
   injected catalog metadata, accessible labels/help, and focus order from title
-  through explanation, examples, shortcuts, and Done. Decorative catalog
-  entries are excluded from the accessibility element tree.
+  through explanation, one actual keyboard-routes block, palette-selection
+  instructions, and Done. Decorative catalog entries are excluded from the
+  accessibility element tree.
 - `FirstUseGuideAssetPreparing` is an internal-only panel seam used by the
   retained-panel regression; it forwards complete resolved image maps into the
   existing guide view without changing the public presenting protocol.
@@ -401,3 +402,36 @@ git diff --check
 exit 0
 No whitespace errors
 ```
+
+## Truthful shortcut-copy follow-up
+
+The earlier card metadata called every tool name a keyboard shortcut even
+though `CommandRouter` exposes no per-tool key route. This follow-up is based
+on shared review base `853880b` and remains uncommitted until the phase gate
+accepts it.
+
+The RED test caught all eight unsupported card claims:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testGuideToolCopyUsesPaletteSelectionInsteadOfUnsupportedPerToolShortcut
+exit 1
+16 failures: each card still used `Shortcut: <Tool> tool` and omitted Pointer palette guidance
+```
+
+The GREEN change renames the per-card field to `selectionInstruction`, uses
+`Choose <Tool> in the Pointer palette`, and removes the per-card shortcut AX
+help. It adds one accessible global block that documents only the routes that
+`CommandRouter.routeLocalKeyEvent` actually handles: Escape returns to
+standby and Command-Z undoes the last mark. The route-truth test exercises
+those key codes against `CommandRouter` and rejects unsupported guide copy.
+
+Fresh focused evidence after the fix:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
+exit 0
+FirstUseGuideTests: 26 passed, 0 failed
+```
+
+The packaged composition and compiled asset proof remain F-owned; this copy
+correction changes only the guide view and its tests.

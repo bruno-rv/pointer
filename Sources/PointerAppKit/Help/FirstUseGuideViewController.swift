@@ -14,49 +14,52 @@ private final class FirstUseGuideRootView: NSView {
 public final class FirstUseGuideViewController: NSViewController {
     public struct Example: Equatable, Sendable {
         public let assetIdentifier: String
-        public let shortcut: String
+        public let selectionInstruction: String
 
         public init(
             assetIdentifier: String,
-            shortcut: String
+            selectionInstruction: String
         ) {
             self.assetIdentifier = assetIdentifier
-            self.shortcut = shortcut
+            self.selectionInstruction = selectionInstruction
         }
     }
+
+    public static let essentialShortcutGuidance =
+        "In annotation mode, Escape returns to standby · ⌘Z undoes the last mark"
 
     public static let examples: [Example] = [
         Example(
             assetIdentifier: "arrow",
-            shortcut: "Shortcut: Arrow tool"
+            selectionInstruction: "Choose Arrow in the Pointer palette"
         ),
         Example(
             assetIdentifier: "rectangle",
-            shortcut: "Shortcut: Rectangle tool"
+            selectionInstruction: "Choose Rectangle in the Pointer palette"
         ),
         Example(
             assetIdentifier: "ellipse",
-            shortcut: "Shortcut: Ellipse tool"
+            selectionInstruction: "Choose Ellipse in the Pointer palette"
         ),
         Example(
             assetIdentifier: "pen",
-            shortcut: "Shortcut: Pen tool"
+            selectionInstruction: "Choose Pen in the Pointer palette"
         ),
         Example(
             assetIdentifier: "spotlight",
-            shortcut: "Shortcut: Spotlight tool"
+            selectionInstruction: "Choose Spotlight in the Pointer palette"
         ),
         Example(
             assetIdentifier: "emoji",
-            shortcut: "Shortcut: Emoji tool"
+            selectionInstruction: "Choose Emoji in the Pointer palette"
         ),
         Example(
             assetIdentifier: "select",
-            shortcut: "Shortcut: Select tool"
+            selectionInstruction: "Choose Select in the Pointer palette"
         ),
         Example(
             assetIdentifier: "eraser",
-            shortcut: "Shortcut: Eraser tool"
+            selectionInstruction: "Choose Eraser in the Pointer palette"
         ),
     ]
 
@@ -65,6 +68,7 @@ public final class FirstUseGuideViewController: NSViewController {
     public var onDismiss: () -> Void
     public private(set) var titleLabel: NSTextField?
     public private(set) var explanationLabel: NSTextField?
+    public private(set) var keyboardShortcutLabel: NSTextField?
     public private(set) var exampleImageViews: [NSImageView] = []
     public private(set) var exampleRows: [NSView] = []
     public private(set) var doneButton: NSButton?
@@ -200,8 +204,21 @@ public final class FirstUseGuideViewController: NSViewController {
         explanationLabel.maximumNumberOfLines = 0
         explanationLabel.setAccessibilityLabel("Guide explanation")
         explanationLabel.setAccessibilityHelp("A concise introduction to Pointer's annotation tools")
+        let keyboardShortcutLabel = NSTextField(
+            wrappingLabelWithString: Self.essentialShortcutGuidance
+        )
+        keyboardShortcutLabel.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        keyboardShortcutLabel.textColor = .secondaryLabelColor
+        keyboardShortcutLabel.maximumNumberOfLines = 0
+        keyboardShortcutLabel.setAccessibilityElement(true)
+        keyboardShortcutLabel.setAccessibilityLabel("Keyboard shortcuts")
+        keyboardShortcutLabel.setAccessibilityValue(Self.essentialShortcutGuidance)
+        keyboardShortcutLabel.setAccessibilityHelp(
+            "Keyboard routes available while annotating"
+        )
         self.titleLabel = titleLabel
         self.explanationLabel = explanationLabel
+        self.keyboardShortcutLabel = keyboardShortcutLabel
 
         let guideScrollView = NSScrollView()
         guideScrollView.hasVerticalScroller = true
@@ -219,10 +236,12 @@ public final class FirstUseGuideViewController: NSViewController {
 
         root.addSubview(titleLabel)
         root.addSubview(explanationLabel)
+        root.addSubview(keyboardShortcutLabel)
         root.addSubview(guideScrollView)
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         explanationLabel.translatesAutoresizingMaskIntoConstraints = false
+        keyboardShortcutLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             titleLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
@@ -230,9 +249,12 @@ public final class FirstUseGuideViewController: NSViewController {
             explanationLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             explanationLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
             explanationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
+            keyboardShortcutLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            keyboardShortcutLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            keyboardShortcutLabel.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: 8),
             guideScrollView.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             guideScrollView.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            guideScrollView.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: 16),
+            guideScrollView.topAnchor.constraint(equalTo: keyboardShortcutLabel.bottomAnchor, constant: 16),
             guideScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
             guideScrollView.heightAnchor.constraint(lessThanOrEqualToConstant: 390),
             contentStack.leadingAnchor.constraint(equalTo: guideScrollView.contentView.leadingAnchor),
@@ -245,8 +267,8 @@ public final class FirstUseGuideViewController: NSViewController {
         exampleImageViews.removeAll(keepingCapacity: true)
         exampleRows.removeAll(keepingCapacity: true)
         resolutionErrors.removeAll(keepingCapacity: true)
-        accessibilityOrderLabels = ["Learn Pointer", "Guide explanation"]
-        focusOrder = [titleLabel, explanationLabel]
+        accessibilityOrderLabels = ["Learn Pointer", "Guide explanation", "Keyboard shortcuts"]
+        focusOrder = [titleLabel, explanationLabel, keyboardShortcutLabel]
 
         let selectedVariant = resolvedVariant ?? appearanceProvider.variant
         let images: [String: NSImage]?
@@ -310,12 +332,14 @@ public final class FirstUseGuideViewController: NSViewController {
             descriptionLabel.setAccessibilityElement(true)
             descriptionLabel.setAccessibilityLabel(accessibleDescription)
 
-            let shortcutLabel = NSTextField(labelWithString: example.shortcut)
-            shortcutLabel.setAccessibilityElement(true)
-            shortcutLabel.setAccessibilityLabel(example.shortcut)
-            shortcutLabel.setAccessibilityHelp("Essential shortcut for the \(accessibleName)")
+            let selectionInstructionLabel = NSTextField(labelWithString: example.selectionInstruction)
+            selectionInstructionLabel.setAccessibilityElement(true)
+            selectionInstructionLabel.setAccessibilityLabel(example.selectionInstruction)
+            selectionInstructionLabel.setAccessibilityHelp(
+                "Select the \(accessibleName) tool from the Pointer palette"
+            )
 
-            let textStack = NSStackView(views: [nameLabel, descriptionLabel, shortcutLabel])
+            let textStack = NSStackView(views: [nameLabel, descriptionLabel, selectionInstructionLabel])
             textStack.orientation = .vertical
             textStack.alignment = .leading
             textStack.spacing = 2
@@ -325,11 +349,11 @@ public final class FirstUseGuideViewController: NSViewController {
 
             exampleImageViews.append(imageView)
             exampleRows.append(row)
-            focusOrder.append(contentsOf: [imageView, nameLabel, descriptionLabel, shortcutLabel])
+            focusOrder.append(contentsOf: [imageView, nameLabel, descriptionLabel, selectionInstructionLabel])
             accessibilityOrderLabels.append(contentsOf: [
                 accessibleName,
                 accessibleDescription,
-                example.shortcut,
+                example.selectionInstruction,
             ])
         }
 

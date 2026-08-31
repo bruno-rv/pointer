@@ -4,16 +4,17 @@ Status: `READY_FOR_PHASE_REVIEW`
 
 Worktree: `/Users/bruno/Dev/pointer/.worktrees/stable-app`
 
-Head: `d57f07c` (`test: measure real Pointer chrome`)
+Review base: `853880b` (shared HEAD used for the current uncommitted follow-up)
 
-D range: `9e6e175..d57f07c`
+Historical D range: `9e6e175..853880b`
 
 ## Reconciliation verdict
 
 Tasks 1–4 each received an independent reviewer verdict of `APPROVED`, and
-each then received an adversarial Codex verdict of `RECONCILED`. These are
-current facts from the active orchestration record, not repository markers or
-claims inferred from test names.
+each then received an adversarial Codex verdict of `RECONCILED` before the
+current shortcut-copy follow-up. These are facts from the active orchestration
+record, not repository markers or claims inferred from test names. Final D
+phase acceptance remains pending review of the follow-up below.
 
 The four task reports remain the detailed evidence for their individual
 contracts:
@@ -47,6 +48,11 @@ contracts:
 - The guide has injected state, placement, appearance, focus, accessibility,
   display-loss, stop, dismissal, and retry behavior. A `.shown` result is not
   committed until the panel reports visibility.
+- In the current uncommitted follow-up based on review base `853880b`, tool
+  cards teach `Choose <Tool> in the Pointer palette`; the only keyboard
+  guidance is one accessible block for the production Escape and Command-Z
+  routes. No per-tool keyboard shortcut is advertised. This is pending final
+  D-phase review and is not asserted as part of the historical range above.
 
 ### Visual assets
 
@@ -82,7 +88,7 @@ inventory.
 
 ## Fresh verification
 
-All commands below were run at `d57f07c` with
+The historical gate commands below were run at `d57f07c` with
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 ```text
@@ -112,7 +118,8 @@ contracts.
 
 ## Scope and path inventory
 
-`git diff --name-status 9e6e175..d57f07c` reports 83 changed paths:
+`git diff --name-status 9e6e175..d57f07c` reports 83 changed paths in the
+historical gate snapshot:
 
 - 9 D plan/report/brief paths;
 - 61 tracked D asset and identity paths;
@@ -159,3 +166,48 @@ handoff, not a D completion claim. The D tests prove the injected controller,
 view, assets, rendering contract, and friction inventory independently; they
 do not prove the packaged unseen-guide launch path.
 
+## Current shortcut-copy follow-up
+
+In the current uncommitted follow-up based on review base `853880b`, the
+guide's per-card shortcut claims were replaced with truthful palette-selection
+instructions. One accessible keyboard-routes block documents only Escape
+returning to standby and Command-Z undoing the last mark;
+`FirstUseGuideTests` exercises both routes through
+`CommandRouter.routeLocalKeyEvent` and rejects unsupported per-tool shortcut
+copy. This change is intentionally uncommitted so the independent reviewer
+and adversarial reviewer can inspect the working diff before the next phase
+gate.
+
+## Fresh current-tree verification
+
+The current uncommitted tree was rerun after the shortcut-copy follow-up:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
+exit 0
+FirstUseGuideTests: 26 passed, 0 failed
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'RenderPlanTests|FirstUseGuideTests|AssetIdentityTests|ChromeFrictionTests'
+exit 0
+PointerPackageTests.xctest: 40 tests, 0 failures
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+exit 0
+PointerPackageTests.xctest: 303 tests, 0 failures
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+exit 0
+Build complete
+
+git diff --check
+exit 0
+No whitespace errors
+
+git diff --check 9e6e175 --
+exit 0
+No whitespace errors in the current tree against the D base
+```
+
+`git diff --check 9e6e175..HEAD` still reports the blank EOF that is already
+embedded in committed `853880b`; the parent must commit this working-tree
+correction before that historical-range command can pass.
