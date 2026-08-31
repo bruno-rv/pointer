@@ -322,6 +322,13 @@ orchestration. The app does not assert Git status, ancestry, or checkout
 provenance; F/E shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
+the compare branch reaches only E's public exact
+`writeComparison(report:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`,
+which reads and hashes the exact report bytes, decodes, cross-checks the
+supplied report, and performs full preflight before writing. Internal
+four-argument decoded `compare` is Task 3's deferred, non-writing calculation
+seam and makes no hash-verification claim. Hash, identity, fixture, provenance,
+or eligibility mismatch must fail before any output file is created.
 only the no-flag branch executes:
 
     let composition = PointerCompositionRoot.make()
@@ -582,6 +589,8 @@ p95 plus compositor p95 exceeds 16.7 ms or whose combinedFrame p95 exceeds
 16.7 ms. The report also
 links the canonical 420-point narrow-display evidence and accepted A-harness
 real-guide evidence before marking F-final complete.
+The final report tests also exercise hash, identity, fixture, provenance, and
+eligibility mismatches and assert no comparison output is created.
 
 - [ ] **Step 4: Run GREEN.**
 
