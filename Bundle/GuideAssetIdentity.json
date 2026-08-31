@@ -1,0 +1,94 @@
+{
+  "schemaVersion" : 1,
+  "catalogIdentifier" : "pointer.first-use-guide.v1",
+  "entries" : [
+    {
+      "id" : "arrow",
+      "accessibleName" : "Arrow example",
+      "accessibleDescription" : "Draws a coral arrow to direct attention.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "arrow", "sourceSHA256" : "c7fb09d448c5a5d382dbaae1266090b0a9a480d888a152f49188d55e91179ecf" },
+        { "variant" : "dark", "assetIdentifier" : "arrow", "sourceSHA256" : "9907a214180c161eb204cf55c526e38991970f91caabd1420e50fba9b6ebbe0a" },
+        { "variant" : "highContrast", "assetIdentifier" : "arrow", "sourceSHA256" : "c95f1268bed95367818f69e1a7a0899c3a5151e759aaac8319ac9a80026cba8e" }
+      ]
+    },
+    {
+      "id" : "rectangle",
+      "accessibleName" : "Rectangle example",
+      "accessibleDescription" : "Frames a detail with a coral rectangle.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "rectangle", "sourceSHA256" : "7e65134ff7d54e955d9e30b34fdcced437e2ac46adc71a59302fee5867c2a76c" },
+        { "variant" : "dark", "assetIdentifier" : "rectangle", "sourceSHA256" : "5447c95050285145669593ca6f704139593c4dd489f19fe92b4e0463ad089fc7" },
+        { "variant" : "highContrast", "assetIdentifier" : "rectangle", "sourceSHA256" : "fd586ed7708e8a9d3f1cf1cdc435a1a336b56ac8102d700d598d3b0b1f8cbd72" }
+      ]
+    },
+    {
+      "id" : "ellipse",
+      "accessibleName" : "Ellipse example",
+      "accessibleDescription" : "Circles a detail with a coral ellipse.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "ellipse", "sourceSHA256" : "daf0f880ee6327b9e99e771e066bf4204300cfedbba4ba940f61df9de4d7ddc7" },
+        { "variant" : "dark", "assetIdentifier" : "ellipse", "sourceSHA256" : "1a45ff088c731e6411fbd31690e90ac43a716dac75bf363d9bc483ab147f69ff" },
+        { "variant" : "highContrast", "assetIdentifier" : "ellipse", "sourceSHA256" : "0d409fefc60c36f0821fb6dfebb50cff221c905de6d8ef05acf6fe0be92a9a8e" }
+      ]
+    },
+    {
+      "id" : "pen",
+      "accessibleName" : "Pen example",
+      "accessibleDescription" : "Draws a freehand annotation stroke.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "pen", "sourceSHA256" : "cc60dd6cba402c7064fbf25c08385147191da53624d4fc7dcb1b6a69a844986c" },
+        { "variant" : "dark", "assetIdentifier" : "pen", "sourceSHA256" : "3ac1b863149c7ce61f1d1652539eb17226c5abcc26bb652037391be3edcc2c9d" },
+        { "variant" : "highContrast", "assetIdentifier" : "pen", "sourceSHA256" : "0c58f9bafb0a5029ae299da47a5064b28070c8067185d5c8b4beff2dd1208ddf" }
+      ]
+    },
+    {
+      "id" : "spotlight",
+      "accessibleName" : "Spotlight example",
+      "accessibleDescription" : "Illuminates one detail with a spotlight.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "spotlight", "sourceSHA256" : "79924c54b4d576df373907bb6ac29f2f45062b4c2b740ab4bb25857fa277b027" },
+        { "variant" : "dark", "assetIdentifier" : "spotlight", "sourceSHA256" : "6e5084521c7e6eae19ccc24a5e08fcf0ccf05d5fed970dbbb98672532b6b7472" },
+        { "variant" : "highContrast", "assetIdentifier" : "spotlight", "sourceSHA256" : "907b4bb84a298adce31b7287e1e0c15ed41e2f96a654c2d5adeb41277bc935ec" }
+      ]
+    },
+    {
+      "id" : "emoji",
+      "accessibleName" : "Emoji example",
+      "accessibleDescription" : "Adds a friendly emoji annotation.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "emoji", "sourceSHA256" : "13d3fe5e897267bcffa4b64856e485bc36f4f93bda98e7607a4e92a544d5ff13" },
+        { "variant" : "dark", "assetIdentifier" : "emoji", "sourceSHA256" : "d5d401f84c0b49e83c15a06a6a05b615dfbaa9d2e6113745c1dbf7ea59bc1952" },
+        { "variant" : "highContrast", "assetIdentifier" : "emoji", "sourceSHA256" : "b6545b2cc1752437c29286e92aa991713df439a09e58d8fad8173e55af0ae8f7" }
+      ]
+    },
+    {
+      "id" : "select",
+      "accessibleName" : "Select example",
+      "accessibleDescription" : "Selects an annotation with visible handles.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "select", "sourceSHA256" : "636e6e0dbd9ccaccabc072928c49819e8180c2b71cdb9764a1c7941169995c2d" },
+        { "variant" : "dark", "assetIdentifier" : "select", "sourceSHA256" : "5f72aa907e96dec5c5831e238be46b904f7d0129ca3f1a18c56594d7a4ab64c7" },
+        { "variant" : "highContrast", "assetIdentifier" : "select", "sourceSHA256" : "c8afcfecd8a331b3107ef3474de3e6432696253eb8fb883636619b505509aa81" }
+      ]
+    },
+    {
+      "id" : "eraser",
+      "accessibleName" : "Eraser example",
+      "accessibleDescription" : "Removes part of an annotation stroke.",
+      "isDecorative" : false,
+      "variants" : [
+        { "variant" : "light", "assetIdentifier" : "eraser", "sourceSHA256" : "df2c1c8357d286a7d2de5f620d75545bcc2fe05ae0303b8405375eff2f8270af" },
+        { "variant" : "dark", "assetIdentifier" : "eraser", "sourceSHA256" : "2f538cd69e940b5b004424d635057f4d4c0e92db9da48a321119b4202350500e" },
+        { "variant" : "highContrast", "assetIdentifier" : "eraser", "sourceSHA256" : "23b0e43117d8dabb248c3cba58313c1ce89099e3c2a5a089268a8522bbb822f1" }
+      ]
+    }
+  ]
+}

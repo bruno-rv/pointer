@@ -1,0 +1,72 @@
+{
+  "name" : "AppIcon",
+  "sourceFiles" : [
+    {
+      "path" : "icon-16-1x.png",
+      "sha256" : "87aa3fc7bb5e394a90975c0a4399502444a305226857fcc5f91c6ece0ab00d4d",
+      "dimensions" : { "width" : 16, "height" : 16 }
+    },
+    {
+      "path" : "icon-16-2x.png",
+      "sha256" : "b85c459f5f7e742f098814ddac4a5493247be82a8682509197206234204eaa4f",
+      "dimensions" : { "width" : 32, "height" : 32 }
+    },
+    {
+      "path" : "icon-32-1x.png",
+      "sha256" : "b85c459f5f7e742f098814ddac4a5493247be82a8682509197206234204eaa4f",
+      "dimensions" : { "width" : 32, "height" : 32 }
+    },
+    {
+      "path" : "icon-32-2x.png",
+      "sha256" : "43dd62d465fd74ed2b1d1ff7cadc191fb8bee6f6d92571bfad3965536dbdbf95",
+      "dimensions" : { "width" : 64, "height" : 64 }
+    },
+    {
+      "path" : "icon-128-1x.png",
+      "sha256" : "e703d70211b8ab96c119222a4c94e94e3e5fe19613f158dab746d9c6cc69a86a",
+      "dimensions" : { "width" : 128, "height" : 128 }
+    },
+    {
+      "path" : "icon-128-2x.png",
+      "sha256" : "b3a0f15e4623007e27590a4dbced9a9e7076ad239cd06dac54d3e728d94a2d43",
+      "dimensions" : { "width" : 256, "height" : 256 }
+    },
+    {
+      "path" : "icon-256-1x.png",
+      "sha256" : "b3a0f15e4623007e27590a4dbced9a9e7076ad239cd06dac54d3e728d94a2d43",
+      "dimensions" : { "width" : 256, "height" : 256 }
+    },
+    {
+      "path" : "icon-256-2x.png",
+      "sha256" : "addf3ee7bdd2b047929ded43da54b7da70a61024a1399f6409b5997b3f61404e",
+      "dimensions" : { "width" : 512, "height" : 512 }
+    },
+    {
+      "path" : "icon-512.png",
+      "sha256" : "87eade9be043b792d052e7a1d6de0947290e58940a6568d25545c585da1e6690",
+      "dimensions" : {
+        "width" : 512,
+        "height" : 512
+      }
+    },
+    {
+      "path" : "icon-512-2x.png",
+      "sha256" : "6754319b244eb6f6a2972e8419d40ef1793ccabe07b658050bd8cf9c6fc8ef9a",
+      "dimensions" : { "width" : 1024, "height" : 1024 }
+    }
+  ],
+  "canonicalDimensions" : {
+    "width" : 512,
+    "height" : 512
+  },
+  "colorSpace" : "sRGB IEC 61966-2.1",
+  "alphaPolicy" : "straight",
+  "markerPixel" : {
+    "coordinate" : {
+      "x" : 256,
+      "y" : 256
+    },
+    "rgba" : [ 252, 127, 83, 253 ]
+  },
+  "expectedResolvedDigest" : "dc9bb4ae78701a0d79004050eb062b836f1aa7623ad13c0b09b45d5a6dd59068"
+}
