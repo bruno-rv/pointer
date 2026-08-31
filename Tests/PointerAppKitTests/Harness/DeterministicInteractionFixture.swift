@@ -91,6 +91,23 @@ final class DeterministicInteractionFixture {
         )
     }
 
+    static func standard() -> DeterministicInteractionFixture {
+        oneDisplay()
+    }
+
+    static func clamped() -> DeterministicInteractionFixture {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "display-clamped"),
+            frame: DisplayFrame(x: 0, y: 0, width: 792, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 792, height: 1_056),
+            scaleFactor: 2
+        )
+        return DeterministicInteractionFixture(
+            displays: [descriptor],
+            pointerDisplay: descriptor.uuid
+        )
+    }
+
     static func twoDisplays() -> DeterministicInteractionFixture {
         let descriptors = DisplayFixtures.twoDisplays()
         return DeterministicInteractionFixture(
