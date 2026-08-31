@@ -847,6 +847,11 @@ Acceptance criteria:
   final-window delta bytes/percent, matched-baseline series/values, peak live
   resource counts, end live resource counts, and a `phase` for each sample
   (`running`, `stopping`, `stopped`, or `restarted`).
+  The v1 raw timing arrays are `frameMilliseconds`, `sampleMilliseconds` for
+  redraw/layout, `responseMilliseconds`, and `sampleMilliseconds` for
+  input-to-visible. A measured report carries exactly `trialCount` finite,
+  strictly positive values in each applicable array and recomputed p95 fields;
+  failed/unmeasured diagnostics may carry empty arrays.
   `PerformanceHarnessTests` validates the complete schema, typed report kind,
   and statuses and rejects missing/wrong-kind fields rather than treating them
   as zero. E writes variant measurements and paired comparisons only under
@@ -889,11 +894,14 @@ Acceptance criteria:
   checkpoint, and the candidate is a subsequent measured commit.
 - The fixed paired protocol runs five warmups per variant and
   `pairsPerOrder == 15`, with derived `totalPairs == 30` on the same
-  host/fixture: exactly 15 baseline-first plus 15 candidate-first pairs. It
-  computes the paired candidate/baseline ratio and a fixed-seed 10,000-resample
-  bootstrap 95% interval for each metric.
-  Improvement is claimable only when the interval for the paired delta is
-  strictly below zero; otherwise the comparison says no proven improvement.
+  host/fixture: exactly 15 baseline-first plus 15 candidate-first pairs. Each
+  `MetricComparison.pairOrders` uses typed `PairOrder` values in that exact
+  sequence. It computes the paired candidate/baseline ratio and a fixed-seed
+  10,000-resample bootstrap 95% interval for each metric, and the validator
+  recomputes that interval from deltas/seed/resample count and rejects tampered
+  summaries. `improvementClaimed` may be true only when the recomputed delta
+  upper bound is strictly below zero; it is false otherwise, including for
+  `acceptedNoRegression`, which is not an improvement claim.
 - `PerformanceComparisonHarness.swift` consumes two validated
   `PerformanceMeasurementReport` files and emits a versioned
   `PerformanceComparisonReport` under
@@ -915,11 +923,13 @@ Acceptance criteria:
   containing all comparison content except the two exact input-report hashes;
   only internal `compare` produces it and it has no public initializer.
   The only public persisted entry is the exact
-  `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
+  `writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
   it reads exact report bytes from the URLs, computes hashes, decodes, performs
   full preflight/cross-check validation against the supplied hash-free draft,
   injects those hashes into the final `PerformanceComparisonReport`, and then
-  writes. Internal
+  writes. The required existing `manualEvidenceDirectory` is always forwarded
+  from `--manual-evidence-dir`; deterministic runs require it to be empty, and
+  no writer overload omits it. Internal
   `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
   receives `--manual-evidence-dir` from the CLI, returns only the hash-free
   `PerformanceComparisonDraft`, and Task 3 loads and validates
@@ -963,7 +973,8 @@ Acceptance criteria:
 - `PerformanceComparisonHarnessTests` validates the paired
   `PerformanceComparisonReport` against two `PerformanceMeasurementReport`
   inputs, including identity matching, fixed pair ordering, bootstrap
-  intervals, budget outcomes, and `REVISE`/completion-blocking dispositions.
+  intervals, deterministic bootstrap validation, `improvementClaimed` policy,
+  budget outcomes, and `REVISE`/completion-blocking dispositions.
   Its writer-boundary cases prove byte-hash, identity, fixture, provenance,
   and eligibility mismatches create no comparison output.
 - Continuation samples mutate the gesture-local preview and request redraw

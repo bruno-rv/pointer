@@ -239,6 +239,7 @@ neither a previous report nor a documentation claim can satisfy it.
     public struct FrameMeasurement: Codable, Sendable {
         public let status: MeasurementStatus
         public let sampleCount: Int
+        public let frameMilliseconds: [Double]
         public let p95Milliseconds: Double
         public let frameCount: Int
         public let missedFrameCount: Int
@@ -261,12 +262,14 @@ neither a previous report nor a documentation claim can satisfy it.
         public let status: MeasurementStatus
         public let redrawsPerSample: [Int]
         public let layoutPasses: [Int]
+        public let sampleMilliseconds: [Double]
         public let p95Milliseconds: Double
     }
 
     public struct ResponsivenessMeasurement: Codable, Sendable {
         public let status: MeasurementStatus
         public let stallCount: Int
+        public let responseMilliseconds: [Double]
         public let maximumMainThreadStallMilliseconds: Double
         public let p95ResponseMilliseconds: Double
     }
@@ -274,6 +277,7 @@ neither a previous report nor a documentation claim can satisfy it.
     public struct InputToVisibleMeasurement: Codable, Sendable {
         public let status: MeasurementStatus
         public let sampleCount: Int
+        public let sampleMilliseconds: [Double]
         public let p95Milliseconds: Double
         public let missedSampleCount: Int
     }
@@ -383,6 +387,11 @@ neither a previous report nor a documentation claim can satisfy it.
         case bytes
     }
 
+    public enum PairOrder: String, Codable, Sendable, Equatable {
+        case baselineFirst
+        case candidateFirst
+    }
+
     public struct MetricComparison: Codable, Sendable {
         public let metricID: PerformanceMetricID
         public let evidenceClass: MetricEvidenceClass
@@ -392,9 +401,11 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateSamples: [Double]
         public let ratios: [Double]
         public let deltas: [Double]
+        public let pairOrders: [PairOrder]
         public let unit: PerformanceMetricUnit
         public let budgetLimit: Double?
         public let bootstrapInterval: BootstrapInterval
+        public let improvementClaimed: Bool
         public let manualEvidence: ManualMetricEvidence?
         public let disposition: Disposition
     }
@@ -471,6 +482,7 @@ neither a previous report nor a documentation claim can satisfy it.
             draft: PerformanceComparisonDraft,
             baselineURL: URL,
             candidateURL: URL,
+            manualEvidenceDirectory: URL,
             outputDirectory: URL,
             configuration: PerformanceConfiguration,
             eligibility: PerformancePairEligibility
@@ -506,12 +518,13 @@ neither a previous report nor a documentation claim can satisfy it.
     }
 
 Only public persisted entry is the exact
-`writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`:
+`writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
 it reads the exact bytes at `baselineURL` and `candidateURL`, computes lowercase
 64-hex SHA-256 values, decodes the measurement reports, performs full
-preflight/cross-check validation against the supplied hash-free draft, injects
-the computed hashes to construct the final `PerformanceComparisonReport`, then
-atomically writes it. Internal five-parameter
+preflight/cross-check validation against the supplied hash-free draft and the
+existing `manualEvidenceDirectory`, injects the computed hashes to construct
+the final `PerformanceComparisonReport`, then atomically writes it. There is no
+writer overload without `manualEvidenceDirectory`. Internal five-parameter
 `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
 returns only the hash-free `PerformanceComparisonDraft`; Task 3 loads and
 validates `manualEvidenceDirectory` before producing that draft. It is the
@@ -610,6 +623,15 @@ serialized in each `MetricComparison`; the validator rejects a wrong unit,
 missing required budget, huge/wrong value, or unexpected budget on an
 unbudgeted metric. These are canonical values, not report-supplied thresholds.
 
+The v1 raw timing arrays are `FrameMeasurement.frameMilliseconds`,
+`RedrawLayoutMeasurement.sampleMilliseconds`,
+`ResponsivenessMeasurement.responseMilliseconds`, and
+`InputToVisibleMeasurement.sampleMilliseconds`. A `measured` report must carry
+exactly `configuration.trialCount` finite, strictly positive values in each
+applicable array, and each stored p95 must be recomputed from that array;
+`failed`/`unmeasured` diagnostic reports may carry empty arrays and make no p95
+or completion claim.
+
 `PerformanceMeasurementReport.validateStructure()` requires
 `reportKind == .measurement`, all required keys/types, exactly one immutable
 source identity, valid enum values, finite numeric values, coherent arrays,
@@ -636,7 +658,7 @@ Structural measurement validation allows `measured`,
 `failed`, and `unmeasured` so diagnostic failures round-trip honestly, but
 `validateCompletion()` rejects required failed/unmeasured metrics, budget
 breaches, leaks, invalid dispositions, or any non-measured required status.
-Public `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
+Public `writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
 reads and hashes both exact measurement files, decodes them, validates both
 reports and all pair inputs against the supplied hash-free draft, injects the
 computed hashes to construct the final `PerformanceComparisonReport`, and
@@ -671,6 +693,14 @@ are strictly positive absolute RSS bytes while signed
 `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) stay in the
 measurement report and are validated during pair preflight, not as comparison
 sample units.
+`MetricComparison.pairOrders` is typed `[PairOrder]` and must contain exactly
+15 `.baselineFirst` entries followed by exactly 15 `.candidateFirst` entries;
+its count is `configuration.totalPairs`. The validator deterministically
+recomputes `BootstrapInterval` from the paired `deltas`, `seed`, and
+`resampleCount` and rejects any tampered interval summary or seed/count. The
+`improvementClaimed` flag may be true only when that recomputed bootstrap
+delta upper bound (`upperDelta`) is strictly below zero; it is false otherwise,
+including for `acceptedNoRegression`, which is not an improvement claim.
 `validateCompletion()` recomputes every ratio,
 the ratio median, and the ratio p95; both ratio summaries must be at most
 `1.10`. For metrics with a canonical absolute budget, it also recomputes
@@ -773,6 +803,8 @@ Expected: Release JSON has fixed fixture/trial/publication/checksum/final-state 
 
     func testPerformanceMeasurementReportRoundTripsEveryRequiredMeasurementObject()
     func testPerformanceReportKindIsTypedAndWrongOrMissingKindsAreRejected()
+    func testMeasuredTimingArraysHaveExactTrialCountAndRecomputedP95()
+    func testDiagnosticTimingArraysMayBeEmpty()
     func testBuildAndRunProvenanceAreDistinctAndPortable()
     func testBuildProvenanceCarriesValidatedConfigurationAndFoundationSHA()
     func testAuthoritativeRunRequiresAcceptedFoundationArtifactSHA()
@@ -810,6 +842,13 @@ comparison harness a structurally
 valid measurement with a failed or unmeasured required metric and assert it
 throws before constructing a `PerformanceComparisonReport` or writing an
 output file; comparison reports contain measured comparisons only.
+For measured reports, assert `FrameMeasurement.frameMilliseconds`,
+`RedrawLayoutMeasurement.sampleMilliseconds`,
+`ResponsivenessMeasurement.responseMilliseconds`, and
+`InputToVisibleMeasurement.sampleMilliseconds` each contain exactly
+`configuration.trialCount` finite, strictly positive values and that their
+corresponding p95 fields are recomputed from the raw arrays; diagnostic
+`failed`/`unmeasured` reports may carry empty timing arrays.
 
 - [ ] **Step 2: Run RED.**
 
@@ -826,6 +865,14 @@ missed counts; launch cold/warm; allocation bytes/peak; redraw/layout; response
 stalls; input samples/latency/missed samples; memory series/aggregates/matched
 baseline/resource counts/phases; typed provenance and foundation/build
 versions; and the conditional manualEvidence rule. The comparison harness
+requires each measured raw timing array to contain exactly `trialCount` finite,
+strictly positive values and recomputes its p95; failed/unmeasured diagnostics
+may use empty arrays. `PairOrder` and `MetricComparison.pairOrders` require
+the exact 15 baseline-first then 15 candidate-first sequence. It recomputes
+the bootstrap interval from deltas/seed/resample count and rejects tampering;
+`improvementClaimed` is true only when the recomputed delta upper bound is
+strictly below zero and is false otherwise, including `acceptedNoRegression`.
+It then performs a
 performs a measured-status preflight on every required input metric and throws
 before constructing or writing a comparison if any input is failed/unmeasured.
 `PerformanceComparisonReport.validateStructure()` accepts measured
@@ -882,6 +929,9 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonWriterInjectsExactInputHashesIntoPersistedReport()
     func testInternalComparisonCalculationIsDeferredAndNonWriting()
     func testInternalComparisonLoadsAndValidatesManualEvidenceBeforeDraft()
+    func testComparisonCarriesTypedPairOrdersExactBaselineThenCandidateSequence()
+    func testImprovementClaimRequiresRecomputedBootstrapUpperBound()
+    func testBootstrapIntervalRejectsTamperedSummary()
     func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
     func testComparisonCompletionRecomputesRatioAndCandidateP95()
     func testMetricComparisonRejectsWrongUnitAndUnexpectedBudget()
@@ -901,13 +951,23 @@ Also assert full `baselineMeasurementIdentity` and
 Xcode, developerDirectory, power/display state, and buildConfiguration, with
 distinct source commits matching each run/build provenance. Require nonempty
 ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
+Round-trip typed `MetricComparison.pairOrders` and require exactly 15
+`PairOrder.baselineFirst` entries followed by exactly 15
+`PairOrder.candidateFirst` entries. Assert `improvementClaimed` is true only
+when the recomputed bootstrap delta upper bound (`upperDelta`) is strictly
+below zero; it is false otherwise, including for `acceptedNoRegression`, which
+is not an improvement claim. Recompute each `BootstrapInterval` from the
+paired deltas, seed, and resample count and reject tampered summaries or seed/
+count values.
 Round-trip lowercase 64-hex `baselineMeasurementReportSHA256` and
 `candidateMeasurementReportSHA256` fields, and assert the writer computes and
 verifies them against the exact input report bytes, injects them into the final
 persisted report, and emits output atomically.
 Call only the public
-`writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
-writer with a hash-free `PerformanceComparisonDraft` and persisted report paths;
+`writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
+writer with a hash-free `PerformanceComparisonDraft`, persisted report paths,
+and the required existing manual-evidence directory (empty for deterministic
+runs), and assert there is no writer overload without that directory;
 assert that internal decoded
 `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
 loads and validates manual evidence before producing the draft, remains
@@ -1019,9 +1079,11 @@ Pointer --quality-compare --format json \
 ```
 
 The first command emits one `PerformanceMeasurementReport`; for the second,
-`--manual-evidence-dir` is passed as `manualEvidenceDirectory` to internal
-`compare`, which loads and validates that evidence before returning the
-hash-free draft to `writeComparison`. The second emits one authoritative
+`--manual-evidence-dir` must name an existing directory and is always forwarded
+as `manualEvidenceDirectory` to internal `compare` and the public
+`writeComparison`. Internal `compare` loads and validates that evidence before
+returning the hash-free draft; deterministic runs require the directory to be
+empty. The second emits one authoritative
 `PerformanceComparisonReport` only for clean 40-hex commit
 identities whose typed eligibility file has already passed the lineage/
 foundation checks. The typed `reportKind` field makes the distinction
