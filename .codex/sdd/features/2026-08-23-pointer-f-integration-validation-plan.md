@@ -281,22 +281,22 @@ full reports with these mutually exclusive measurement identities:
 ```text
 --quality-performance --format json --variant baseline|candidate \
   (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
-  --provenance-file <path> --output-dir <directory>
+  --run-provenance-file <path> --output-dir <directory>
 --quality-compare --format json \
-  --baseline-root <root> --baseline-commit-sha <40hex> \
-  --candidate-root <root> --candidate-commit-sha <40hex> \
-  --foundation-provenance <path> \
+  --baseline-report <path> --candidate-report <path> \
+  --pair-eligibility-file <path> \
   --manual-evidence-dir <directory> --output-dir <directory>
 ```
 
-`--quality-performance` emits `PerformanceMeasurementReport` and
-`--quality-compare` emits an authoritative `PerformanceComparisonReport` only
-for clean commit roots whose heads, ancestry, and accepted foundation match
-the supplied 40-hex refs. Invalid arguments, both/neither measurement source
-identity flags, malformed identities, stale/dirty commit identities, content-
-manifest roots on the authoritative compare, or mismatched roots exit
-nonzero with concise stderr. Scripts orchestrate the branches after F tasks
-1–3; the launcher never constructs interactive composition for any diagnostic
+`--quality-performance` emits `PerformanceMeasurementReport` and requires a
+`--run-provenance-file` envelope. `--quality-compare` emits an authoritative
+`PerformanceComparisonReport` from the two report paths and typed eligibility
+file; it does not accept roots or refs because the eligibility file carries
+the prevalidated lineage. Invalid arguments, both/neither measurement source
+identity flags, malformed identities, or content-manifest identities on the
+authoritative compare exit nonzero with concise stderr. Scripts orchestrate
+roots/refs/builds and then invoke these report-path commands after F tasks 1–3;
+the launcher never constructs interactive composition for any diagnostic
 branch.
 
 - [ ] **Step 2: Run RED.**
@@ -311,13 +311,13 @@ Import PointerComposition and PointerAppKit's @MainActor PerformanceCLI, retain
 all diagnostic parsers before MainActor composition, and dispatch smoke, the
 model-only gesture benchmark, full quality-performance, and quality-compare
 branches before any composition is constructed. The quality-performance
-branch requires `--provenance-file <path>`; `PerformanceCLI` parses the typed
-`BuildProvenance`, checks the requested source identity and artifact hashes,
-and embeds that build artifact in `PerformanceMeasurementReport`. E's script
-embeds the separately created `PerformanceRunProvenance` and
-`PerformancePairEligibility` during authoritative orchestration. The app does
-not assert Git status, ancestry, or checkout provenance; F/E shell scripts own
-those proofs. The
+branch requires `--run-provenance-file <path>`; `PerformanceCLI` parses the
+typed `PerformanceRunProvenance` envelope, checks its embedded
+`BuildProvenance`, source identity, and artifact hashes, and embeds both typed
+artifacts in `PerformanceMeasurementReport`. E's script is the sole creator
+of the run envelope and `PerformancePairEligibility` during authoritative
+orchestration. The app does not assert Git status, ancestry, or checkout
+provenance; F/E shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
 only the no-flag branch executes:

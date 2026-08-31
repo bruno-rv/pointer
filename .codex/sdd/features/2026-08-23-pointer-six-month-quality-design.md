@@ -863,9 +863,10 @@ Acceptance criteria:
   `PerformanceRunProvenance` and `PerformancePairEligibility` from two
   validated build artifacts plus roots/refs/foundation. The script creates
   and validates these artifacts, proves Git cleanliness/ancestry and
-  checkout-to-binary correspondence, and passes the build artifact with
-  `--provenance-file`; `PerformanceCLI` embeds the typed build/run artifacts.
-  A measured executable must hash-match its build artifact.
+  checkout-to-binary correspondence, creates the run envelope at the variant
+  root, and passes it with `--run-provenance-file`; `PerformanceCLI` embeds the
+  typed build/run artifacts. A measured executable must hash-match its build
+  artifact.
 - Every single measurement uses exactly one immutable identity: a clean
   40-hex commit SHA or a 64-hex SHA-256 content manifest covering the
   canonical source scope. The CLI accepts exactly one of
@@ -1074,7 +1075,9 @@ Acceptance criteria:
   `PerformanceComparisonReport`) before composition; each measurement
   invocation accepts exactly one of `--source-commit-sha <40hex>` or
   `--content-manifest-sha256 <64hex>`, and comparison requires
-  `--baseline`, `--candidate`, `--manual-evidence-dir`, and `--output-dir`.
+  `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`,
+  `--manual-evidence-dir`, and `--output-dir`. Roots/refs belong to the
+  script orchestrator, not the compare CLI.
   Scripts orchestrate those full-quality branches. A separate
   `PointerCompositionTests` test target depends directly on
   `PointerComposition`, `PointerAppKit`, and XCTest, and never imports or

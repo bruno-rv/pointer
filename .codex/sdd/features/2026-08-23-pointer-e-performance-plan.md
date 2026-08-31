@@ -199,6 +199,9 @@ neither a previous report nor a documentation claim can satisfy it.
         public let outputRoot: String
         public let sourceRef: String
         public let build: BuildProvenance
+        public let host: HostIdentity
+        public let recordedAtUTC: String
+        public let configuration: PerformanceConfiguration
         public let foundationProvenancePath: String
         public let foundation: FoundationIdentity
         public let harnessVersion: String
@@ -470,7 +473,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let buildContractVersion: String
         public let baselineBuildProvenance: BuildProvenance
         public let candidateBuildProvenance: BuildProvenance
-        public let runProvenance: PerformanceRunProvenance
+        public let baselineRunProvenance: PerformanceRunProvenance
+        public let candidateRunProvenance: PerformanceRunProvenance
         public let pairEligibility: PerformancePairEligibility
         public let baselineID: String
         public let candidateID: String
@@ -559,8 +563,8 @@ writing a comparison. A persisted `PerformanceComparisonReport` therefore
 contains measured comparisons only. Its structural validator requires
 `reportKind == .comparison`, immutable baseline/candidate identities, matching
 schema/harness/foundation/build-contract versions, matching host/fixture,
-both typed `BuildProvenance` values, matching run provenance, one
-`MetricComparison` for every
+both typed `BuildProvenance` values, matching baseline/candidate
+`PerformanceRunProvenance` values, one `MetricComparison` for every
 `PerformanceMetricID`, equal-length paired arrays, valid `BootstrapInterval`
 values, and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
@@ -720,8 +724,13 @@ Expected: complete schema round-trip and rejection tests pass.
 - Create: .codex/sdd/reports/quality-campaign/performance/README.md
 - Create at runtime: .codex/sdd/reports/quality-campaign/performance/measurements/baseline.json
 - Create at runtime: .codex/sdd/reports/quality-campaign/performance/measurements/candidate.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/baseline.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/candidate.json
+- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/baseline.json (published run-provenance copy)
+- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/candidate.json (published run-provenance copy)
+- Create at runtime: build/baseline/measurements/measurement.json
+- Create at runtime: build/candidate/measurements/measurement.json
+- Create at runtime: build/baseline/run-provenance.json
+- Create at runtime: build/candidate/run-provenance.json
+- Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/pair-eligibility.json
 - Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/paired-comparison.json
 - Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/manual/<metricID>.json
 - Create at runtime: .codex/sdd/reports/quality-campaign/performance/resilience/resilience.json
@@ -732,6 +741,7 @@ Expected: complete schema round-trip and rejection tests pass.
     func testPairedProtocolUsesImmutableIdentitiesFixedSeedWarmupsAndThirtyTrials()
     func testMeasurementCLIRejectsBothOrNeitherSourceIdentity()
     func testDirectComparisonHarnessCannotBypassPairEligibility()
+    func testComparisonCLIRequiresReportPathsAndPairEligibilityFile()
     func testBootstrapIntervalOnlyClaimsImprovementWhenUpperBoundIsBelowZero()
     func testBudgetRegressionAndMissingMetricDispositionIsRevise()
     func testResilienceReportCoversModeToolsMarksClearUndoDisplayChurnAndShortcutTimeout()
@@ -772,10 +782,10 @@ sole creator of `PerformanceRunProvenance` and `PerformancePairEligibility`:
 it consumes two validated BuildProvenance files plus roots/refs/foundation,
 proves Git cleanliness, ancestry, source checkout to built executable
 correspondence, and executable hash equality before invoking the app. It
-passes `--provenance-file <path>` to `PerformanceCLI`; the app validates the
-flag syntax and decodes/cross-checks the BuildProvenance artifact, then embeds
-the build/run artifacts in the report, but does not claim Git state or ancestry
-on the shell's behalf.
+passes `--run-provenance-file <path>` to `PerformanceCLI`; the app validates
+the envelope syntax and decodes/cross-checks its embedded BuildProvenance, then
+embeds the build/run artifacts in the report, but does not claim Git state or
+ancestry on the shell's behalf.
 
 OffscreenCanvasRendererAdapter measures the real CanvasView/CGContext path;
 SignpostWindowServerAdapter uses os_signpost/CACurrentMediaTime and records
@@ -820,22 +830,22 @@ at this gate, these exact commands:
 ```text
 Pointer --quality-performance --format json --variant baseline|candidate \
   (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
-  --provenance-file <path> --output-dir <directory>
+  --run-provenance-file <path> --output-dir <directory>
 Pointer --quality-compare --format json \
-  --baseline-root <build/baseline> --baseline-commit-sha <40hex> \
-  --candidate-root <build/candidate> --candidate-commit-sha <40hex> \
-  --foundation-provenance <path> \
+  --baseline-report <path> --candidate-report <path> \
+  --pair-eligibility-file <path> \
   --manual-evidence-dir <comparisons/manual> \
   --output-dir <comparisons>
 ```
 
 The first command emits one `PerformanceMeasurementReport`; the second emits
 one authoritative `PerformanceComparisonReport` only for clean 40-hex commit
-identities whose roots and refs pass the lineage/foundation checks. The typed
-`reportKind` field makes the distinction structural. A measurement command may
-still accept a content-manifest identity for diagnostic runs, but the
-authoritative compare rejects that identity and does not write a promoted
-comparison. Scripts orchestrate these commands, while F wires the launcher
+identities whose typed eligibility file has already passed the lineage/
+foundation checks. The typed `reportKind` field makes the distinction
+structural. A measurement command may still accept a content-manifest identity
+for diagnostic runs, but the authoritative compare rejects that identity and
+does not write a promoted comparison. Scripts orchestrate roots/refs/builds
+and then invoke these report-path commands, while F wires the launcher
 branches after its Release foundation is accepted. No report is written at
 the performance root.
 
@@ -882,13 +892,25 @@ report, dirty checkout, symbolic label, or prior D checkpoint is not eligible.
   contain exactly `Pointer.app`, `source-manifest.sha256`,
   `bundle-manifest.sha256`, and build-only `provenance.json`; the script
   hashes each executable and cross-checks it against that BuildProvenance
-  before passing the per-variant `--provenance-file` to
+  before passing the per-variant `--run-provenance-file` to
   `--quality-performance`. It alone creates the per-variant
   `PerformanceRunProvenance` and `PerformancePairEligibility`, then invokes
-  the full measurement branch for baseline then candidate, writes
-  `measurements/baseline.json` and `measurements/candidate.json`, and invokes
-  the authoritative compare with `--baseline-root`, `--candidate-root`, the
-  two commit SHAs, and `--foundation-provenance`. The compare rejects
+  the full measurement branch for baseline then candidate, writing
+  `build/baseline/measurements/measurement.json` and
+  `build/candidate/measurements/measurement.json` plus each
+  `<variantRoot>/run-provenance.json`. It publishes byte-identical copies as
+  `performance/measurements/baseline.json` and `candidate.json`, writes the
+  typed `performance/comparisons/pair-eligibility.json`, then invokes the
+  compare CLI with only report paths:
+
+      Pointer --quality-compare --format json \
+        --baseline-report build/baseline/measurements/measurement.json \
+        --candidate-report build/candidate/measurements/measurement.json \
+        --pair-eligibility-file .codex/sdd/reports/quality-campaign/performance/comparisons/pair-eligibility.json \
+        --manual-evidence-dir .codex/sdd/reports/quality-campaign/performance/comparisons/manual \
+        --output-dir .codex/sdd/reports/quality-campaign/performance/comparisons
+
+  The compare rejects
   content-manifest identities, mismatched refs/provenance/foundation, and any
   failed or unmeasured input before writing
   `comparisons/paired-comparison.json`; resilience remains at

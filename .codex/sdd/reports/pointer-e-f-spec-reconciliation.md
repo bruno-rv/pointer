@@ -16,7 +16,7 @@ claim that E/F implementation or physical evidence exists.
 | Source identity | A single measurement accepts exactly one `--source-commit-sha <40hex>` or `--content-manifest-sha256 <64hex>`. A clean tree uses the commit identity; a dirty tree uses the full content-manifest identity. Both, neither, malformed, symbolic, or stale identities are rejected. The authoritative paired comparison accepts clean commit identities only and requires explicit baseline/candidate roots, commit SHAs, foundation provenance, manual-evidence directory, and output directory. |
 | Source-manifest scope | E and F use the same Git-tracked scope: `Package.swift`, `Sources/**`, `Tests/**`, `scripts/**`, `Bundle/Assets.xcassets/**`, bundle identity/Info.plist files, and the master plus six phase plan/design inputs. Sorted `<sha256>  <relative-path>` rows produce the aggregate SHA; generated reports/build products/signature metadata/mtimes/absolute paths/untracked files are excluded. |
 | Baseline eligibility | Authoritative baseline and candidate use the same E schema/harness/fixture, typed harness/foundation/build-contract versions, F launcher/build foundation, and host. The baseline is pinned only after the F-foundation checkpoint; both refs are clean 40-hex commits, baseline is an ancestor of candidate, and both are descendants of the foundation checkpoint. Content-manifest measurements remain diagnostic-only. |
-| Per-variant roots | F's build helper accepts `--output-root <root>` and emits exactly `<root>/Pointer.app`, `<root>/source-manifest.sha256`, `<root>/bundle-manifest.sha256`, and build-only `<root>/provenance.json` containing portable `BuildProvenance` (no path or pair ancestry); E creates `build/baseline` and `build/candidate`, passes the accepted foundation path to both post-acceptance builds, and consumes those exact paths for repeat/idempotence comparisons. |
+| Per-variant roots | F's build helper accepts `--output-root <root>` and emits exactly `<root>/Pointer.app`, `<root>/source-manifest.sha256`, `<root>/bundle-manifest.sha256`, and build-only `<root>/provenance.json` containing portable `BuildProvenance` (no path or pair ancestry); E creates `build/baseline` and `build/candidate`, writes each `<root>/measurements/measurement.json` and `<root>/run-provenance.json`, passes the accepted foundation path to both post-acceptance builds, and consumes those exact paths for repeat/idempotence comparisons. |
 | Foundation checkpoint | F tasks 1–3 produce tracked `.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json` with fixed identity/version/hash/acceptance fields. The worker, reviewer, and adversarial gates must accept it before E-execution. E and clean-clone receive it through explicit `--foundation-provenance`; loaders validate hashes and derive foundation/harness/build-contract versions without hidden environment state. |
 | Provenance | F build roots contain portable typed `BuildProvenance` only (source/executable/bundle hashes, foundation/version fields, optional accepted-artifact SHA, and no path or pair ancestry); E `benchmark-quality.sh` is the sole creator of per-variant `PerformanceRunProvenance` and `PerformancePairEligibility`, consuming two validated build artifacts plus roots/refs/foundation. The app embeds validated build/run artifacts after syntax/hash checks, while the script proves Git cleanliness, ancestry, and checkout-to-binary correspondence. |
 | Resource boundary | Runtime ships only the executable, `Info.plist`, compiled `Contents/Resources/Assets.car`, and byte-identical `Contents/Resources/GuideAssetIdentity.json`. Raw PNG files and any `*.imageset` or `*.xcassets` file/directory anywhere under Resources fail the bundle contract. Source-input and bundle-output manifests are separate and both are compared across repeat builds and clean clone. |
@@ -25,7 +25,7 @@ claim that E/F implementation or physical evidence exists.
 | Clean clone | Canonical input cleanliness is captured before any source-root write, excluding generated reports/build products and the final evidence output; temporary evidence stays under `$fixture`. The script validates `checkpointCommitSHA` and foundation/current manifests, build provenance, then tests, directly invokes the built executable with `--smoke --format json`, and runs `verify.sh`; it atomically publishes final `CleanCloneIdentity.md` on success or failure, and an immediate rerun must remain reproducible. |
 | Chrome friction | F reruns the authoritative `ChromeFrictionReport` against the final F candidate and records the full immutable E baseline hash. D's Chrome checkpoint is historical provenance only and is never silently relabeled as final evidence. |
 | Pair eligibility | E defines typed `PerformancePairEligibility`/validated foundation provenance arguments. The CLI/script constructs eligibility only after root/ref/clean/head/ancestry/foundation checks and exact `pairsPerOrder == 15`/derived `totalPairs == 30`; the harness revalidates report/provenance equality and direct fabricated eligibility cannot bypass it. |
-| Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies clean commit roots, exact heads, baseline ancestry, foundation ancestry, provenance, and then rejects any failed/unmeasured required input before constructing or writing a comparison; persisted comparison reports contain measured comparisons only. |
+| Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies typed eligibility from the shell's roots/refs/foundation checks and then rejects any failed/unmeasured required input before constructing or writing a comparison; the CLI consumes only `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`, `--manual-evidence-dir`, and `--output-dir`, and persisted comparison reports contain measured comparisons only. |
 | Required prerequisites | F-final requires accepted A-harness real-guide lifecycle evidence from `pointer-a-harness-lifecycle-report.md` and `pointer-a-harness-phase-report.md`, where the real `FirstUseGuideController`/panel is injected through controller start/stop/restart, plus the canonical 420-point narrow-display evidence. A static guide/catalog test or stale narrow-display report cannot substitute for either prerequisite. |
 
 ## Changed clauses by artifact
@@ -55,7 +55,8 @@ claim that E/F implementation or physical evidence exists.
 - Added distinct F bootstrap/post-acceptance build modes and portable
   `BuildProvenance` semantics with E-owned run/pair provenance; all documented
   invocations now carry the correct bootstrap constants or accepted foundation
-  path.
+  path. The quality script writes root-local measurement/run artifacts before
+  invoking the report-path compare CLI.
 
 ### E performance plan
 
@@ -107,8 +108,8 @@ claim that E/F implementation or physical evidence exists.
   types remain implementation decisions inside E's owned diagnostics scope;
   the wire contracts, typed fields, and cross-report equality rules are fixed.
 - The exact output directory for runtime provenance files remains an
-  implementation detail, but each variant must have an immutable artifact and
-  the CLI must receive its `--provenance-file` path.
+  implementation detail, but each variant must have an immutable run envelope
+  and the CLI must receive its `--run-provenance-file` path.
 - Launch Services and WindowServer behavior remain host-dependent. F must
   record failures or unsupported observations as evidence gaps; it must not
   convert them into deterministic passes.
