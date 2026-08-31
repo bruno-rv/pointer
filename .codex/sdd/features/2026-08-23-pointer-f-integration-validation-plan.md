@@ -272,6 +272,7 @@ Expected: composition identity passes and the source scan returns no production 
     func testSmokeBranchReturnsBeforeCompositionConstruction()
     func testBenchmarkBranchReturnsBeforeCompositionConstruction()
     func testQualityPerformanceAndComparisonBranchesReturnBeforeCompositionConstruction()
+    func testQualityComparePassesManualEvidenceDirectoryToComparisonDraft()
     func testNoFlagBranchConstructsOneStrongCompositionBeforeRun()
 
 Use source inspection plus executable invocations. The smoke branch must accept
@@ -293,8 +294,10 @@ full reports with these mutually exclusive measurement identities:
 `--quality-performance` emits `PerformanceMeasurementReport` and requires a
 `--run-provenance-file` envelope. `--quality-compare` emits an authoritative
 `PerformanceComparisonReport` from the two report paths and typed eligibility
-file; it does not accept roots or refs because the eligibility file carries
-the prevalidated lineage. Invalid arguments, both/neither measurement source
+file; its `--manual-evidence-dir` value is passed to internal
+`compare(...:manualEvidenceDirectory:)` before the hash-free draft reaches the
+public writer. It does not accept roots or refs because the eligibility file
+carries the prevalidated lineage. Invalid arguments, both/neither measurement source
 identity flags, malformed identities, or content-manifest identities on the
 authoritative compare exit nonzero with concise stderr. Scripts orchestrate
 roots/refs/builds and then invoke these report-path commands after F tasks 1–3;
@@ -322,14 +325,17 @@ orchestration. The app does not assert Git status, ancestry, or checkout
 provenance; F/E shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
-the compare branch reaches only E's public exact
+the compare branch passes `--manual-evidence-dir` as `manualEvidenceDirectory`
+to internal
+`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`,
+which loads and validates the evidence in Task 3 and returns only the
+hash-free `PerformanceComparisonDraft`. It then reaches E's public exact
 `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`,
-which reads and hashes the exact report bytes, decodes, cross-checks the
-supplied hash-free `PerformanceComparisonDraft`, injects the hashes into the
-final report, and performs full preflight before writing. Internal four-argument
-decoded `compare` returns only that draft; it is Task 3's deferred, non-writing
-calculation seam and makes no hash-verification claim. Hash, identity, fixture,
-provenance, or eligibility mismatch must fail before any output file is created.
+which reads and hashes the exact report bytes, decodes, cross-checks the draft,
+injects the hashes into the final report, and performs full preflight before
+writing. The internal seam is deferred and non-writing and makes no
+hash-verification claim. Hash, identity, fixture, provenance, or eligibility
+mismatch must fail before any output file is created.
 only the no-flag branch executes:
 
     let composition = PointerCompositionRoot.make()

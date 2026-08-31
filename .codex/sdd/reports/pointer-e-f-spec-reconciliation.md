@@ -28,8 +28,8 @@ claim that E/F implementation or physical evidence exists.
 | Pair eligibility | E defines typed `PerformancePairEligibility`/validated foundation provenance arguments. The CLI/script constructs eligibility only after root/ref/clean/head/ancestry/foundation checks and exact `pairsPerOrder == 15`/derived `totalPairs == 30`; the harness revalidates report/provenance equality and direct fabricated eligibility cannot bypass it. |
 | Measurement identities | `PerformanceComparisonReport` carries full `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values, plus equal persisted `baselineFixture`/`candidateFixture` values matching the measurement reports. Pair preflight requires exact equality for host model, macOS, Xcode, developerDirectory, power/display state, and buildConfiguration; source commits remain distinct and provenance-matched. Every metric has its canonical `PerformanceMetricUnit`, finite strictly positive baseline/candidate samples, and nonempty ratio/delta arrays of exactly `totalPairs` entries. It also carries lowercase 64-hex `baselineMeasurementReportSHA256` and `candidateMeasurementReportSHA256` values computed from and verified against the exact input report bytes before the comparison is written; F retains those input reports unchanged. For `memoryRSS`, comparison samples are strictly positive absolute RSS bytes; signed `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) remain measurement-report fields validated during pair preflight, not comparison sample units. |
 | Metric budgets | `budgetLimit` is optional and canonical: 16.7 milliseconds for `combinedFrame`, 100 milliseconds for `responsiveness` and `inputToVisible`, nil for other metrics, and never an absolute RSS p95 for `memoryRSS`. Completion recomputes ratio median/p95 ≤1.10 and candidate p95 only for the three budgeted metrics. It also requires candidate renderer p95 plus compositor p95 ≤16.7 milliseconds and candidate `combinedFrame` p95 ≤16.7 milliseconds; wrong, huge, missing, or unexpected budgets/units are rejected. |
-| Comparison writer boundary | Public persisted entry is the exact `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`: it accepts a hash-free `PerformanceComparisonDraft`, reads exact measurement bytes from the URLs, computes/verifies the lowercase 64-hex report hashes, decodes, cross-checks the draft, injects the hashes into the final `PerformanceComparisonReport`, performs full preflight, and writes atomically only after validation. Internal four-argument decoded `compare(baseline:candidate:configuration:eligibility:)` returns only that draft; it is Task 3's deferred, non-writing calculation seam and makes no hash-verification claim. Any hash, identity, fixture, provenance, or eligibility mismatch produces no output. |
-| Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies typed eligibility from the shell's roots/refs/foundation checks and then rejects any failed/unmeasured required input before constructing or writing a comparison; the CLI consumes only `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`, `--manual-evidence-dir`, and `--output-dir`, and persisted comparison reports contain measured comparisons only. |
+| Comparison writer boundary | Public persisted entry is the exact `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`: it accepts a hash-free `PerformanceComparisonDraft`, reads exact measurement bytes from the URLs, computes/verifies the lowercase 64-hex report hashes, decodes, cross-checks the draft, injects the hashes into the final `PerformanceComparisonReport`, performs full preflight, and writes atomically only after validation. Internal `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)` returns only that draft after Task 3 loads/validates manual evidence; it is the deferred, non-writing calculation seam and makes no hash-verification claim. Any hash, identity, fixture, provenance, or eligibility mismatch produces no output. |
+| Comparison semantics | Structurally valid measurement reports may preserve failed/unmeasured statuses for diagnosis, but authoritative comparison first verifies typed eligibility from the shell's roots/refs/foundation checks and then rejects any failed/unmeasured required input before constructing or writing a comparison; the CLI consumes only `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`, `--manual-evidence-dir`, and `--output-dir`, passes `--manual-evidence-dir` to internal `compare(...:manualEvidenceDirectory:)` for Task 3 loading/validation, and persists measured comparisons only through the public writer. |
 | Required prerequisites | F-final requires accepted A-harness real-guide lifecycle evidence from `pointer-a-harness-lifecycle-report.md` and `pointer-a-harness-phase-report.md`, where the real `FirstUseGuideController`/panel is injected through controller start/stop/restart, plus the canonical 420-point narrow-display evidence. A static guide/catalog test or stale narrow-display report cannot substitute for either prerequisite. |
 
 ## Changed clauses by artifact
@@ -91,11 +91,12 @@ claim that E/F implementation or physical evidence exists.
   RSS bytes while signed final-window delta and post-warmup slope remain
   preflight-validated measurement fields; added exact input-report SHA fields,
   writer verification, and renderer-plus-compositor/`combinedFrame` p95 gates.
-- Made hash-free `PerformanceComparisonDraft` the internal output of the exact
-  four-argument `compare`; the public report-plus-URL `writeComparison` now
-  injects hashes derived from exact input bytes before atomic persistence. Its
-  injection and mismatch tests prove identity/fixture/provenance/eligibility
-  failures leave no output.
+- Made hash-free `PerformanceComparisonDraft` the internal output of
+  `compare(...:manualEvidenceDirectory:)`, with Task 3 manual-evidence loading
+  and validation before draft production; the public report-plus-URL
+  `writeComparison` injects hashes derived from exact input bytes before atomic
+  persistence. Its injection and mismatch tests prove
+  identity/fixture/provenance/eligibility failures leave no output.
 
 ### F integration plan
 
@@ -124,8 +125,9 @@ claim that E/F implementation or physical evidence exists.
   verifies their persisted SHA fields; final completion also enforces the
   renderer-plus-compositor and `combinedFrame` 16.7 ms p95 gates.
 - F's launcher/CompletionMatrix uses the exact report-plus-URL writer boundary;
-  decoded comparison construction remains Task 3's deferred hash-free draft
-  seam, and only the writer injects hashes and persists atomically.
+  `--manual-evidence-dir` is passed to the internal draft seam for Task 3
+  loading/validation, decoded comparison construction remains deferred and
+  hash-free, and only the writer injects hashes and persists atomically.
 
 ## Remaining unknowns and explicit follow-up
 

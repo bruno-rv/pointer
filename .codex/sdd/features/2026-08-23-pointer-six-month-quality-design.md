@@ -919,8 +919,11 @@ Acceptance criteria:
   it reads exact report bytes from the URLs, computes hashes, decodes, performs
   full preflight/cross-check validation against the supplied hash-free draft,
   injects those hashes into the final `PerformanceComparisonReport`, and then
-  writes. Internal four-argument `compare(baseline:candidate:configuration:eligibility:)`
-  returns only the hash-free `PerformanceComparisonDraft`; it is the Task 3
+  writes. Internal
+  `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+  receives `--manual-evidence-dir` from the CLI, returns only the hash-free
+  `PerformanceComparisonDraft`, and Task 3 loads and validates
+  `manualEvidenceDirectory` before producing it. It is the Task 3
   calculation seam, deferred and non-writing in Task 2b, with no
   hash-verification claim. A hash, identity, fixture, provenance, or eligibility
   mismatch produces no comparison file. Before constructing or writing a comparison, the harness

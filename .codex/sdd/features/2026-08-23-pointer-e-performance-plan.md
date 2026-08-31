@@ -464,7 +464,8 @@ neither a previous report nor a documentation claim can satisfy it.
             baseline: PerformanceMeasurementReport,
             candidate: PerformanceMeasurementReport,
             configuration: PerformanceConfiguration,
-            eligibility: PerformancePairEligibility
+            eligibility: PerformancePairEligibility,
+            manualEvidenceDirectory: URL
         ) throws -> PerformanceComparisonDraft
         public static func writeComparison(
             draft: PerformanceComparisonDraft,
@@ -510,11 +511,13 @@ it reads the exact bytes at `baselineURL` and `candidateURL`, computes lowercase
 64-hex SHA-256 values, decodes the measurement reports, performs full
 preflight/cross-check validation against the supplied hash-free draft, injects
 the computed hashes to construct the final `PerformanceComparisonReport`, then
-atomically writes it. Internal four-argument
-`compare(baseline:candidate:configuration:eligibility:)` returns only the
-hash-free `PerformanceComparisonDraft`; it is the Task 3 calculation seam,
-deferred and non-writing in Task 2b, and does not claim hash verification. The
-persisted report fields retain the exact input-byte hashes.
+atomically writes it. Internal five-parameter
+`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+returns only the hash-free `PerformanceComparisonDraft`; Task 3 loads and
+validates `manualEvidenceDirectory` before producing that draft. It is the
+Task 3 calculation seam, deferred and non-writing in Task 2b, and does not
+claim hash verification. The persisted report fields retain the exact
+input-byte hashes.
 
     public struct PerformanceComparisonReport: Codable, Sendable {
         public let reportKind: PerformanceReportKind
@@ -637,10 +640,12 @@ Public `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configura
 reads and hashes both exact measurement files, decodes them, validates both
 reports and all pair inputs against the supplied hash-free draft, injects the
 computed hashes to construct the final `PerformanceComparisonReport`, and
-writes only after all cross-checks pass. Internal four-argument
-`compare(baseline:candidate:configuration:eligibility:)` returns only the
-hash-free `PerformanceComparisonDraft`; it is deferred to Task 3 calculations
-and is non-writing in Task 2b, with no hash-verification claim. A hash,
+writes only after all cross-checks pass. Internal
+`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+returns only the hash-free `PerformanceComparisonDraft`; Task 3 loads and
+validates `manualEvidenceDirectory` before producing it. It is deferred to
+Task 3 calculations and is non-writing in Task 2b, with no hash-verification
+claim. A hash,
 identity, fixture, provenance, or eligibility mismatch therefore produces no
 output. A persisted `PerformanceComparisonReport` therefore contains measured
 comparisons only. Its structural validator requires
@@ -876,6 +881,7 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonWriterRejectsEligibilityMismatchWithoutOutput()
     func testComparisonWriterInjectsExactInputHashesIntoPersistedReport()
     func testInternalComparisonCalculationIsDeferredAndNonWriting()
+    func testInternalComparisonLoadsAndValidatesManualEvidenceBeforeDraft()
     func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
     func testComparisonCompletionRecomputesRatioAndCandidateP95()
     func testMetricComparisonRejectsWrongUnitAndUnexpectedBudget()
@@ -903,9 +909,10 @@ Call only the public
 `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
 writer with a hash-free `PerformanceComparisonDraft` and persisted report paths;
 assert that internal decoded
-`compare(baseline:candidate:configuration:eligibility:)` is four-argument,
-calculation-deferred, returns only the draft, is non-writing, and does not claim
-hash verification. The public writer rejects byte-hash, identity, fixture,
+`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+loads and validates manual evidence before producing the draft, remains
+calculation-deferred and non-writing in Task 2b, and does not claim hash
+verification. The public writer rejects byte-hash, identity, fixture,
 provenance, or eligibility mismatches without creating an output file.
 Round-trip persisted `baselineFixture` and `candidateFixture` values, assert
 they are equal and match the corresponding measurement reports, reject
@@ -1011,8 +1018,11 @@ Pointer --quality-compare --format json \
   --output-dir <comparisons>
 ```
 
-The first command emits one `PerformanceMeasurementReport`; the second emits
-one authoritative `PerformanceComparisonReport` only for clean 40-hex commit
+The first command emits one `PerformanceMeasurementReport`; for the second,
+`--manual-evidence-dir` is passed as `manualEvidenceDirectory` to internal
+`compare`, which loads and validates that evidence before returning the
+hash-free draft to `writeComparison`. The second emits one authoritative
+`PerformanceComparisonReport` only for clean 40-hex commit
 identities whose typed eligibility file has already passed the lineage/
 foundation checks. The typed `reportKind` field makes the distinction
 structural. A measurement command may still accept a content-manifest identity
