@@ -67,6 +67,102 @@ enum PerformanceFixtures {
         acceptedFoundationArtifactSHA256: foundationArtifact
     )
 
+    static let baselineCommit = String(repeating: "f", count: 40)
+
+    static let baselineBuild = BuildProvenance(
+        sourceTreeStatus: .clean,
+        sourceIdentity: SourceIdentity(kind: .sourceCommitSHA, value: baselineCommit),
+        sourceManifestSHA256: sourceManifest,
+        executableSHA256: String(repeating: "1", count: 64),
+        bundleManifestSHA256: String(repeating: "2", count: 64),
+        buildConfiguration: "release",
+        recordedAtUTC: recordedAtUTC,
+        foundation: foundation,
+        harnessVersion: configuration.harnessVersion,
+        buildContractVersion: configuration.buildContractVersion,
+        acceptedFoundationArtifactSHA256: foundationArtifact
+    )
+
+    static let baselineIdentity = MeasurementIdentity(
+        sourceCommitSHA: baselineCommit,
+        contentManifestSHA256: nil,
+        hostModel: identity.hostModel,
+        macOSVersion: identity.macOSVersion,
+        xcodeVersion: identity.xcodeVersion,
+        developerDirectory: identity.developerDirectory,
+        powerState: identity.powerState,
+        displayState: identity.displayState,
+        buildConfiguration: "release"
+    )
+
+    static let baselineRun = PerformanceRunProvenance(
+        variant: "baseline",
+        outputRoot: "build/baseline",
+        sourceRef: baselineCommit,
+        build: baselineBuild,
+        host: host,
+        recordedAtUTC: recordedAtUTC,
+        configuration: configuration,
+        foundationProvenancePath: run.foundationProvenancePath,
+        foundation: foundation,
+        harnessVersion: configuration.harnessVersion,
+        buildContractVersion: configuration.buildContractVersion,
+        acceptedFoundationArtifactSHA256: foundationArtifact
+    )
+
+    static let foundationProvenance = ValidatedFoundationProvenance(
+        path: run.foundationProvenancePath,
+        foundation: foundation,
+        checkpointCommitSHA: String(repeating: "9", count: 40),
+        fullSourceManifestSHA256: sourceManifest,
+        harnessVersion: configuration.harnessVersion,
+        buildContractVersion: configuration.buildContractVersion
+    )
+
+    static let eligibility = PerformancePairEligibility(
+        baselineRoot: baselineRun.outputRoot,
+        candidateRoot: run.outputRoot,
+        baselineCommitSHA: baselineCommit,
+        candidateCommitSHA: commit,
+        foundationProvenance: foundationProvenance
+    )
+
+    static let manualEvidence = ManualMetricEvidence(
+        metricID: .inputToVisible,
+        evidenceClass: .manual,
+        host: host.machineIdentifier,
+        recordedAt: recordedAtUTC,
+        permissions: ["Screen Recording"],
+        steps: "Trigger the first-use guide and record input-to-visible latency.",
+        samples: Array(repeating: 25, count: configuration.trialCount),
+        result: "All samples remained below the 100 ms budget.",
+        evidencePath: "comparisons/manual/inputToVisible.json"
+    )
+
+    static func metricComparisons(manualMetric: PerformanceMetricID? = nil) -> [MetricComparison] {
+        PerformanceMetricID.allCases.map { metricID in
+            let baselineSamples = (0..<configuration.trialCount).map { Double(100 + $0) }
+            let candidateSamples = baselineSamples.map { $0 - 10 }
+            let evidenceClass: MetricEvidenceClass = metricID == manualMetric ? .manual : .deterministic
+            return MetricComparison(
+                metricID: metricID,
+                evidenceClass: evidenceClass,
+                baselineID: baselineCommit,
+                candidateID: commit,
+                baselineSamples: baselineSamples,
+                candidateSamples: candidateSamples,
+                ratios: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline },
+                deltas: zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline },
+                bootstrapInterval: BootstrapInterval(lowerDelta: -10, upperDelta: -10, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples),
+                manualEvidence: metricID == manualMetric ? manualEvidence : nil,
+                disposition: .acceptedNoRegression
+            )
+        }
+    }
+
+    static let baseline: PerformanceMeasurementReport = report(identity: baselineIdentity, build: baselineBuild, run: baselineRun)
+    static let candidate: PerformanceMeasurementReport = report()
+
     static let model = ModelMeasurement(
         status: .measured,
         trialNanoseconds: Array(repeating: 1_000_000, count: 15)
@@ -247,6 +343,42 @@ enum PerformanceFixtures {
             inputToVisible: inputToVisible,
             memory: memory,
             resilience: resilience,
+            disposition: disposition
+        )
+    }
+
+    static func comparison(
+        reportKind: PerformanceReportKind = .comparison,
+        baselineBuild: BuildProvenance = PerformanceFixtures.baselineBuild,
+        candidateBuild: BuildProvenance = PerformanceFixtures.build,
+        baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
+        candidateRun: PerformanceRunProvenance = PerformanceFixtures.run,
+        eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility,
+        baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
+        candidateMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.identity,
+        metrics: [MetricComparison] = PerformanceFixtures.metricComparisons(),
+        resilience: ResilienceMeasurement = PerformanceFixtures.resilience,
+        disposition: Disposition = .acceptedNoRegression
+    ) -> PerformanceComparisonReport {
+        PerformanceComparisonReport(
+            reportKind: reportKind,
+            schemaVersion: PerformanceComparisonReport.currentSchemaVersion,
+            harnessVersion: configuration.harnessVersion,
+            foundationIdentity: foundation,
+            buildContractVersion: configuration.buildContractVersion,
+            baselineBuildProvenance: baselineBuild,
+            candidateBuildProvenance: candidateBuild,
+            baselineRunProvenance: baselineRun,
+            candidateRunProvenance: candidateRun,
+            pairEligibility: eligibility,
+            baselineMeasurementIdentity: baselineMeasurementIdentity,
+            candidateMeasurementIdentity: candidateMeasurementIdentity,
+            baselineID: baselineBuild.sourceIdentity.value,
+            candidateID: candidateBuild.sourceIdentity.value,
+            metrics: metrics,
+            resilience: resilience,
+            seed: configuration.bootstrapSeed,
+            resampleCount: configuration.bootstrapResamples,
             disposition: disposition
         )
     }
