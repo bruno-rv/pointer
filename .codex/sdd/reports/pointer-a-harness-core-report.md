@@ -6,11 +6,10 @@ Status: `DONE_WITH_CONCERNS`
 
 Implemented the first deterministic, real-object interaction slice after the
 B-render-integration handoff. The baseline implementation is commit
-`59ed5ed` (`test: add Pointer interaction harness core`), and the committed
-reconciliation head is `0d9a08a` (`fix: harden Pointer harness convergence`).
-This report also describes the current bounded follow-up changes on top of
-that reconciliation head; no new commit was created by this worker. The
-production harness
+`59ed5ed` (`test: add Pointer interaction harness core`), with intermediate
+hardening in `0d9a08a` (`fix: harden Pointer harness convergence`). The final
+bounded-core reconciliation head is `a31d657`, containing the reviewed
+oracle/test/report follow-up. The production harness
 accepts the documented injected coordinator graph and only obtains gesture
 state through the real `DisplayCoordinator`, `OverlayPanel`, and `CanvasView`
 objects. Commands and local keyboard routing remain on `CommandRouter`; no
@@ -24,8 +23,8 @@ Changed paths owned by this task:
 - `Tests/PointerAppKitTests/Harness/CanvasIntegrationHarnessTests.swift`
 - `.codex/sdd/reports/pointer-a-harness-core-report.md`
 
-No new commit was created by this worker; `0d9a08a` remains the committed
-reconciliation head.
+The final bounded-core reconciliation is recorded at `a31d657`; this report
+does not claim completion of the downstream A slices.
 
 ## Production seam
 
