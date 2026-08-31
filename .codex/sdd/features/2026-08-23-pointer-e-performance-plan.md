@@ -29,7 +29,7 @@ D-visual-language.
   inputs are stricter: `PerformanceComparisonHarness` rejects any failed or
   unmeasured required metric before it constructs or writes a comparison, so a
   persisted comparison contains measured comparisons only.
-- Every comparison uses immutable commit SHA or SHA-256 content manifest identities, same host/fixture, five warmups, 30 paired trials, 15 baseline-to-candidate and 15 candidate-to-baseline pairs, and a fixed-seed 10,000-resample bootstrap interval.
+- Every comparison uses immutable commit SHA or SHA-256 content manifest identities, the same host/fixture, five warmups, `pairsPerOrder == 15`, and `totalPairs == pairsPerOrder * 2 == 30`: exactly 15 baseline-first and 15 candidate-first pairs. It uses a fixed-seed 10,000-resample bootstrap interval.
 - A candidate/baseline median or p95 ratio greater than 1.10, frame/input budget breach, leak, invalid schema, or required unmeasured metric is REVISE and blocks completion.
 - At 60 Hz equivalent, p95 render plus compositor work is at most 16.7 ms for 12-mark and dense 1,000-mark fixtures; no repeatable active-gesture main-thread stall exceeds 100 ms; p95 input-to-visible is at most 100 ms.
 - Memory is a 600-second, 5-second sample-interval time series with running, stopping, stopped, and restarted phases; running plateau and stop/restart checkpoints are separate.
@@ -181,13 +181,24 @@ neither a previous report nor a documentation claim can satisfy it.
         public let foundationProvenance: ValidatedFoundationProvenance
     }
 
-    public struct PerformanceProvenance: Codable, Sendable, Equatable {
+    public struct BuildProvenance: Codable, Sendable, Equatable {
         public let sourceTreeStatus: SourceTreeStatus
         public let sourceIdentity: SourceIdentity
-        public let fullSourceManifestSHA256: String
+        public let sourceManifestSHA256: String
         public let executableSHA256: String
         public let bundleManifestSHA256: String
         public let recordedAtUTC: String
+        public let foundation: FoundationIdentity
+        public let harnessVersion: String
+        public let buildContractVersion: String
+        public let acceptedFoundationArtifactSHA256: String?
+    }
+
+    public struct PerformanceRunProvenance: Codable, Sendable, Equatable {
+        public let variant: String
+        public let outputRoot: String
+        public let sourceRef: String
+        public let build: BuildProvenance
         public let foundationProvenancePath: String
         public let foundation: FoundationIdentity
         public let harnessVersion: String
@@ -304,7 +315,7 @@ neither a previous report nor a documentation claim can satisfy it.
         public let samplesPerGesture: Int
         public let warmupCount: Int
         public let trialCount: Int
-        public let pairCount: Int
+        public let pairsPerOrder: Int
         public let bootstrapSeed: UInt64
         public let bootstrapResamples: Int
         public let memoryWindowSeconds: Int
@@ -318,7 +329,7 @@ neither a previous report nor a documentation claim can satisfy it.
             samplesPerGesture: 240,
             warmupCount: 5,
             trialCount: 30,
-            pairCount: 15,
+            pairsPerOrder: 15,
             bootstrapSeed: 48271,
             bootstrapResamples: 10_000,
             memoryWindowSeconds: 600,
@@ -330,6 +341,8 @@ neither a previous report nor a documentation claim can satisfy it.
             ),
             buildContractVersion: "pointer-build-contract/v1"
         )
+
+        public var totalPairs: Int { pairsPerOrder * 2 }
     }
 
     public struct BootstrapInterval: Codable, Sendable, Equatable {
@@ -394,7 +407,8 @@ neither a previous report nor a documentation claim can satisfy it.
         public let harnessVersion: String
         public let foundationIdentity: FoundationIdentity
         public let buildContractVersion: String
-        public let provenance: PerformanceProvenance
+        public let buildProvenance: BuildProvenance
+        public let runProvenance: PerformanceRunProvenance
         public let identity: MeasurementIdentity
         public let host: HostIdentity
         public let fixture: FixtureIdentity
@@ -454,8 +468,10 @@ neither a previous report nor a documentation claim can satisfy it.
         public let harnessVersion: String
         public let foundationIdentity: FoundationIdentity
         public let buildContractVersion: String
-        public let baselineProvenance: PerformanceProvenance
-        public let candidateProvenance: PerformanceProvenance
+        public let baselineBuildProvenance: BuildProvenance
+        public let candidateBuildProvenance: BuildProvenance
+        public let runProvenance: PerformanceRunProvenance
+        public let pairEligibility: PerformancePairEligibility
         public let baselineID: String
         public let candidateID: String
         public let metrics: [MetricComparison]
@@ -519,17 +535,21 @@ neither a previous report nor a documentation claim can satisfy it.
 `reportKind == .measurement`, all required keys/types, exactly one immutable
 source identity, valid enum values, finite numeric values, coherent arrays,
 the 600-second/5-second memory window, running/stopping/stopped/restarted
-checkpoints, resilience fields, and matching typed provenance. Its identity
+checkpoints, resilience fields, and matching typed build/run provenance. Its identity
 validator accepts exactly one of `sourceCommitSHA` matching `[0-9a-f]{40}` or
 `contentManifestSHA256` matching `[0-9a-f]{64}`; both, neither, malformed,
 dirty source-commit identities, or symbolic values are rejected. A clean
 source tree must use the commit identity; a dirty source tree must use the
 content-manifest identity.
-The provenance must contain the observed source-tree status, source identity
-kind/value, full source-manifest SHA-256, executable SHA-256, bundle-manifest
-SHA-256, UTC timestamp, foundation identity/version, harness version, and
-build-contract version. The top-level report/configuration values must equal
-the provenance values. Structural measurement validation allows `measured`,
+`BuildProvenance` must contain the observed source-tree status, source identity
+kind/value, source-manifest SHA-256, executable SHA-256, bundle-manifest
+SHA-256, UTC timestamp, foundation identity/version, harness version,
+build-contract version, and optional accepted-foundation artifact SHA-256. It
+contains no filesystem path, so it remains portable. `PerformanceRunProvenance`
+may record the resolved build/foundation artifact paths as run evidence and
+must link the build artifact to its variant, output root, source ref, and
+configuration versions. The report's build/run provenance and configuration
+values must agree. Structural measurement validation allows `measured`,
 `failed`, and `unmeasured` so diagnostic failures round-trip honestly, but
 `validateCompletion()` rejects required failed/unmeasured metrics, budget
 breaches, leaks, invalid dispositions, or any non-measured required status.
@@ -539,7 +559,8 @@ writing a comparison. A persisted `PerformanceComparisonReport` therefore
 contains measured comparisons only. Its structural validator requires
 `reportKind == .comparison`, immutable baseline/candidate identities, matching
 schema/harness/foundation/build-contract versions, matching host/fixture,
-both typed provenances, one `MetricComparison` for every
+both typed `BuildProvenance` values, matching run provenance, one
+`MetricComparison` for every
 `PerformanceMetricID`, equal-length paired arrays, valid `BootstrapInterval`
 values, and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
@@ -624,6 +645,7 @@ Expected: Release JSON has fixed fixture/trial/publication/checksum/final-state 
 
     func testPerformanceMeasurementReportRoundTripsEveryRequiredMeasurementObject()
     func testPerformanceReportKindIsTypedAndWrongOrMissingKindsAreRejected()
+    func testBuildAndRunProvenanceAreDistinctAndPortable()
     func testPerformanceReportRoundTripsTypedProvenanceAndFoundationVersions()
     func testStructurallyValidFailedAndUnmeasuredReportsRoundTrip()
     func testCompletionValidationRejectsFailedOrUnmeasuredRequiredMetric()
@@ -648,7 +670,9 @@ validateStructure() throws for both. Separately call validateCompletion() and
 assert it throws for failed/unmeasured required metrics rather than silently
 converting them to zero/default values. Round-trip the typed provenance,
 `harnessVersion`, foundation identity/version, and build-contract version, and
-assert mismatches are rejected. Give the comparison harness a structurally
+assert mismatches are rejected, and assert `BuildProvenance` contains no path
+or pair ancestry while `PerformanceRunProvenance` carries only run-level
+paths/variant context. Give the comparison harness a structurally
 valid measurement with a failed or unmeasured required metric and assert it
 throws before constructing a `PerformanceComparisonReport` or writing an
 output file; comparison reports contain measured comparisons only.
@@ -718,7 +742,8 @@ immutable baselineID/candidateID, one `MetricComparison` for every
 `PerformanceMetricID`, paired baseline/candidate samples, ratios/deltas,
 `BootstrapInterval` seed 48271/10,000 resamples, and per-metric dispositions.
 Also assert source/content identities, host/build/fixture fields, five
-warmups, 15 baseline-to-candidate plus 15 candidate-to-baseline pairs, ratio
+warmups, `pairsPerOrder == 15`, derived `totalPairs == 30`, exactly 15
+baseline-first plus 15 candidate-first pairs, ratio
 threshold 1.10, 16.7 ms/100 ms budgets, and separate resource checkpoints.
 Resilience cases must name repeated mode toggles, rapid tools, 1,000-mark
 sessions, repeated clear/undo, palette show/hide, display churn, and shortcut
@@ -738,17 +763,19 @@ Expected: PerformanceComparisonHarness, paired identity/bootstrap/disposition/ch
 Use a clean 40-hex commit SHA or 64-hex SHA-256 content manifest covering the
 canonical source scope; reject labels such as `current`, both identity flags,
 neither identity flag, and malformed values. A clean tree uses the commit
-identity; a dirty tree uses the full content-manifest identity. The
-`benchmark-quality.sh` script creates one typed provenance artifact per
-variant containing observed clean/dirty status, source identity kind/value,
-full source-manifest SHA-256, executable SHA-256, bundle/build-manifest
-SHA-256, UTC timestamp, foundation identity/version, harness version, and
-build-contract version. It proves Git cleanliness, ancestry, source checkout
-to built executable correspondence, and executable hash equality before
-invoking the app. It passes `--provenance-file <path>` to
-`PerformanceCLI`; the app validates the flag syntax and decodes/cross-checks
-the artifact, then embeds it in the report, but does not claim Git state or
-ancestry on the shell's behalf.
+identity; a dirty tree uses the full content-manifest identity. F's
+`build-app.sh` emits one typed `BuildProvenance` per output root containing
+observed source status/identity, full source-manifest SHA-256, executable and
+bundle-manifest SHA-256 values, UTC timestamp, foundation identity/version,
+harness version, and build-contract version. E's `benchmark-quality.sh` is the
+sole creator of `PerformanceRunProvenance` and `PerformancePairEligibility`:
+it consumes two validated BuildProvenance files plus roots/refs/foundation,
+proves Git cleanliness, ancestry, source checkout to built executable
+correspondence, and executable hash equality before invoking the app. It
+passes `--provenance-file <path>` to `PerformanceCLI`; the app validates the
+flag syntax and decodes/cross-checks the BuildProvenance artifact, then embeds
+the build/run artifacts in the report, but does not claim Git state or ancestry
+on the shell's behalf.
 
 OffscreenCanvasRendererAdapter measures the real CanvasView/CGContext path;
 SignpostWindowServerAdapter uses os_signpost/CACurrentMediaTime and records
@@ -844,14 +871,21 @@ report, dirty checkout, symbolic label, or prior D checkpoint is not eligible.
 
   `benchmark-quality.sh` creates scoped source worktrees at the two refs,
   verifies clean status, exact `HEAD` values, ancestry, and foundation
-  checkpoint ancestry, then invokes F's
-  `scripts/build-app.sh --output-root build/baseline` and
-  `scripts/build-app.sh --output-root build/candidate`. Each output root must
+  checkpoint ancestry, validates the explicit accepted foundation provenance,
+  then invokes F's
+  `scripts/build-app.sh --output-root build/baseline --foundation-provenance
+  .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json` and
+  `scripts/build-app.sh --output-root build/candidate
+  --foundation-provenance
+  .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json`.
+  Each output root must
   contain exactly `Pointer.app`, `source-manifest.sha256`,
-  `bundle-manifest.sha256`, and `provenance.json`; the script hashes each
-  executable and cross-checks it against that provenance before passing the
-  per-variant `--provenance-file` to `--quality-performance`. It invokes the
-  full measurement branch for baseline then candidate, writes
+  `bundle-manifest.sha256`, and build-only `provenance.json`; the script
+  hashes each executable and cross-checks it against that BuildProvenance
+  before passing the per-variant `--provenance-file` to
+  `--quality-performance`. It alone creates the per-variant
+  `PerformanceRunProvenance` and `PerformancePairEligibility`, then invokes
+  the full measurement branch for baseline then candidate, writes
   `measurements/baseline.json` and `measurements/candidate.json`, and invokes
   the authoritative compare with `--baseline-root`, `--candidate-root`, the
   two commit SHAs, and `--foundation-provenance`. The compare rejects

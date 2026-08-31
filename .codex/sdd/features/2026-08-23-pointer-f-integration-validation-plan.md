@@ -51,18 +51,19 @@ consumes E's reconciled output.
   exclusions.
 - F's `scripts/build-app.sh` accepts an explicit `--output-root <root>` and
   emits exactly `<root>/Pointer.app`, `<root>/source-manifest.sha256`,
-  `<root>/bundle-manifest.sha256`, and `<root>/provenance.json`. E's
-  authoritative orchestration creates `build/baseline` and `build/candidate`
-  with this interface and consumes those exact paths; repeat/idempotence
-  comparisons pair the corresponding files within each root.
-- F's build script creates a provenance artifact per measured executable with
-  observed clean/dirty status, source identity kind/value, full source-manifest
-  SHA-256, executable SHA-256, bundle/build-manifest SHA-256, UTC timestamp,
-  foundation identity/version, harness version, and build-contract version.
-  It proves Git cleanliness/ancestry and checkout-to-binary correspondence,
-  passes `--provenance-file` to the diagnostic executable, and records the
-  artifact path/results. The app only validates flag/artifact syntax and
-  embeds the typed artifact; it does not replace the script's Git proof.
+  `<root>/bundle-manifest.sha256`, and `<root>/provenance.json`. That
+`provenance.json` is only the typed `BuildProvenance` for this build: it has
+source status/identity, source/executable/bundle hashes, UTC timestamp,
+foundation identity/version, harness version, and build-contract version;
+optional accepted-foundation artifact SHA, and no filesystem path. It has no
+pair ancestry or baseline/candidate claim. E's
+  `benchmark-quality.sh` is the sole creator of `PerformanceRunProvenance`
+  and `PerformancePairEligibility`, consumes two validated BuildProvenance
+  files plus roots/refs/foundation, proves Git cleanliness/ancestry and
+  checkout-to-binary correspondence, and passes the resulting run artifact
+  to the diagnostic executable. The app only validates the build artifact and
+  embeds the typed build/run artifacts; it does not replace the script's Git
+  proof.
 - Evidence distinguishes deterministic proof, current-host physical proof, and unverified platform claims. A capable but untested supported case keeps the goal active; it cannot be marked not applicable.
 - The manual matrix covers every supported tool, mode, edit action, palette flow, shortcut path, display/Space condition, guide path, VoiceOver path, appearance state, permission condition, and long session available on the host.
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve the primary checkout's unrelated README/graphify-out and do not reset/clean it.
@@ -310,10 +311,13 @@ Import PointerComposition and PointerAppKit's @MainActor PerformanceCLI, retain
 all diagnostic parsers before MainActor composition, and dispatch smoke, the
 model-only gesture benchmark, full quality-performance, and quality-compare
 branches before any composition is constructed. The quality-performance
-branch requires `--provenance-file <path>`; `PerformanceCLI` parses the
-typed artifact, checks the requested source identity and artifact hashes, and
-embeds it in `PerformanceMeasurementReport`. It does not assert Git status,
-ancestry, or checkout provenance; F's shell script owns those proofs. The
+branch requires `--provenance-file <path>`; `PerformanceCLI` parses the typed
+`BuildProvenance`, checks the requested source identity and artifact hashes,
+and embeds that build artifact in `PerformanceMeasurementReport`. E's script
+embeds the separately created `PerformanceRunProvenance` and
+`PerformancePairEligibility` during authoritative orchestration. The app does
+not assert Git status, ancestry, or checkout provenance; F/E shell scripts own
+those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
 only the no-flag branch executes:
@@ -329,7 +333,14 @@ The local strong composition must remain alive for the blocking run and be relea
 
 - [ ] **Step 4: Run GREEN and CLI checks.**
 
-    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build
+This is the F-foundation bootstrap invocation: the four explicit contract
+constants are supplied because the accepted foundation artifact does not yet
+exist.
+
+    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
+      --foundation-identity pointer-f-foundation --foundation-version v1 \
+      --harness-version pointer-performance-harness/v1 \
+      --build-contract-version pointer-build-contract/v1
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PointerBuildScriptsTests|PointerCompositionRootTests'
     build/Pointer.app/Contents/MacOS/Pointer --smoke --format json
     build/Pointer.app/Contents/MacOS/Pointer --benchmark-gestures --format json
@@ -375,7 +386,14 @@ The build helper accepts `--output-root <root>` and emits only the four
 documented per-variant outputs: `<root>/Pointer.app`,
 `<root>/source-manifest.sha256`, `<root>/bundle-manifest.sha256`, and
 `<root>/provenance.json`. A missing, extra, or differently rooted output is a
-contract failure. At the end of F tasks 1–3, the coordinator writes
+contract failure. It has two deterministic modes. Before the foundation is
+accepted, bootstrap mode receives the explicit
+`--foundation-identity`, `--foundation-version`, `--harness-version`, and
+`--build-contract-version` constants from the E/F contracts and emits a
+candidate `BuildProvenance` with no accepted-foundation SHA. After acceptance,
+post-acceptance mode requires `--foundation-provenance <path>`, validates the
+accepted artifact, and embeds its SHA-256 plus identity/version fields in
+`BuildProvenance` without embedding the artifact path. At the end of F tasks 1–3, the coordinator writes
 `foundation/accepted-foundation.json` at the tracked path above, and the F
 reviewer plus adversarial gate must accept it before E-execution.
 
@@ -458,7 +476,14 @@ or dirty claim is not reusable evidence.
 
 - [ ] **Step 5: Run GREEN.**
 
-    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build
+This is the F-foundation bootstrap invocation; it must use the same four
+explicit constants and only produces the candidate BuildProvenance used for
+the later accepted-foundation artifact.
+
+    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
+      --foundation-identity pointer-f-foundation --foundation-version v1 \
+      --harness-version pointer-performance-harness/v1 \
+      --build-contract-version pointer-build-contract/v1
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer POINTER_RELEASE_BUNDLE="$PWD/build/Pointer.app" swift test --filter GuideAssetCatalogBuildTests
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash Tests/BuildScripts/test-build-contract.sh
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
@@ -531,7 +556,11 @@ real-guide evidence before marking F-final complete.
 
 - [ ] **Step 4: Run GREEN.**
 
-    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build
+This is a post-acceptance invocation and therefore must use the explicit
+accepted foundation provenance path.
+
+    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
+      --foundation-provenance "$PWD/.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json"
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PointerBuildScriptsTests
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
@@ -554,23 +583,36 @@ until manual evidence is recorded.
 
     func testCleanCloneScriptUsesCommittedSourceIdentityAndScopedDetachedWorktree()
     func testCleanCloneRunsReleaseBuildBeforeSmokeWithoutRemoteAccess()
+    func testCleanCloneRunsBuiltSmokeBeforeVerifyScript()
     func testCleanCloneObservesCleanStatusAtInvocation()
     func testCleanCloneWritesFinalIdentityArtifactInExecutionOrder()
+    func testCleanCloneFirstRunAndImmediateRerunExcludeGeneratedEvidence()
+    func testBuildInvocationsDeclareOutputRootAndFoundationMode()
 
     The source-path test resolves the script root from #filePath, not the
     process current directory, and asserts the script contains mktemp, `git
     worktree add --detach` from a committed source identity, a trap cleanup,
     build-app.sh, `swift test --filter PointerBuildScriptsTests`, verify.sh,
     and smoke invocation before any application open. The ordering test asserts
-    the Release build precedes the BuildScripts test and both precede
-    verify/smoke. The clean-status test proves the script observes identity and
-    `git status --porcelain --untracked-files=all` at invocation time rather
-    than trusting a stale evidence file. The identity-artifact test requires
+    the Release build precedes provenance validation, the BuildScripts test,
+    the direct built-executable `--smoke --format json` invocation, and then
+    `verify.sh`. The clean-status test proves the script observes identity and
+    `git status --porcelain --untracked-files=all` at invocation time, scoped
+    to the canonical source inputs, rather than trusting a stale evidence
+    file. The identity-artifact test requires
     the script to write
     `.codex/sdd/reports/quality-campaign/final/CleanCloneIdentity.md` with a
     UTC timestamp, source identity kind/value, observed clean status, exact
     commands and results, scoped worktree path, and cleanup outcome in that
     order, including a failed/precondition result when the source is dirty.
+    The repeatability test runs the first clean-clone invocation and an
+    immediate second invocation; both exclude the generated final report and
+    temporary evidence from source cleanliness while still failing on an
+    unrelated change inside the canonical input scope.
+    The build-invocation test scans every documented `build-app.sh` command
+    and rejects a bare invocation or one without `--output-root` plus either
+    all four bootstrap constants or the accepted `--foundation-provenance`
+    path.
 
 - [ ] **Step 2: Run RED.**
 
@@ -580,13 +622,38 @@ Expected: scripts/test-clean-clone.sh and the contract tests are absent.
 
 - [ ] **Step 3: Implement the executable clean-clone protocol.**
 
-scripts/test-clean-clone.sh must observe and use this exact local-only sequence
+    scripts/test-clean-clone.sh must observe and use this exact local-only sequence
 at execution time after the coordinator's committed-source gate. It writes a
 temporary identity artifact first, then publishes the final
 `CleanCloneIdentity.md` only after cleanup so the source-manifest scope is not
 changed by the evidence file itself:
 
+    set -euo pipefail
     source_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+    evidence_path="$source_root/.codex/sdd/reports/quality-campaign/final/CleanCloneIdentity.md"
+    current_step=initialization
+    cleanup_status=not-run
+    source_paths=(Package.swift Sources Tests scripts Bundle/Assets.xcassets Bundle/AppIconIdentity.json Bundle/GuideAssetIdentity.json Bundle/Info.plist .codex/sdd/features/2026-08-23-pointer-six-month-quality-design.md .codex/sdd/features/2026-08-23-pointer-a-observability-plan.md .codex/sdd/features/2026-08-23-pointer-b-lifecycle-correctness-plan.md .codex/sdd/features/2026-08-23-pointer-c-product-surface-accessibility-plan.md .codex/sdd/features/2026-08-23-pointer-d-visual-language-plan.md .codex/sdd/features/2026-08-23-pointer-e-performance-plan.md .codex/sdd/features/2026-08-23-pointer-f-integration-validation-plan.md)
+    current_step=observe-current-source
+    source_identity="$(git -C "$source_root" rev-parse --verify HEAD^{commit})"
+    source_status="$(git -C "$source_root" status --porcelain --untracked-files=all -- "${source_paths[@]}")"
+    fixture="$(mktemp -d "${TMPDIR:-/tmp}/pointer-clean-clone.XXXXXX")"
+    clone_root="$fixture/repo"
+    foundation_root="$fixture/foundation"
+    evidence_tmp="$fixture/CleanCloneIdentity.md"
+    cleanup_worktree() {
+      foundation_cleanup=already-absent
+      clone_cleanup=already-absent
+      if [[ -n "$foundation_root" ]] && git -C "$source_root" worktree remove --force "$foundation_root" >/dev/null 2>&1; then
+        foundation_cleanup=removed
+      fi
+      if [[ -n "$clone_root" ]] && git -C "$source_root" worktree remove --force "$clone_root" >/dev/null 2>&1; then
+        clone_cleanup=removed
+      fi
+      cleanup_status="foundation:$foundation_cleanup,clone:$clone_cleanup"
+    }
+    trap 'exit_code=$?; set +e; cleanup_worktree; printf "\\n- exitCode: %s\\n- failingStep: %s\\n- cleanupOutcome: %s\\n" "$exit_code" "$current_step" "$cleanup_status" >> "$evidence_tmp"; mkdir -p "$(dirname -- "$evidence_path")"; mv -- "$evidence_tmp" "$evidence_path"; rm -rf -- "$fixture"; trap - EXIT; exit "$exit_code"' EXIT
+    printf '# Clean-clone identity\n\n- currentStep: %s\n\n## Commands and results\n' "$current_step" > "$evidence_tmp"
     foundation_provenance=""
     while (( $# > 0 )); do
       case "$1" in
@@ -600,17 +667,14 @@ changed by the evidence file itself:
     harness_version="$(plutil -extract harnessVersion raw -o - "$foundation_provenance")"
     build_contract_version="$(plutil -extract buildContractVersion raw -o - "$foundation_provenance")"
     foundation_checkpoint_commit="$(plutil -extract checkpointCommitSHA raw -o - "$foundation_provenance")"
-    fixture="$(mktemp -d "${TMPDIR:-/tmp}/pointer-clean-clone.XXXXXX")"
-    clone_root="$fixture/repo"
-    evidence_tmp="$fixture/CleanCloneIdentity.md"
-    evidence_path="$source_root/.codex/sdd/reports/quality-campaign/final/CleanCloneIdentity.md"
+    current_step=load-foundation-provenance
     recorded_at_utc="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-    source_identity="$(git -C "$source_root" rev-parse --verify HEAD^{commit})"
-    source_status="$(git -C "$source_root" status --porcelain --untracked-files=all)"
+    current_step=observe-current-source
     current_source_head="$source_identity"
     test "$foundation_checkpoint_commit" = "${foundation_checkpoint_commit##*[!0-9a-fA-F]*}"
     test "${#foundation_checkpoint_commit}" -eq 40
     git -C "$source_root" merge-base --is-ancestor "$foundation_checkpoint_commit" "$current_source_head"
+    current_step=hash-current-source
     source_manifest="$fixture/source-manifest.sha256"
     (cd "$source_root" && git ls-files -z -- \
       'Package.swift' 'Sources/**' 'Tests/**' 'scripts/**' \
@@ -627,6 +691,7 @@ changed by the evidence file itself:
         test -f "$path" && shasum -a 256 "$path"; \
       done) > "$source_manifest"
     current_source_manifest_sha="$(shasum -a 256 "$source_manifest" | awk '{print $1}')"
+    current_step=hash-foundation-source
     foundation_root="$fixture/foundation"
     git -C "$source_root" worktree add --detach "$foundation_root" "$foundation_checkpoint_commit"
     foundation_manifest="$fixture/foundation-source-manifest.sha256"
@@ -647,41 +712,51 @@ changed by the evidence file itself:
     foundation_manifest_sha="$(shasum -a 256 "$foundation_manifest" | awk '{print $1}')"
     accepted_foundation_manifest_sha="$(plutil -extract fullSourceManifestSHA256 raw -o - "$foundation_provenance")"
     test "$foundation_manifest_sha" = "$accepted_foundation_manifest_sha"
+    current_step=write-identity-header
     printf '# Clean-clone identity\n\n- recordedAtUTC: %s\n- sourceIdentityKind: sourceCommitSHA\n- sourceIdentityValue: %s\n- sourceTreeStatus: %s\n- currentSourceManifestSHA256: %s\n- foundationSourceManifestSHA256: %s\n- checkpointCommitSHA: %s\n- foundationIdentity: %s\n- foundationVersion: %s\n- harnessVersion: %s\n- buildContractVersion: %s\n- worktreePath: %s\n\n## Commands and results\n' \
       "$recorded_at_utc" "$source_identity" \
       "$(test -n "$source_status" && echo dirty || echo clean)" \
       "$current_source_manifest_sha" "$foundation_manifest_sha" \
       "$foundation_checkpoint_commit" "$foundation_identity" "$foundation_version" \
       "$harness_version" "$build_contract_version" "$clone_root" > "$evidence_tmp"
-    cleanup_status=not-run
-    cleanup_worktree() {
-      foundation_cleanup=failed
-      clone_cleanup=failed
-      if git -C "$source_root" worktree remove --force "$foundation_root" >/dev/null 2>&1; then
-        foundation_cleanup=removed
-      fi
-      if git -C "$source_root" worktree remove --force "$clone_root" >/dev/null 2>&1; then
-        clone_cleanup=removed
-      fi
-      cleanup_status="foundation:$foundation_cleanup,clone:$clone_cleanup"
-    }
-    trap 'cleanup_worktree; printf "\\n- cleanupOutcome: %s\\n" "$cleanup_status" >> "$evidence_tmp"; mkdir -p "$(dirname -- "$evidence_path")"; mv -- "$evidence_tmp" "$evidence_path"; rm -rf -- "$fixture"' EXIT
     printf '%s\n' "command: git status --porcelain --untracked-files=all" "result: $(test -n "$source_status" && echo dirty || echo clean)" >> "$evidence_tmp"
     test -z "$source_status"
     test -n "$source_identity"
     printf '%s\n' "command: git merge-base --is-ancestor $foundation_checkpoint_commit $current_source_head" "result: 0" >> "$evidence_tmp"
     printf '%s\n' "command: compare foundation checkpoint source manifest to accepted foundation artifact" "result: 0" >> "$evidence_tmp"
     printf '%s\n' "currentSourceManifestSHA256: $current_source_manifest_sha" "foundationSourceManifestSHA256: $foundation_manifest_sha" >> "$evidence_tmp"
+    current_step=create-clean-clone
     git -C "$source_root" worktree add --detach "$clone_root" "$source_identity"
     printf '%s\n' "command: git worktree add --detach $clone_root $source_identity" "result: 0" >> "$evidence_tmp"
+    current_step=build-release
     output_root=build
-    (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" ./scripts/build-app.sh --output-root "$output_root")
-    printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR ./scripts/build-app.sh --output-root $output_root' 'result: 0' >> "$evidence_tmp"
+    (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" ./scripts/build-app.sh --output-root "$output_root" --foundation-provenance "$foundation_provenance")
+    printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR ./scripts/build-app.sh --output-root $output_root --foundation-provenance $foundation_provenance' 'result: 0' >> "$evidence_tmp"
+    current_step=validate-build-provenance
+    build_provenance="$clone_root/$output_root/provenance.json"
+    test -f "$build_provenance"
+    actual_executable_sha="$(shasum -a 256 "$clone_root/$output_root/Pointer.app/Contents/MacOS/Pointer" | awk '{print $1}')"
+    actual_bundle_manifest_sha="$(shasum -a 256 "$clone_root/$output_root/bundle-manifest.sha256" | awk '{print $1}')"
+    foundation_artifact_sha="$(shasum -a 256 "$foundation_provenance" | awk '{print $1}')"
+    test "$(plutil -extract sourceManifestSHA256 raw -o - "$build_provenance")" = "$current_source_manifest_sha"
+    test "$(plutil -extract executableSHA256 raw -o - "$build_provenance")" = "$actual_executable_sha"
+    test "$(plutil -extract bundleManifestSHA256 raw -o - "$build_provenance")" = "$actual_bundle_manifest_sha"
+    test "$(plutil -extract acceptedFoundationArtifactSHA256 raw -o - "$build_provenance")" = "$foundation_artifact_sha"
+    test "$(plutil -extract foundation.identity raw -o - "$build_provenance")" = "$foundation_identity"
+    test "$(plutil -extract foundation.version raw -o - "$build_provenance")" = "$foundation_version"
+    test "$(plutil -extract harnessVersion raw -o - "$build_provenance")" = "$harness_version"
+    test "$(plutil -extract buildContractVersion raw -o - "$build_provenance")" = "$build_contract_version"
+    printf '%s\n' 'command: validate $output_root/provenance.json against current source/executable/bundle hashes and foundation versions' 'result: 0' >> "$evidence_tmp"
     executable_sha="$(shasum -a 256 "$clone_root/$output_root/Pointer.app/Contents/MacOS/Pointer" | awk '{print $1}')"
     bundle_manifest_sha="$(shasum -a 256 "$clone_root/$output_root/bundle-manifest.sha256" | awk '{print $1}')"
     printf '%s\n' "executableSHA256: $executable_sha" "bundleManifestSHA256: $bundle_manifest_sha" >> "$evidence_tmp"
+    current_step=run-buildscripts-tests
     (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" swift test --filter PointerBuildScriptsTests)
     printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR swift test --filter PointerBuildScriptsTests' 'result: 0' >> "$evidence_tmp"
+    current_step=run-smoke
+    (cd "$clone_root" && "$output_root/Pointer.app/Contents/MacOS/Pointer" --smoke --format json >/dev/null)
+    printf '%s\n' 'command: $output_root/Pointer.app/Contents/MacOS/Pointer --smoke --format json' 'result: 0' >> "$evidence_tmp"
+    current_step=run-verify
     (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" ./scripts/verify.sh)
     printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR ./scripts/verify.sh' 'result: 0' >> "$evidence_tmp"
 
@@ -715,7 +790,10 @@ available at that identity before invoking this script.
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/test-clean-clone.sh \
       --foundation-provenance "$PWD/.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json"
 
-    Expected: the scoped temporary checkout builds Release, runs `swift test --filter PointerBuildScriptsTests`, validates resources/signature/arm64, and runs deterministic smoke before any live window is opened.
+    Expected: the scoped temporary checkout builds Release, validates its
+    per-build provenance, runs `swift test --filter PointerBuildScriptsTests`,
+    directly invokes the built executable with `--smoke --format json`, then
+    runs `verify.sh`; all occur before any live window is opened.
 
 ## Task 6: Execute the complete manual-use matrix
 

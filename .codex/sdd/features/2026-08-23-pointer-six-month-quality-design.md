@@ -853,18 +853,19 @@ Acceptance criteria:
   `.codex/sdd/reports/quality-campaign/performance/measurements/**`,
   `.codex/sdd/reports/quality-campaign/performance/provenance/**`, and
   `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; F may
-  consume them but does not edit either subtree.
+  consume them but does not edit those E-owned subtrees.
 - `PerformanceConfiguration` and every measurement report carry typed
   `harnessVersion`, `foundationIdentity` (identity and version), and
-  `buildContractVersion` fields. Every report also embeds a typed provenance
-  artifact containing observed clean/dirty status, source identity kind/value,
-  the full source-manifest SHA-256, executable SHA-256, bundle/build-manifest
-  SHA-256, UTC timestamp, foundation identity, and harness/build-contract
-  versions. The script creates and validates this artifact, proves Git
-  cleanliness/ancestry and checkout-to-binary correspondence, and passes it
-  with `--provenance-file`; `PerformanceCLI` only syntactically validates the
-  flags/artifact and embeds the decoded values. A measured executable must
-  hash-match the artifact.
+  `buildContractVersion` fields. F's build root contains typed `BuildProvenance`
+  with observed source status/identity, source/executable/bundle hashes, UTC
+  timestamp, foundation identity/version, harness version, and build-contract
+  version. E's `benchmark-quality.sh` alone creates
+  `PerformanceRunProvenance` and `PerformancePairEligibility` from two
+  validated build artifacts plus roots/refs/foundation. The script creates
+  and validates these artifacts, proves Git cleanliness/ancestry and
+  checkout-to-binary correspondence, and passes the build artifact with
+  `--provenance-file`; `PerformanceCLI` embeds the typed build/run artifacts.
+  A measured executable must hash-match its build artifact.
 - Every single measurement uses exactly one immutable identity: a clean
   40-hex commit SHA or a 64-hex SHA-256 content manifest covering the
   canonical source scope. The CLI accepts exactly one of
@@ -880,10 +881,11 @@ Acceptance criteria:
   Baseline eligibility additionally requires the same E schema/harness and F
   launcher/build foundation; the baseline is pinned only after that foundation
   checkpoint, and the candidate is a subsequent measured commit.
-- The fixed paired protocol runs five warmups per variant and 30 paired trials
-  on the same host/fixture, with a fixed seed and 15 baseline→candidate plus
-  15 candidate→baseline pairs. It computes the paired candidate/baseline ratio
-  and a fixed-seed 10,000-resample bootstrap 95% interval for each metric.
+- The fixed paired protocol runs five warmups per variant and
+  `pairsPerOrder == 15`, with derived `totalPairs == 30` on the same
+  host/fixture: exactly 15 baseline-first plus 15 candidate-first pairs. It
+  computes the paired candidate/baseline ratio and a fixed-seed 10,000-resample
+  bootstrap 95% interval for each metric.
   Improvement is claimable only when the interval for the paired delta is
   strictly below zero; otherwise the comparison says no proven improvement.
 - `PerformanceComparisonHarness.swift` consumes two validated
@@ -1176,8 +1178,9 @@ Acceptance criteria:
   clean/dirty report or prior identity cannot satisfy the gate. The fresh
   scoped directory has no inherited build products; its Release bundle ships
   only compiled `Assets.car` plus byte-identical `GuideAssetIdentity.json` (no
-  raw PNGs, imagesets, or `.xcassets`), and deterministic smoke runs before
-  any live window opens.
+  raw PNGs, imagesets, or `.xcassets`), and the clean-clone script directly
+  invokes the built executable with `--smoke --format json` before
+  `verify.sh`, all before any live window opens.
 - A person directly uses the built app through the complete matrix: launch in
   standby; toggle annotation; create every mark type; select, move, resize,
   delete, undo, clear, and swept-erase; use emoji and spotlight; drag and
