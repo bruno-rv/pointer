@@ -336,6 +336,41 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertTrue(viewController.exampleImageViews.first?.image === imageBeforeFailure)
     }
 
+    func testReshowRetainedLoadedPanelAppliesDarkImagesWithoutMovingFrameOrFocus() throws {
+        let fixture = FirstUseGuideTestFixture()
+        XCTAssertEqual(fixture.controller.show(in: fixture.context), .shown)
+        XCTAssertTrue(fixture.panel.isVisible)
+
+        let viewController = try XCTUnwrap(fixture.panel.viewController)
+        let lightImages = viewController.exampleImageViews.compactMap(\.image)
+        let frameBeforeReshow = viewController.view.frame
+        let focusBeforeReshow = viewController.accessibilityOrderLabels
+        XCTAssertEqual(lightImages.count, FirstUseGuideViewController.examples.count)
+
+        fixture.controller.dismiss()
+        fixture.appearanceProvider.variant = .dark
+        fixture.catalog.resetImageRequests()
+
+        XCTAssertEqual(fixture.controller.show(in: fixture.context), .shown)
+        XCTAssertTrue(fixture.panel.isVisible)
+        let darkImages = viewController.exampleImageViews.compactMap(\.image)
+        let expectedDarkImages = Dictionary(
+            uniqueKeysWithValues: fixture.catalog.providedImages
+                .filter { $0.1 == .dark }
+                .map { ($0.0, $0.2) }
+        )
+
+        XCTAssertEqual(darkImages.count, FirstUseGuideViewController.examples.count)
+        for (index, example) in FirstUseGuideViewController.examples.enumerated() {
+            let expected = try XCTUnwrap(expectedDarkImages[example.assetIdentifier])
+            let actual = try XCTUnwrap(viewController.exampleImageViews[index].image)
+            XCTAssertTrue(actual === expected, example.assetIdentifier)
+            XCTAssertFalse(actual === lightImages[index], example.assetIdentifier)
+        }
+        XCTAssertEqual(viewController.view.frame, frameBeforeReshow)
+        XCTAssertEqual(viewController.accessibilityOrderLabels, focusBeforeReshow)
+    }
+
     func testMissingOrEmptyCatalogMetadataFailsWithoutAccessibleFallback() {
         let fixture = FirstUseGuideTestFixture()
         let invalidArrow = GuideAssetDescriptor(

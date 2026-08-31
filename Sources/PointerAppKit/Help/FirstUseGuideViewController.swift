@@ -94,8 +94,7 @@ public final class FirstUseGuideViewController: NSViewController {
     }
 
     func setResolvedImages(_ images: [String: NSImage], variant: GuideAssetVariant) {
-        resolvedImages = images
-        resolvedVariant = variant
+        _ = commitResolvedImages(images, variant: variant)
     }
 
     var isAppearanceObservationActive: Bool {
@@ -159,13 +158,27 @@ public final class FirstUseGuideViewController: NSViewController {
             resolutionErrors = [error]
             return false
         }
-        guard images.count == Self.examples.count else { return false }
+        return commitResolvedImages(images, variant: variant)
+    }
+
+    @discardableResult
+    private func commitResolvedImages(
+        _ images: [String: NSImage],
+        variant: GuideAssetVariant
+    ) -> Bool {
+        let orderedImages = Self.examples.compactMap { images[$0.assetIdentifier] }
+        guard orderedImages.count == Self.examples.count,
+              !isViewLoaded || exampleImageViews.count == orderedImages.count else {
+            return false
+        }
+
+        if isViewLoaded {
+            for (index, image) in orderedImages.enumerated() {
+                exampleImageViews[index].image = image
+            }
+        }
         resolvedImages = images
         resolvedVariant = variant
-        guard isViewLoaded else { return true }
-        for (index, example) in Self.examples.enumerated() where index < exampleImageViews.count {
-            exampleImageViews[index].image = images[example.assetIdentifier]
-        }
         resolutionErrors.removeAll()
         return true
     }

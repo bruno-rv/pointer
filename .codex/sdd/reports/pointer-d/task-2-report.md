@@ -101,6 +101,9 @@ edited.
   injected catalog metadata, accessible labels/help, and focus order from title
   through explanation, examples, shortcuts, and Done. Decorative catalog
   entries are excluded from the accessibility element tree.
+- `FirstUseGuideAssetPreparing` is an internal-only panel seam used by the
+  retained-panel regression; it forwards complete resolved image maps into the
+  existing guide view without changing the public presenting protocol.
 
 ## Remaining concerns
 
@@ -285,7 +288,7 @@ resource lookup. It deterministically derives each resource name from
 source-contract test requires exactly one `bundle.image(forResource:)` call
 while rejecting global/default named lookup and alternate resource routes.
 
-Final verification after Task 1's test fixes:
+Final verification after Task 1's test fixes and retained-panel reload fix:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
@@ -294,11 +297,11 @@ Build complete
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
 exit 0
-FirstUseGuideTests: 20 passed, 0 failed
+FirstUseGuideTests: 21 passed, 0 failed
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 exit 0
-PointerPackageTests.xctest: 291 passed, 0 failed
+PointerPackageTests.xctest: 292 passed, 0 failed
 
 git diff --check
 exit 0
@@ -306,5 +309,38 @@ No whitespace errors
 ```
 
 The focused guide suite and full package suite both pass after Task 1's test
-fixes. This follow-up did not modify `RenderPlanTests.swift` or any other
-Task 1 path.
+fixes and the retained-panel reload correction. This follow-up did not modify
+`RenderPlanTests.swift` or any other Task 1 path.
+
+## Retained-panel appearance regression
+
+The RED test loaded the guide through the controller with light images, kept
+the same panel/view instance after dismissal, switched the injected appearance
+provider to dark, and re-presented it. Before the production fix, all eight
+image identity assertions failed because `setResolvedImages` updated only its
+caches; frame and focus remained unchanged.
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testReshowRetainedLoadedPanelAppliesDarkImagesWithoutMovingFrameOrFocus
+exit 1
+Executed 1 test, with 16 failures (0 unexpected)
+All eight retained image views stayed on their light instances.
+```
+
+The GREEN fix validates a complete example-keyed map before updating caches or
+loaded image views, applies all injected images to the retained view, and
+clears resolution errors only after the complete update succeeds.
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests/testReshowRetainedLoadedPanelAppliesDarkImagesWithoutMovingFrameOrFocus
+exit 0
+Executed 1 test, with 0 failures (0 unexpected)
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
+exit 0
+FirstUseGuideTests: 21 passed, 0 failed
+
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+exit 0
+PointerPackageTests.xctest: 292 passed, 0 failed
+```

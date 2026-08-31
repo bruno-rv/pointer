@@ -30,7 +30,7 @@ public final class SystemGuideAppearanceProvider: GuideAppearanceProviding {
 }
 
 @MainActor
-private protocol FirstUseGuideAssetPreparing: AnyObject {
+internal protocol FirstUseGuideAssetPreparing: AnyObject {
     func setResolvedImages(_ images: [String: NSImage], variant: GuideAssetVariant)
 }
 

@@ -22,6 +22,7 @@ final class FirstUseGuideTestStateStore: FirstUseGuideStateStoring {
 final class FirstUseGuideTestCatalog: GuideAssetCatalogProviding {
     let entries: [GuideAssetDescriptor]
     private(set) var imageRequests: [(String, GuideAssetVariant)] = []
+    private(set) var providedImages: [(String, GuideAssetVariant, NSImage)] = []
     var imageError: Error?
     var failingVariants: Set<GuideAssetVariant> = []
 
@@ -34,11 +35,14 @@ final class FirstUseGuideTestCatalog: GuideAssetCatalogProviding {
         if let imageError, failingVariants.isEmpty || failingVariants.contains(variant) {
             throw imageError
         }
-        return NSImage(size: NSSize(width: 48, height: 48))
+        let image = NSImage(size: NSSize(width: 48, height: 48))
+        providedImages.append((identifier, variant, image))
+        return image
     }
 
     func resetImageRequests() {
         imageRequests.removeAll()
+        providedImages.removeAll()
     }
 
     static let defaultEntries: [GuideAssetDescriptor] = [
@@ -70,8 +74,9 @@ final class FirstUseGuideTestAppearanceProvider: GuideAppearanceProviding {
 }
 
 @MainActor
-final class FirstUseGuideTestPanel: FirstUseGuidePanel {
+final class FirstUseGuideTestPanel: FirstUseGuidePanel, FirstUseGuideAssetPreparing {
     let expectedDisplay: DisplayDescriptor
+    let viewController: FirstUseGuideViewController?
     private(set) var showContexts: [GuidePlacementContext] = []
     private(set) var events: [String] = []
     private var visibleCallback: (() -> Void)?
@@ -79,12 +84,21 @@ final class FirstUseGuideTestPanel: FirstUseGuidePanel {
     var becomesVisibleOnShow = true
     var invokesVisibleCallbackOnShow = true
 
-    init(expectedDisplay: DisplayDescriptor) {
+    init(
+        expectedDisplay: DisplayDescriptor,
+        viewController: FirstUseGuideViewController? = nil
+    ) {
         self.expectedDisplay = expectedDisplay
+        self.viewController = viewController
+    }
+
+    func setResolvedImages(_ images: [String: NSImage], variant: GuideAssetVariant) {
+        viewController?.setResolvedImages(images, variant: variant)
     }
 
     func show(in context: GuidePlacementContext, onVisible: @escaping () -> Void) {
         XCTAssertEqual(context.display, expectedDisplay)
+        viewController?.loadViewIfNeeded()
         showContexts.append(context)
         events.append("show")
         visibleCallback = onVisible
@@ -168,7 +182,14 @@ final class FirstUseGuideTestFixture {
             paletteFrame: paletteFrame,
             avoidanceFrames: [paletteFrame, DisplayFrame(x: 0, y: 24, width: 200, height: 200)]
         )
-        let panel = FirstUseGuideTestPanel(expectedDisplay: display)
+        let guideViewController = FirstUseGuideViewController(
+            assetCatalog: catalog,
+            appearanceProvider: appearanceProvider
+        )
+        let panel = FirstUseGuideTestPanel(
+            expectedDisplay: display,
+            viewController: guideViewController
+        )
         self.panel = panel
         controller = FirstUseGuideController(
             stateStore: stateStore,
