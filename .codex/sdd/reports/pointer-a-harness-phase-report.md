@@ -72,7 +72,11 @@ and creates no undo entry. Standby retains marks and retained previews while
 clearing selection, resize handles, hover, contextual Delete, and mouse
 interaction. Disconnected UUIDs remain in retained mark/preview snapshots,
 while `connectedDisplays` reports only current real overlays. Undo is queried
-per retained display, never inferred from mark count.
+per retained display, never inferred from mark count. The stale-mouse-up
+regression also drives the real `CommandRouter` undo path: the first undo
+removes the sole arrow and leaves zero marks/no undo available, while a second
+undo leaves the snapshot, session/canvas, and boundary log unchanged and
+publishes truthful `Nothing to undo` feedback.
 
 ## Metadata and palette edge states
 
@@ -204,6 +208,10 @@ eb60e7a  test: harden Pointer lifecycle teardown
 
 ## Verification at `6ef2d60`
 
+The production implementation checkpoint remains `6ef2d60`; the stale-undo
+assertion refresh below is a same-scope evidence hardening of the existing A
+core test and does not create a new production checkpoint.
+
 Fresh focused command:
 
 ```text
@@ -234,6 +242,22 @@ contains 17 paths: four A reports, one shared C report update, one A
 production harness, six A harness test or fixture files, and six unique
 C-owned paths touched by the two separately reconciled C exceptions. The
 worktree was clean before this report was added.
+
+The final stale-undo assertion refresh was rerun against the same phase scope:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'CanvasIntegrationHarnessTests|ControlMetadataHarnessTests|OverlappingMarksHarnessTests|LifecycleHarnessTests'
+```
+
+Result: `28 passed, 0 failed`; the focused A count is unchanged because the
+existing stale-mouse-up test gained assertions rather than a new test case.
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
+```
+
+Result: `340 passed, 0 failed`. Build and whitespace verification remained
+green; no downstream A slice was pulled into this follow-up.
 
 ## Remaining evidence boundaries
 

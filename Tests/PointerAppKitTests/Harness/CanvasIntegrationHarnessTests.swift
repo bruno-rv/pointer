@@ -117,6 +117,27 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
             .began, .committed,
             .began, .cancelled,
         ])
+
+        let boundariesBeforeUndo = boundaryEvents
+        harness.route(.undo)
+        _ = fixture.assertConvergence(harness, on: display)
+        let afterFirstUndo = harness.snapshot()
+        XCTAssertTrue(afterFirstUndo.marksByDisplay[display, default: []].isEmpty)
+        XCTAssertTrue(afterFirstUndo.previewMarksByDisplay[display, default: []].isEmpty)
+        XCTAssertFalse(afterFirstUndo.undoAvailable)
+        XCTAssertNil(afterFirstUndo.selection)
+        XCTAssertNil(afterFirstUndo.activeDraftMarkID)
+        XCTAssertNil(fixture.commandRouter.feedbackMessage)
+        XCTAssertEqual(boundaryEvents, boundariesBeforeUndo)
+        let sessionAfterFirstUndo = fixture.displayCoordinator.session
+
+        harness.route(.undo)
+        _ = fixture.assertConvergence(harness, on: display)
+        let afterSecondUndo = harness.snapshot()
+        XCTAssertEqual(afterSecondUndo, afterFirstUndo)
+        XCTAssertEqual(fixture.displayCoordinator.session, sessionAfterFirstUndo)
+        XCTAssertEqual(boundaryEvents, boundariesBeforeUndo)
+        XCTAssertEqual(fixture.commandRouter.feedbackMessage, "Nothing to undo")
     }
 
     func testStandbyKeepsCommittedCanvasButHidesSelectionChrome() throws {

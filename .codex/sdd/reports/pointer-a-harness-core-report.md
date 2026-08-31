@@ -9,7 +9,9 @@ B-render-integration handoff. The baseline implementation is commit
 `59ed5ed` (`test: add Pointer interaction harness core`), with intermediate
 hardening in `0d9a08a` (`fix: harden Pointer harness convergence`). The final
 bounded-core reconciliation head is `a31d657`, containing the reviewed
-oracle/test/report follow-up. The production harness
+oracle/test/report follow-up. The final gate-only stale-undo assertion refresh
+does not change that production checkpoint or broaden the core scope. The
+production harness
 accepts the documented injected coordinator graph and only obtains gesture
 state through the real `DisplayCoordinator`, `OverlayPanel`, and `CanvasView`
 objects. Commands and local keyboard routing remain on `CommandRouter`; no
@@ -123,7 +125,11 @@ session state.
    is gone; the overlay and canvas object identities are also asserted.
 2. Cancelling a rectangle after selecting a previously committed arrow restores
    the committed canvas and selection. A subsequent stale `endGesture` emits no
-   second boundary and creates no undo entry.
+   second boundary and creates no undo entry. The same test then routes the
+   real `undo` command once, removing the sole arrow and leaving zero marks and
+   no undo available, and routes it a second time to verify a no-op snapshot,
+   unchanged session/canvas and boundaries, and truthful `Nothing to undo`
+   feedback.
 3. Standby retains committed and preview canvas marks while clearing selection,
    active draft, resize handles, and contextual Delete.
 4. Empty and malformed display fixtures report no connected displays and reject
