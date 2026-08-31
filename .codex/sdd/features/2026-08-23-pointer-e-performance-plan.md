@@ -187,6 +187,7 @@ neither a previous report nor a documentation claim can satisfy it.
         public let sourceManifestSHA256: String
         public let executableSHA256: String
         public let bundleManifestSHA256: String
+        public let buildConfiguration: String
         public let recordedAtUTC: String
         public let foundation: FoundationIdentity
         public let harnessVersion: String
@@ -202,6 +203,7 @@ neither a previous report nor a documentation claim can satisfy it.
         public let host: HostIdentity
         public let recordedAtUTC: String
         public let configuration: PerformanceConfiguration
+        public let acceptedFoundationArtifactSHA256: String?
         public let foundationProvenancePath: String
         public let foundation: FoundationIdentity
         public let harnessVersion: String
@@ -309,6 +311,7 @@ neither a previous report nor a documentation claim can satisfy it.
         public let finalWindowDeltaPercent: Double
         public let matchedBaselineSeries: [Double]
         public let matchedBaselineValues: [Int64]
+        public let postWarmupSlopeBytesPerSecond: Double
         public let peakLiveResourceCounts: ResourceCounts
         public let endLiveResourceCounts: ResourceCounts
     }
@@ -547,13 +550,17 @@ source tree must use the commit identity; a dirty source tree must use the
 content-manifest identity.
 `BuildProvenance` must contain the observed source-tree status, source identity
 kind/value, source-manifest SHA-256, executable SHA-256, bundle-manifest
-SHA-256, UTC timestamp, foundation identity/version, harness version,
+SHA-256, authoritative `buildConfiguration` (`release`; bootstrap diagnostic
+may use `debug`), UTC timestamp, foundation identity/version, harness version,
 build-contract version, and optional accepted-foundation artifact SHA-256. It
 contains no filesystem path, so it remains portable. `PerformanceRunProvenance`
-may record the resolved build/foundation artifact paths as run evidence and
-must link the build artifact to its variant, output root, source ref, and
-configuration versions. The report's build/run provenance and configuration
-values must agree. Structural measurement validation allows `measured`,
+embeds the complete BuildProvenance plus host, UTC timestamp, variant, output
+root, source ref, measurement configuration, and optional artifact paths. An
+authoritative post-foundation run requires a nonnil lowercase 64-hex
+`acceptedFoundationArtifactSHA256` matching both the embedded build value and
+the accepted foundation artifact; only a bootstrap diagnostic run may leave it
+nil. The report's build/run provenance and configuration values must agree.
+Structural measurement validation allows `measured`,
 `failed`, and `unmeasured` so diagnostic failures round-trip honestly, but
 `validateCompletion()` rejects required failed/unmeasured metrics, budget
 breaches, leaks, invalid dispositions, or any non-measured required status.
@@ -564,7 +571,8 @@ contains measured comparisons only. Its structural validator requires
 `reportKind == .comparison`, immutable baseline/candidate identities, matching
 schema/harness/foundation/build-contract versions, matching host/fixture,
 both typed `BuildProvenance` values, matching baseline/candidate
-`PerformanceRunProvenance` values, one `MetricComparison` for every
+`PerformanceRunProvenance` values including their accepted-foundation SHA and
+`buildConfiguration`, one `MetricComparison` for every
 `PerformanceMetricID`, equal-length paired arrays, valid `BootstrapInterval`
 values, and the conditional manual-evidence rule. A manual metric requires
 complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
@@ -590,7 +598,14 @@ p95, frame count, missed-frame count, and instrumentation status.
 `MemoryMeasurement` contains status, windowSeconds, sampleIntervalSeconds,
 every RSS sample, periodic aggregates, peak RSS, final-window delta
 bytes/percent, matched-baseline series/values, peak/end live resource counts,
-and phase per sample.
+and phase per sample, plus `postWarmupSlopeBytesPerSecond`. The slope is the
+ordinary least-squares slope of `(elapsedSeconds, rssBytes)` over all samples
+whose phase is `running` and whose elapsed time is at or after the configured
+warmup boundary (`warmupCount * sampleIntervalSeconds`); it requires at least
+two distinct timestamps and is expressed in bytes per second. Structural
+validation requires a finite slope; completion accepts no growth only when the
+slope is at most the exact tolerance `1e-9` B/s and rejects positive growth
+above that tolerance.
 
 ## Task 1: Extend the fixed production model benchmark
 
@@ -650,7 +665,10 @@ Expected: Release JSON has fixed fixture/trial/publication/checksum/final-state 
     func testPerformanceMeasurementReportRoundTripsEveryRequiredMeasurementObject()
     func testPerformanceReportKindIsTypedAndWrongOrMissingKindsAreRejected()
     func testBuildAndRunProvenanceAreDistinctAndPortable()
+    func testBuildProvenanceCarriesValidatedConfigurationAndFoundationSHA()
+    func testAuthoritativeRunRequiresAcceptedFoundationArtifactSHA()
     func testPerformanceReportRoundTripsTypedProvenanceAndFoundationVersions()
+    func testMemoryReportComputesPostWarmupLeastSquaresSlopeAndRejectsGrowth()
     func testStructurallyValidFailedAndUnmeasuredReportsRoundTrip()
     func testCompletionValidationRejectsFailedOrUnmeasuredRequiredMetric()
     func testManualMetricComparisonRoundTripsCompleteEvidence()
@@ -675,8 +693,11 @@ assert it throws for failed/unmeasured required metrics rather than silently
 converting them to zero/default values. Round-trip the typed provenance,
 `harnessVersion`, foundation identity/version, and build-contract version, and
 assert mismatches are rejected, and assert `BuildProvenance` contains no path
-or pair ancestry while `PerformanceRunProvenance` carries only run-level
-paths/variant context. Give the comparison harness a structurally
+or pair ancestry, carries `buildConfiguration`, and has an optional accepted
+foundation SHA only in bootstrap diagnostics. Assert an authoritative
+`PerformanceRunProvenance` requires a matching lowercase 64-hex accepted
+foundation SHA while bootstrap diagnostics may leave it nil. Give the
+comparison harness a structurally
 valid measurement with a failed or unmeasured required metric and assert it
 throws before constructing a `PerformanceComparisonReport` or writing an
 output file; comparison reports contain measured comparisons only.
@@ -777,9 +798,13 @@ identity; a dirty tree uses the full content-manifest identity. F's
 `build-app.sh` emits one typed `BuildProvenance` per output root containing
 observed source status/identity, full source-manifest SHA-256, executable and
 bundle-manifest SHA-256 values, UTC timestamp, foundation identity/version,
-harness version, and build-contract version. E's `benchmark-quality.sh` is the
+harness version, build-contract version, and exact `buildConfiguration`
+(`release` for authoritative builds, `debug` only for bootstrap diagnostics).
+E's `benchmark-quality.sh` is the
 sole creator of `PerformanceRunProvenance` and `PerformancePairEligibility`:
-it consumes two validated BuildProvenance files plus roots/refs/foundation,
+it consumes two validated BuildProvenance files plus roots/refs/foundation and
+creates each run envelope with the same accepted-foundation artifact SHA as
+the embedded build, or nil only for bootstrap diagnostics,
 proves Git cleanliness, ancestry, source checkout to built executable
 correspondence, and executable hash equality before invoking the app. It
 passes `--run-provenance-file <path>` to `PerformanceCLI`; the app validates
@@ -883,10 +908,11 @@ report, dirty checkout, symbolic label, or prior D checkpoint is not eligible.
   verifies clean status, exact `HEAD` values, ancestry, and foundation
   checkpoint ancestry, validates the explicit accepted foundation provenance,
   then invokes F's
-  `scripts/build-app.sh --output-root build/baseline --foundation-provenance
+  `scripts/build-app.sh --output-root build/baseline --build-configuration
+  release --foundation-provenance
   .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json` and
-  `scripts/build-app.sh --output-root build/candidate
-  --foundation-provenance
+  `scripts/build-app.sh --output-root build/candidate --build-configuration
+  release --foundation-provenance
   .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json`.
   Each output root must
   contain exactly `Pointer.app`, `source-manifest.sha256`,

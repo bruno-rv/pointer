@@ -857,11 +857,16 @@ Acceptance criteria:
 - `PerformanceConfiguration` and every measurement report carry typed
   `harnessVersion`, `foundationIdentity` (identity and version), and
   `buildContractVersion` fields. F's build root contains typed `BuildProvenance`
-  with observed source status/identity, source/executable/bundle hashes, UTC
-  timestamp, foundation identity/version, harness version, and build-contract
-  version. E's `benchmark-quality.sh` alone creates
+  with observed source status/identity, source/executable/bundle hashes,
+  authoritative `buildConfiguration` (`release`; `debug` only for bootstrap
+  diagnostics), UTC timestamp, foundation identity/version, harness version,
+  and build-contract version. E's `benchmark-quality.sh` alone creates
   `PerformanceRunProvenance` and `PerformancePairEligibility` from two
-  validated build artifacts plus roots/refs/foundation. The script creates
+  validated build artifacts plus roots/refs/foundation. The run envelope
+  embeds the full BuildProvenance and requires
+  `acceptedFoundationArtifactSHA256` to be the same nonnil 64-hex SHA as the
+  embedded build and accepted foundation for authoritative post-foundation
+  runs; only bootstrap diagnostics may leave it nil. The script creates
   and validates these artifacts, proves Git cleanliness/ancestry and
   checkout-to-binary correspondence, creates the run envelope at the variant
   root, and passes it with `--run-provenance-file`; `PerformanceCLI` embeds the
@@ -941,7 +946,14 @@ Acceptance criteria:
   5), every RSS sample, periodic aggregates for each interval, peak RSS,
   final-window delta bytes and percent, a matched-baseline series and matched
   baseline values, plus peak and end live-resource counts for overlays, timers,
-  handlers, windows, and observers. `PerformanceHarnessTests` validates the
+  handlers, windows, and observers, and
+  `postWarmupSlopeBytesPerSecond`. That field is the ordinary least-squares
+  slope of `(elapsedSeconds, rssBytes)` over running samples at or after the
+  configured `warmupCount * sampleIntervalSeconds` boundary, requires two
+  distinct timestamps, and is measured in bytes per second. Structural
+  validation requires a finite value; completion accepts no growth only when
+  the slope is at most the exact tolerance `1e-9` B/s and rejects positive
+  growth above it. `PerformanceHarnessTests` validates the
   plateau/leak rules only over the `running` phase: after warmup the candidate's
   final-window RSS delta is
   no more than 10% and 50 MB over its matched baseline series, the post-warmup

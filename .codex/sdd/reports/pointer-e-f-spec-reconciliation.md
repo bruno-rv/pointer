@@ -16,9 +16,10 @@ claim that E/F implementation or physical evidence exists.
 | Source identity | A single measurement accepts exactly one `--source-commit-sha <40hex>` or `--content-manifest-sha256 <64hex>`. A clean tree uses the commit identity; a dirty tree uses the full content-manifest identity. Both, neither, malformed, symbolic, or stale identities are rejected. The authoritative paired comparison accepts clean commit identities only and requires explicit baseline/candidate roots, commit SHAs, foundation provenance, manual-evidence directory, and output directory. |
 | Source-manifest scope | E and F use the same Git-tracked scope: `Package.swift`, `Sources/**`, `Tests/**`, `scripts/**`, `Bundle/Assets.xcassets/**`, bundle identity/Info.plist files, and the master plus six phase plan/design inputs. Sorted `<sha256>  <relative-path>` rows produce the aggregate SHA; generated reports/build products/signature metadata/mtimes/absolute paths/untracked files are excluded. |
 | Baseline eligibility | Authoritative baseline and candidate use the same E schema/harness/fixture, typed harness/foundation/build-contract versions, F launcher/build foundation, and host. The baseline is pinned only after the F-foundation checkpoint; both refs are clean 40-hex commits, baseline is an ancestor of candidate, and both are descendants of the foundation checkpoint. Content-manifest measurements remain diagnostic-only. |
-| Per-variant roots | F's build helper accepts `--output-root <root>` and emits exactly `<root>/Pointer.app`, `<root>/source-manifest.sha256`, `<root>/bundle-manifest.sha256`, and build-only `<root>/provenance.json` containing portable `BuildProvenance` (no path or pair ancestry); E creates `build/baseline` and `build/candidate`, writes each `<root>/measurements/measurement.json` and `<root>/run-provenance.json`, passes the accepted foundation path to both post-acceptance builds, and consumes those exact paths for repeat/idempotence comparisons. |
+| Per-variant roots | F's build helper accepts `--output-root <root>` and emits exactly `<root>/Pointer.app`, `<root>/source-manifest.sha256`, `<root>/bundle-manifest.sha256`, and build-only `<root>/provenance.json` containing portable `BuildProvenance`, including exact `buildConfiguration` (`release` authoritative; `debug` bootstrap diagnostic), with no path or pair ancestry; E creates `build/baseline` and `build/candidate`, writes each `<root>/measurements/measurement.json` and `<root>/run-provenance.json`, passes the accepted foundation path to both post-acceptance builds, and consumes those exact paths for repeat/idempotence comparisons. |
 | Foundation checkpoint | F tasks 1–3 produce tracked `.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json` with fixed identity/version/hash/acceptance fields. The worker, reviewer, and adversarial gates must accept it before E-execution. E and clean-clone receive it through explicit `--foundation-provenance`; loaders validate hashes and derive foundation/harness/build-contract versions without hidden environment state. |
-| Provenance | F build roots contain portable typed `BuildProvenance` only (source/executable/bundle hashes, foundation/version fields, optional accepted-artifact SHA, and no path or pair ancestry); E `benchmark-quality.sh` is the sole creator of per-variant `PerformanceRunProvenance` and `PerformancePairEligibility`, consuming two validated build artifacts plus roots/refs/foundation. The app embeds validated build/run artifacts after syntax/hash checks, while the script proves Git cleanliness, ancestry, and checkout-to-binary correspondence. |
+| Provenance | F build roots contain portable typed `BuildProvenance` only (source/executable/bundle hashes, exact build configuration, foundation/version fields, optional accepted-artifact SHA, and no path or pair ancestry); E `benchmark-quality.sh` is the sole creator of per-variant `PerformanceRunProvenance` and `PerformancePairEligibility`, consuming two validated build artifacts plus roots/refs/foundation. An authoritative run requires nonnil 64-hex `acceptedFoundationArtifactSHA256` matching its embedded build and accepted artifact; bootstrap diagnostics may leave it nil. The app embeds validated build/run artifacts after syntax/hash checks, while the script proves Git cleanliness, ancestry, and checkout-to-binary correspondence. |
+| Memory slope | E v1 `MemoryMeasurement` carries `postWarmupSlopeBytesPerSecond`, computed by ordinary least squares over post-warmup running RSS samples; structural validation requires finite values, and completion rejects growth above the exact `1e-9` B/s tolerance. |
 | Resource boundary | Runtime ships only the executable, `Info.plist`, compiled `Contents/Resources/Assets.car`, and byte-identical `Contents/Resources/GuideAssetIdentity.json`. Raw PNG files and any `*.imageset` or `*.xcassets` file/directory anywhere under Resources fail the bundle contract. Source-input and bundle-output manifests are separate and both are compared across repeat builds and clean clone. |
 | Composition injection | `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` is the sole default selection point. It loads `GuideAssetIdentity.json` and passes that same explicit bundle to `GuideAssetCatalog`; the catalog never calls `Bundle.main`, uses a default bundle, or performs global lookup. |
 | Phase order | `A-foundation → B-core → C → D → B-render-integration → A-harness → E-foundation (tasks 1–3) → F-foundation (tasks 1–3) → E-execution → F-final (tasks 4–7)`. E foundation defines contracts before F; paired execution waits for F; F final consumes reconciled E reports. |
@@ -56,7 +57,9 @@ claim that E/F implementation or physical evidence exists.
   `BuildProvenance` semantics with E-owned run/pair provenance; all documented
   invocations now carry the correct bootstrap constants or accepted foundation
   path. The quality script writes root-local measurement/run artifacts before
-  invoking the report-path compare CLI.
+  invoking the report-path compare CLI. `BuildProvenance` now carries the
+  exact build configuration, and authoritative run provenance requires the
+  matching accepted-foundation artifact SHA.
 
 ### E performance plan
 
@@ -76,7 +79,8 @@ claim that E/F implementation or physical evidence exists.
   and cannot be bypassed by a direct fabricated harness call. F's build
   provenance and E's run/pair provenance now have separate owners, and the
   pair count is `pairsPerOrder == 15` with derived `totalPairs == 30`; build
-  provenance has no portable filesystem path.
+  provenance has no portable filesystem path. Added the v1 post-warmup
+  least-squares RSS slope field and completion tolerance rule.
 
 ### F integration plan
 

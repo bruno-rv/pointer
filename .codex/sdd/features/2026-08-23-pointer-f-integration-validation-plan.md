@@ -55,7 +55,9 @@ consumes E's reconciled output.
 `provenance.json` is only the typed `BuildProvenance` for this build: it has
 source status/identity, source/executable/bundle hashes, UTC timestamp,
 foundation identity/version, harness version, and build-contract version;
-optional accepted-foundation artifact SHA, and no filesystem path. It has no
+exact `buildConfiguration` (`release` authoritative; `debug` bootstrap
+diagnostic), optional accepted-foundation artifact SHA, and no filesystem path.
+It has no
 pair ancestry or baseline/candidate claim. E's
   `benchmark-quality.sh` is the sole creator of `PerformanceRunProvenance`
   and `PerformancePairEligibility`, consumes two validated BuildProvenance
@@ -340,7 +342,8 @@ exist.
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
       --foundation-identity pointer-f-foundation --foundation-version v1 \
       --harness-version pointer-performance-harness/v1 \
-      --build-contract-version pointer-build-contract/v1
+      --build-contract-version pointer-build-contract/v1 \
+      --build-configuration release
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PointerBuildScriptsTests|PointerCompositionRootTests'
     build/Pointer.app/Contents/MacOS/Pointer --smoke --format json
     build/Pointer.app/Contents/MacOS/Pointer --benchmark-gestures --format json
@@ -366,6 +369,7 @@ Expected: both diagnostics return without opening an interactive window or const
     test_runtime_bundle_contains_only_compiled_assets_and_identity()
     test_launch_services_resolves_exact_bundle_and_marker_digest()
     test_second_release_build_has_identical_tracked_resource_manifest()
+    test_build_provenance_contains_release_configuration_and_foundation_sha()
 
 Expected: current build copies only Info.plist/executable and has no compiled
 Assets.car, AppIcon identity, guide catalog contract, or probe. The test must
@@ -389,11 +393,13 @@ documented per-variant outputs: `<root>/Pointer.app`,
 contract failure. It has two deterministic modes. Before the foundation is
 accepted, bootstrap mode receives the explicit
 `--foundation-identity`, `--foundation-version`, `--harness-version`, and
-`--build-contract-version` constants from the E/F contracts and emits a
-candidate `BuildProvenance` with no accepted-foundation SHA. After acceptance,
-post-acceptance mode requires `--foundation-provenance <path>`, validates the
-accepted artifact, and embeds its SHA-256 plus identity/version fields in
-`BuildProvenance` without embedding the artifact path. At the end of F tasks 1–3, the coordinator writes
+`--build-contract-version`, and `--build-configuration release|debug` from the
+E/F contracts and emits a candidate `BuildProvenance` with no
+accepted-foundation SHA; `debug` is diagnostic-only. After acceptance,
+post-acceptance mode requires `--foundation-provenance <path>` and
+`--build-configuration release`, validates the accepted artifact, and embeds
+its SHA-256 plus identity/version fields in `BuildProvenance` without
+embedding the artifact path. At the end of F tasks 1–3, the coordinator writes
 `foundation/accepted-foundation.json` at the tracked path above, and the F
 reviewer plus adversarial gate must accept it before E-execution.
 
@@ -405,6 +411,7 @@ The accepted foundation JSON uses this fixed loader-facing shape:
   "foundationIdentity": { "identity": "pointer-f-foundation", "version": "v1" },
   "harnessVersion": "pointer-performance-harness/v1",
   "buildContractVersion": "pointer-build-contract/v1",
+  "buildConfiguration": "release",
   "checkpointCommitSHA": "<40hex>",
   "fullSourceManifestSHA256": "<64hex>",
   "executableSHA256": "<64hex>",
@@ -483,7 +490,8 @@ the later accepted-foundation artifact.
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
       --foundation-identity pointer-f-foundation --foundation-version v1 \
       --harness-version pointer-performance-harness/v1 \
-      --build-contract-version pointer-build-contract/v1
+      --build-contract-version pointer-build-contract/v1 \
+      --build-configuration release
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer POINTER_RELEASE_BUNDLE="$PWD/build/Pointer.app" swift test --filter GuideAssetCatalogBuildTests
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash Tests/BuildScripts/test-build-contract.sh
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
@@ -560,7 +568,8 @@ This is a post-acceptance invocation and therefore must use the explicit
 accepted foundation provenance path.
 
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/build-app.sh --output-root build \
-      --foundation-provenance "$PWD/.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json"
+      --foundation-provenance "$PWD/.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json" \
+      --build-configuration release
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PointerBuildScriptsTests
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
     DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/verify.sh
@@ -730,8 +739,8 @@ changed by the evidence file itself:
     printf '%s\n' "command: git worktree add --detach $clone_root $source_identity" "result: 0" >> "$evidence_tmp"
     current_step=build-release
     output_root=build
-    (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" ./scripts/build-app.sh --output-root "$output_root" --foundation-provenance "$foundation_provenance")
-    printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR ./scripts/build-app.sh --output-root $output_root --foundation-provenance $foundation_provenance' 'result: 0' >> "$evidence_tmp"
+    (cd "$clone_root" && DEVELOPER_DIR="${DEVELOPER_DIR:?}" ./scripts/build-app.sh --output-root "$output_root" --foundation-provenance "$foundation_provenance" --build-configuration release)
+    printf '%s\n' 'command: DEVELOPER_DIR=$DEVELOPER_DIR ./scripts/build-app.sh --output-root $output_root --foundation-provenance $foundation_provenance --build-configuration release' 'result: 0' >> "$evidence_tmp"
     current_step=validate-build-provenance
     build_provenance="$clone_root/$output_root/provenance.json"
     test -f "$build_provenance"
@@ -742,6 +751,7 @@ changed by the evidence file itself:
     test "$(plutil -extract executableSHA256 raw -o - "$build_provenance")" = "$actual_executable_sha"
     test "$(plutil -extract bundleManifestSHA256 raw -o - "$build_provenance")" = "$actual_bundle_manifest_sha"
     test "$(plutil -extract acceptedFoundationArtifactSHA256 raw -o - "$build_provenance")" = "$foundation_artifact_sha"
+    test "$(plutil -extract buildConfiguration raw -o - "$build_provenance")" = release
     test "$(plutil -extract foundation.identity raw -o - "$build_provenance")" = "$foundation_identity"
     test "$(plutil -extract foundation.version raw -o - "$build_provenance")" = "$foundation_version"
     test "$(plutil -extract harnessVersion raw -o - "$build_provenance")" = "$harness_version"
