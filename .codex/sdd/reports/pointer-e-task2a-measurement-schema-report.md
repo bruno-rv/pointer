@@ -1,6 +1,8 @@
 # Pointer E Task2a: measurement schema
 
-Status: implemented in the assigned schema/test scope; no commit created.
+Status: implemented and committed in the assigned schema/test scope.
+Implementation commit: `48ce323`.
+Synchronized contract documentation: `121fdbf`.
 
 ## Delivered
 
@@ -79,6 +81,10 @@ failures, derived RSS/delta and slope checks, full lifecycle cadence,
 configuration cardinality, diagnostic status preservation, nonstandard/debug
 diagnostic configurations, named authoritative accepted-foundation rejection,
 and completion acceptance/rejection.
+
+Current verification remains 20 focused tests and 362 tests across the full
+suite; the implementation and synchronized contract documentation are
+committed as noted above.
 
 The implementation intentionally stops at schema/validation. Instrumentation,
 `PerformanceHarness`, CLI dispatch, paired comparisons, and runtime evidence
