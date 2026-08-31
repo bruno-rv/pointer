@@ -713,9 +713,12 @@ final class FirstUseGuideTests: XCTestCase {
             viewController.keyboardShortcutLabel?.accessibilityValue(),
             FirstUseGuideViewController.essentialShortcutGuidance
         )
+        XCTAssertTrue(
+            viewController.keyboardShortcutLabel?.superview === viewController.scrollView?.documentView,
+            "keyboard routes should be part of the scrollable guide content"
+        )
         XCTAssertTrue(viewController.accessibilityOrderLabels.first == "Learn Pointer")
         XCTAssertEqual(viewController.accessibilityOrderLabels.last, "Done")
-        XCTAssertEqual(viewController.accessibilityOrderLabels[2], "Keyboard shortcuts")
         let instructionsByID = Dictionary(
             uniqueKeysWithValues: FirstUseGuideViewController.examples.map {
                 ($0.assetIdentifier, $0.selectionInstruction)
@@ -729,8 +732,10 @@ final class FirstUseGuideTests: XCTestCase {
             ]
         }
         XCTAssertEqual(
-            Array(viewController.accessibilityOrderLabels.dropFirst(3).dropLast()),
-            expectedExampleLabels
+            viewController.accessibilityOrderLabels,
+            ["Learn Pointer", "Guide explanation"]
+                + expectedExampleLabels
+                + ["Keyboard shortcuts", "Done"]
         )
     }
 

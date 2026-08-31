@@ -4,17 +4,18 @@ Status: `READY_FOR_PHASE_REVIEW`
 
 Worktree: `/Users/bruno/Dev/pointer/.worktrees/stable-app`
 
-Review base: `853880b` (shared HEAD used for the current uncommitted follow-up)
+Review base: `c056548` (committed truthful-copy repair)
 
-Historical D range: `9e6e175..853880b`
+Committed D range: `9e6e175..c056548`
 
 ## Reconciliation verdict
 
 Tasks 1–4 each received an independent reviewer verdict of `APPROVED`, and
 each then received an adversarial Codex verdict of `RECONCILED` before the
-current shortcut-copy follow-up. These are facts from the active orchestration
-record, not repository markers or claims inferred from test names. Final D
-phase acceptance remains pending review of the follow-up below.
+committed truthful-copy repair at `c056548`. These are facts from the active
+orchestration record, not repository markers or claims inferred from test
+names. The current accessibility-order repair is recorded below for final
+D-phase review.
 
 The four task reports remain the detailed evidence for their individual
 contracts:
@@ -48,11 +49,10 @@ contracts:
 - The guide has injected state, placement, appearance, focus, accessibility,
   display-loss, stop, dismissal, and retry behavior. A `.shown` result is not
   committed until the panel reports visibility.
-- In the current uncommitted follow-up based on review base `853880b`, tool
-  cards teach `Choose <Tool> in the Pointer palette`; the only keyboard
-  guidance is one accessible block for the production Escape and Command-Z
-  routes. No per-tool keyboard shortcut is advertised. This is pending final
-  D-phase review and is not asserted as part of the historical range above.
+- The guide repair based on committed review base `c056548` teaches
+  `Choose <Tool> in the Pointer palette`; the only keyboard guidance is one
+  accessible block for the production Escape and Command-Z routes. No
+  per-tool keyboard shortcut is advertised.
 
 ### Visual assets
 
@@ -166,21 +166,21 @@ handoff, not a D completion claim. The D tests prove the injected controller,
 view, assets, rendering contract, and friction inventory independently; they
 do not prove the packaged unseen-guide launch path.
 
-## Current shortcut-copy follow-up
+## Shortcut-copy and accessibility-order repair
 
-In the current uncommitted follow-up based on review base `853880b`, the
-guide's per-card shortcut claims were replaced with truthful palette-selection
-instructions. One accessible keyboard-routes block documents only Escape
-returning to standby and Command-Z undoing the last mark;
-`FirstUseGuideTests` exercises both routes through
-`CommandRouter.routeLocalKeyEvent` and rejects unsupported per-tool shortcut
-copy. This change is intentionally uncommitted so the independent reviewer
-and adversarial reviewer can inspect the working diff before the next phase
-gate.
+The guide repair based on committed review base `c056548` replaces the
+per-card shortcut claims with truthful palette-selection instructions. One
+accessible keyboard-routes block documents only Escape returning to standby
+and Command-Z undoing the last mark; `FirstUseGuideTests` exercises both
+routes through `CommandRouter.routeLocalKeyEvent` and rejects unsupported
+per-tool shortcut copy. The keyboard-routes item follows all example rows in
+the scroll document and in the accessibility/focus order, immediately before
+Done.
 
 ## Fresh current-tree verification
 
-The current uncommitted tree was rerun after the shortcut-copy follow-up:
+The current tree was rerun after the shortcut-copy and accessibility-order
+repairs:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
@@ -206,8 +206,8 @@ No whitespace errors
 git diff --check 9e6e175 --
 exit 0
 No whitespace errors in the current tree against the D base
-```
 
-`git diff --check 9e6e175..HEAD` still reports the blank EOF that is already
-embedded in committed `853880b`; the parent must commit this working-tree
-correction before that historical-range command can pass.
+git diff --check 9e6e175..c056548
+exit 0
+No whitespace errors in the committed repair range
+```

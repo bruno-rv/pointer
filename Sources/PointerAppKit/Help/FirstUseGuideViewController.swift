@@ -236,7 +236,6 @@ public final class FirstUseGuideViewController: NSViewController {
 
         root.addSubview(titleLabel)
         root.addSubview(explanationLabel)
-        root.addSubview(keyboardShortcutLabel)
         root.addSubview(guideScrollView)
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -249,12 +248,9 @@ public final class FirstUseGuideViewController: NSViewController {
             explanationLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             explanationLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
             explanationLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 8),
-            keyboardShortcutLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            keyboardShortcutLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            keyboardShortcutLabel.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: 8),
             guideScrollView.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             guideScrollView.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            guideScrollView.topAnchor.constraint(equalTo: keyboardShortcutLabel.bottomAnchor, constant: 16),
+            guideScrollView.topAnchor.constraint(equalTo: explanationLabel.bottomAnchor, constant: 16),
             guideScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 120),
             guideScrollView.heightAnchor.constraint(lessThanOrEqualToConstant: 390),
             contentStack.leadingAnchor.constraint(equalTo: guideScrollView.contentView.leadingAnchor),
@@ -267,8 +263,8 @@ public final class FirstUseGuideViewController: NSViewController {
         exampleImageViews.removeAll(keepingCapacity: true)
         exampleRows.removeAll(keepingCapacity: true)
         resolutionErrors.removeAll(keepingCapacity: true)
-        accessibilityOrderLabels = ["Learn Pointer", "Guide explanation", "Keyboard shortcuts"]
-        focusOrder = [titleLabel, explanationLabel, keyboardShortcutLabel]
+        accessibilityOrderLabels = ["Learn Pointer", "Guide explanation"]
+        focusOrder = [titleLabel, explanationLabel]
 
         let selectedVariant = resolvedVariant ?? appearanceProvider.variant
         let images: [String: NSImage]?
@@ -356,6 +352,11 @@ public final class FirstUseGuideViewController: NSViewController {
                 example.selectionInstruction,
             ])
         }
+
+        contentStack.addArrangedSubview(keyboardShortcutLabel)
+        keyboardShortcutLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        focusOrder.append(keyboardShortcutLabel)
+        accessibilityOrderLabels.append("Keyboard shortcuts")
 
         let button = NSButton(title: "Done", target: self, action: #selector(done(_:)))
         button.bezelStyle = .rounded

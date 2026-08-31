@@ -406,9 +406,8 @@ No whitespace errors
 ## Truthful shortcut-copy follow-up
 
 The earlier card metadata called every tool name a keyboard shortcut even
-though `CommandRouter` exposes no per-tool key route. This follow-up is based
-on shared review base `853880b` and remains uncommitted until the phase gate
-accepts it.
+though `CommandRouter` exposes no per-tool key route. The repair is based on
+committed review base `c056548`.
 
 The RED test caught all eight unsupported card claims:
 
@@ -423,7 +422,9 @@ The GREEN change renames the per-card field to `selectionInstruction`, uses
 help. It adds one accessible global block that documents only the routes that
 `CommandRouter.routeLocalKeyEvent` actually handles: Escape returns to
 standby and Command-Z undoes the last mark. The route-truth test exercises
-those key codes against `CommandRouter` and rejects unsupported guide copy.
+those key codes against `CommandRouter` and rejects unsupported guide copy. The
+keyboard-routes item follows all example rows in the scroll document and in
+the accessibility/focus order, immediately before Done.
 
 Fresh focused evidence after the fix:
 
