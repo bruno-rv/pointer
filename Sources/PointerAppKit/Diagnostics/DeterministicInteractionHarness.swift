@@ -16,7 +16,7 @@ public struct DeterministicInteractionSnapshot: Equatable, Sendable {
     public let shortcutError: String?
     public let connectedDisplays: Set<DisplayUUID>
 
-    public init(
+    init(
         mode: PointerMode,
         selectedTool: PointerTool,
         selectedStyle: MarkStyle,
@@ -58,30 +58,53 @@ public enum DeterministicInteractionError: Error, Equatable, Sendable {
 
 @MainActor
 public final class DeterministicInteractionHarness {
+    private let screenProvider: any ScreenProviding
     private let displayCoordinator: DisplayCoordinator
     private let commandRouter: CommandRouter
+    private let palette: any PalettePresenting
+    private let menuBar: (any MenuBarPresenting)?
+    private let shortcutController: HotKeyController
     private let metadataProvider: any ControlMetadataProviding
     private let clock: any InteractionClock
+    private var knownDisplayUUIDs: Set<DisplayUUID> = []
 
     public init(
+        screenProvider: any ScreenProviding,
         displayCoordinator: DisplayCoordinator,
         commandRouter: CommandRouter,
+        palette: any PalettePresenting,
+        menuBar: (any MenuBarPresenting)?,
+        shortcutController: HotKeyController,
         metadataProvider: any ControlMetadataProviding,
         clock: any InteractionClock
     ) {
+        self.screenProvider = screenProvider
         self.displayCoordinator = displayCoordinator
         self.commandRouter = commandRouter
+        self.palette = palette
+        self.menuBar = menuBar
+        self.shortcutController = shortcutController
         self.metadataProvider = metadataProvider
         self.clock = clock
+        knownDisplayUUIDs = Set(
+            screenProvider.currentDisplays()
+                .map(\.uuid)
+                .filter { !$0.rawValue.isEmpty }
+        )
     }
 
     @discardableResult
     public func synchronizeDisplays() -> DisplaySyncResult {
-        displayCoordinator.synchronize()
+        rememberObservedDisplays()
+        let result = displayCoordinator.synchronize()
+        knownDisplayUUIDs.formUnion(result.connectedUUIDs)
+        refreshProductionSurface()
+        return result
     }
 
     public func route(_ command: CommandRouter.Command) {
         commandRouter.route(command)
+        refreshProductionSurface()
     }
 
     @discardableResult
@@ -89,23 +112,32 @@ public final class DeterministicInteractionHarness {
         keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags = []
     ) -> Bool {
-        commandRouter.routeLocalKeyEvent(keyCode: keyCode, modifierFlags: modifiers)
+        let handled = commandRouter.routeLocalKeyEvent(
+            keyCode: keyCode,
+            modifierFlags: modifiers
+        )
+        refreshProductionSurface()
+        return handled
     }
 
     public func beginGesture(at point: NSPoint, on display: DisplayUUID) throws {
         try canvasView(for: display).beginGesture(at: point)
+        refreshProductionSurface()
     }
 
     public func continueGesture(to point: NSPoint, on display: DisplayUUID) throws {
         try canvasView(for: display).continueGesture(to: point)
+        refreshProductionSurface()
     }
 
     public func endGesture(on display: DisplayUUID) throws {
         try canvasView(for: display).endGesture()
+        refreshProductionSurface()
     }
 
     public func cancelGesture(on display: DisplayUUID) throws {
         try canvasView(for: display).cancelGesture()
+        refreshProductionSurface()
     }
 
     public func snapshot() -> DeterministicInteractionSnapshot {
@@ -114,13 +146,17 @@ public final class DeterministicInteractionHarness {
             $0.rawValue < $1.rawValue
         }
         let connectedDisplays = Set(orderedOverlays)
+        let knownDisplays = knownDisplayUUIDs.union(connectedDisplays).sorted {
+            $0.rawValue < $1.rawValue
+        }
         var marksByDisplay: [DisplayUUID: [Mark]] = [:]
         var previewMarksByDisplay: [DisplayUUID: [Mark]] = [:]
         var plans: [(DisplayUUID, RenderPlan)] = []
 
-        for display in orderedOverlays {
+        for display in knownDisplays {
             marksByDisplay[display] = session.canvas(for: display).marks
             guard let overlay = displayCoordinator.overlays[display] as? OverlayPanel else {
+                previewMarksByDisplay[display] = session.previewCanvas(for: display).marks
                 continue
             }
             previewMarksByDisplay[display] = overlay.canvasView.session
@@ -129,14 +165,35 @@ public final class DeterministicInteractionHarness {
             plans.append((display, overlay.canvasView.renderPlan))
         }
 
-        let selectedPlan = session.selectedDisplay.flatMap { selectedDisplay in
-            plans.first { display, plan in
+        let selectedPlan: RenderPlan? = session.selectedDisplay.flatMap { selectedDisplay in
+            guard let selection = session.selection else { return nil }
+            return plans.first { display, plan in
                 display == selectedDisplay
-                    && plan.handles.selection.selectedMarkID == session.selection
+                    && plan.handles.selection.selectedMarkID == selection
             }?.1
         }
-        let activeDraftMarkID = plans.compactMap { $0.1.activeDraft?.id }.first
-        let undoAvailable = connectedDisplays.contains {
+        let activeDraftMarkID: Mark.ID? = plans.compactMap { display, plan in
+            guard let overlay = displayCoordinator.overlays[display] as? OverlayPanel,
+                  overlay.canvasView.hasActiveGesture,
+                  session.hasActiveGesture(on: display)
+            else {
+                return nil
+            }
+            let committedIDs = Set(
+                overlay.canvasView.session.canvas(for: display).marks.map(\.id)
+            )
+            let draftCandidates = overlay.canvasView.session
+                .previewCanvas(for: display)
+                .marks
+                .filter { !committedIDs.contains($0.id) }
+            guard draftCandidates.count == 1,
+                  plan.activeDraft == draftCandidates[0]
+            else {
+                return nil
+            }
+            return draftCandidates[0].id
+        }.first
+        let undoAvailable = knownDisplays.contains {
             session.canUndo(on: $0)
         }
 
@@ -154,14 +211,28 @@ public final class DeterministicInteractionHarness {
             activeDraftMarkID: activeDraftMarkID,
             handleInventory: selectedPlan?.handles ?? Self.hiddenHandleInventory,
             undoAvailable: undoAvailable,
-            shortcutID: commandRouter.activeShortcutID,
-            shortcutError: commandRouter.shortcutError,
+            shortcutID: shortcutController.activePreset?.rawValue,
+            shortcutError: shortcutController.registrationError,
             connectedDisplays: connectedDisplays
         )
     }
 
     public func metadata() -> [ControlMetadata] {
         metadataProvider.metadata()
+    }
+
+    private func rememberObservedDisplays() {
+        knownDisplayUUIDs.formUnion(
+            screenProvider.currentDisplays()
+                .map(\.uuid)
+                .filter { !$0.rawValue.isEmpty }
+        )
+    }
+
+    private func refreshProductionSurface() {
+        let session = displayCoordinator.session
+        palette.refresh(session: session)
+        menuBar?.refresh(session: session)
     }
 
     private func canvasView(for display: DisplayUUID) throws -> CanvasView {

@@ -5,11 +5,14 @@ Status: `DONE_WITH_CONCERNS`
 ## Scope
 
 Implemented the first deterministic, real-object interaction slice after the
-B-render-integration handoff. The production harness accepts the documented
-injected coordinator graph and only obtains gesture state through the real
-`DisplayCoordinator`, `OverlayPanel`, and `CanvasView` objects. Commands and
-local keyboard routing remain on `CommandRouter`; no global input, event tap,
-screen capture, accessibility API, or parallel gesture engine was added.
+B-render-integration handoff. The baseline implementation is commit
+`59ed5ed` (`test: add Pointer interaction harness core`); the current worker
+fixes remain uncommitted on top of that baseline. The production harness
+accepts the documented injected coordinator graph and only obtains gesture
+state through the real `DisplayCoordinator`, `OverlayPanel`, and `CanvasView`
+objects. Commands and local keyboard routing remain on `CommandRouter`; no
+global input, event tap, screen capture, accessibility API, or parallel gesture
+engine was added.
 
 Changed paths owned by this task:
 
@@ -18,12 +21,12 @@ Changed paths owned by this task:
 - `Tests/PointerAppKitTests/Harness/CanvasIntegrationHarnessTests.swift`
 - `.codex/sdd/reports/pointer-a-harness-core-report.md`
 
-No commit was created by this worker.
+No new commit was created by this worker; `59ed5ed` remains the HEAD baseline.
 
 ## Production seam
 
 `DeterministicInteractionHarness` exposes the planned snapshot and operation
-surface with only the dependencies it reads in this slice:
+surface with the full plan-accepted dependency graph:
 
 - `synchronizeDisplays()` delegates to `DisplayCoordinator.synchronize()`.
 - `route(_:)` delegates to `CommandRouter.route(_:)`.
@@ -32,11 +35,22 @@ surface with only the dependencies it reads in this slice:
   enumeration itself remains a later A slice.
 - Gesture methods validate the synchronized stable UUID, downcast only the
   production `OverlayPanel`, and call its real `CanvasView` methods.
+- The injected `ScreenProviding` seeds and extends a local valid stable-UUID
+  key set on every sync. Snapshots retain committed and preview canvas keys for
+  disconnected displays, while `connectedDisplays` remains the real overlay
+  set. Undo availability is queried from `PointerSession.canUndo(on:)` over the
+  retained keys, not inferred from mark counts.
 - Snapshots use coordinator session canvases, real CanvasView preview canvases,
-  real CanvasView `RenderPlan`/`HandleInventory`, router shortcut state, and
-  the connected overlay UUID set. Handle inventory is exposed only when the
-  session's selected display has a matching real plan and selected mark;
-  otherwise it is hidden. No mark-count inference is used for undo.
+  real CanvasView `RenderPlan`/`HandleInventory`, and direct injected shortcut
+  state. Handle inventory is exposed only when the session's selected display
+  has a matching real plan and selected mark; otherwise it is hidden.
+- `activeDraftMarkID` is emitted only for the unique preview mark absent from
+  the committed canvas when both the real CanvasView and coordinator session
+  identify that display as the active gesture owner. Stale plans therefore do
+  not become active drafts.
+- The retained real palette and menu objects are refreshed after sync, command,
+  local-key, and gesture operations; the same shortcut controller is retained
+  for the router/menu graph.
 - Empty or unsupported UUIDs fail closed with
   `DeterministicInteractionError.invalidDisplay`; a non-production overlay
   fails with `unavailableOverlay` rather than silently substituting a fake.
@@ -87,13 +101,16 @@ Result: `315 passed, 0 failed` across the package.
 ## Covered scenarios
 
 `CanvasIntegrationHarnessTests` uses the real display coordinator overlay
-factory and verifies. A reusable fixture oracle runs after every display sync,
-gesture begin, continuation, commit, and cancel. During an active continuation
-it checks the shared mode/tool/selection/committed-canvas projection while
-allowing the intentional gesture-local preview divergence; after boundaries it
-checks the full relevant per-display projection, preview/RenderPlan partition,
-and overlay click-through mode. This preserves the production rule that
-continuation samples do not publish shared session state.
+factory and verifies. A reusable fixture oracle iterates every connected real
+overlay after every display sync, gesture begin, continuation, commit, and
+cancel. It derives expected committed marks directly from each coordinator
+session canvas, derives the expected draft independently as the sole preview
+mark absent from that committed ID set, checks exact RenderPlan partition and
+identity, validates CanvasView/session per-display projection, and checks
+overlay click-through mode. During an active continuation it allows only the
+documented gesture-local preview divergence from shared session state; after
+boundaries it checks the converged projection. This preserves the production
+rule that continuation samples do not publish shared session state.
 
 1. Arrow and rectangle commits travel through command routing and real canvas
    gestures, produce two committed marks, leave no active draft, and publish
@@ -108,10 +125,12 @@ continuation samples do not publish shared session state.
 4. Empty and malformed display fixtures report no connected displays and reject
    unsupported UUIDs without mutating the session.
 5. A multi-display stale-plan case proves that a disconnected selected display
-   cannot borrow handles from another display's stale real plan.
-6. Disconnect/reconnect preserves an `display-a` mark while `display-b` remains
-   connected and empty; the coordinator recreates A's real overlay and CanvasView
-   without migrating content into B.
+   cannot borrow handles from another display's stale real plan, and that a
+   stale active draft is not reported without coordinator ownership.
+6. Disconnect/reconnect preserves an `display-a` mark and undo history in the
+   intermediate disconnected snapshot while `display-b` remains connected and
+   empty; the coordinator recreates A's real overlay and CanvasView without
+   migrating content into B.
 
 The test target's `DisplayFixtures` supplies the one-display, empty,
 malformed, and stable-UUID reconnect descriptors. The first slice intentionally

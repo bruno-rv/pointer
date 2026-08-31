@@ -61,7 +61,11 @@ final class DeterministicInteractionFixture {
             router: router,
             guidePlacementProvider: GuidePlacementProvider()
         )
-        let menuBar = MenuBarController(router: router, terminate: {})
+        let menuBar = MenuBarController(
+            router: router,
+            shortcutController: shortcutController,
+            terminate: {}
+        )
 
         self.screenProvider = screenProvider
         displayCoordinator = coordinator
@@ -126,64 +130,102 @@ final class DeterministicInteractionFixture {
         line: UInt = #line
     ) -> DeterministicInteractionSnapshot {
         let snapshot = harness.snapshot()
-        guard let overlay = displayCoordinator.overlays[display] as? OverlayPanel else {
-            XCTFail("Expected a real OverlayPanel for \(display.rawValue)", file: file, line: line)
-            return snapshot
-        }
-
         let coordinatorSession = displayCoordinator.session
-        let canvas = overlay.canvasView
-        if canvas.hasActiveGesture {
-            XCTAssertEqual(canvas.session.mode, coordinatorSession.mode, file: file, line: line)
-            XCTAssertEqual(canvas.session.toolState, coordinatorSession.toolState, file: file, line: line)
-            XCTAssertEqual(canvas.session.selection, coordinatorSession.selection, file: file, line: line)
-            XCTAssertEqual(canvas.session.selectedDisplay, coordinatorSession.selectedDisplay, file: file, line: line)
+        let connectedDisplays = displayCoordinator.overlays.keys.sorted {
+            $0.rawValue < $1.rawValue
+        }
+        XCTAssertTrue(connectedDisplays.contains(display), file: file, line: line)
+
+        var expectedOwnerDraftID: Mark.ID?
+        var selectedPlan: RenderPlan?
+        for connectedDisplay in connectedDisplays {
+            guard let overlay = displayCoordinator.overlays[connectedDisplay] as? OverlayPanel else {
+                XCTFail(
+                    "Expected a real OverlayPanel for \(connectedDisplay.rawValue)",
+                    file: file,
+                    line: line
+                )
+                continue
+            }
+            let canvas = overlay.canvasView
+            let canvasSession = canvas.session
+            XCTAssertEqual(canvasSession.mode, coordinatorSession.mode, file: file, line: line)
+            XCTAssertEqual(canvasSession.toolState, coordinatorSession.toolState, file: file, line: line)
+            XCTAssertEqual(canvasSession.selection, coordinatorSession.selection, file: file, line: line)
+            XCTAssertEqual(canvasSession.selectedDisplay, coordinatorSession.selectedDisplay, file: file, line: line)
             XCTAssertEqual(
-                canvas.session.canvas(for: display),
-                coordinatorSession.canvas(for: display),
+                canvasSession.canvas(for: connectedDisplay),
+                coordinatorSession.canvas(for: connectedDisplay),
                 file: file,
                 line: line
             )
-        } else {
-            XCTAssertEqual(canvas.session.mode, coordinatorSession.mode, file: file, line: line)
-            XCTAssertEqual(canvas.session.toolState, coordinatorSession.toolState, file: file, line: line)
-            XCTAssertEqual(canvas.session.selection, coordinatorSession.selection, file: file, line: line)
-            XCTAssertEqual(canvas.session.selectedDisplay, coordinatorSession.selectedDisplay, file: file, line: line)
+            if connectedDisplays.count == 1,
+               Set(snapshot.marksByDisplay.keys) == Set(connectedDisplays),
+               !canvas.hasActiveGesture
+            {
+                XCTAssertEqual(canvasSession, coordinatorSession, file: file, line: line)
+            }
+
+            let committedCanvas = coordinatorSession.canvas(for: connectedDisplay)
+            let previewCanvas = canvasSession.previewCanvas(for: connectedDisplay)
+            let committedIDs = Set(committedCanvas.marks.map(\.id))
+            let draftCandidates = previewCanvas.marks.filter {
+                !committedIDs.contains($0.id)
+            }
+            XCTAssertLessThanOrEqual(draftCandidates.count, 1, file: file, line: line)
+            let expectedDraft = draftCandidates.count == 1 ? draftCandidates[0] : nil
+            let plan = canvas.renderPlan
+            XCTAssertEqual(plan.committedMarks, committedCanvas.marks, file: file, line: line)
+            XCTAssertEqual(plan.activeDraft, expectedDraft, file: file, line: line)
             XCTAssertEqual(
-                canvas.session.canvas(for: display),
-                coordinatorSession.canvas(for: display),
+                Set(plan.committedMarks.map(\.id)).intersection(Set(draftCandidates.map(\.id))),
+                [],
                 file: file,
                 line: line
             )
+            XCTAssertEqual(
+                plan.committedMarks.count + (plan.activeDraft == nil ? 0 : 1),
+                previewCanvas.marks.count,
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(
+                snapshot.marksByDisplay[connectedDisplay],
+                committedCanvas.marks,
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(
+                snapshot.previewMarksByDisplay[connectedDisplay],
+                previewCanvas.marks,
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(
+                canvasSession.mode == .standby,
+                overlay.ignoresMouseEvents,
+                file: file,
+                line: line
+            )
+
+            if canvas.hasActiveGesture,
+               coordinatorSession.hasActiveGesture(on: connectedDisplay),
+               let expectedDraft
+            {
+                XCTAssertNil(expectedOwnerDraftID, file: file, line: line)
+                expectedOwnerDraftID = expectedDraft.id
+            }
+            if coordinatorSession.selectedDisplay == connectedDisplay,
+               let selection = coordinatorSession.selection,
+               plan.handles.selection.selectedMarkID == selection {
+                selectedPlan = plan
+            }
         }
 
+        XCTAssertEqual(snapshot.activeDraftMarkID, expectedOwnerDraftID, file: file, line: line)
         XCTAssertEqual(
-            snapshot.marksByDisplay[display],
-            coordinatorSession.canvas(for: display).marks,
-            file: file,
-            line: line
-        )
-        let previewCanvas = canvas.session.previewCanvas(for: display)
-        XCTAssertEqual(snapshot.previewMarksByDisplay[display], previewCanvas.marks, file: file, line: line)
-
-        let plan = canvas.renderPlan
-        let expectedCommittedMarks = previewCanvas.marks.filter {
-            $0.id != plan.activeDraft?.id
-        }
-        XCTAssertEqual(plan.committedMarks, expectedCommittedMarks, file: file, line: line)
-        XCTAssertEqual(
-            snapshot.activeDraftMarkID,
-            plan.activeDraft?.id,
-            file: file,
-            line: line
-        )
-        if coordinatorSession.selectedDisplay == display,
-           plan.handles.selection.selectedMarkID == coordinatorSession.selection {
-            XCTAssertEqual(snapshot.handleInventory, plan.handles, file: file, line: line)
-        }
-        XCTAssertEqual(
-            canvas.session.mode == .standby,
-            overlay.ignoresMouseEvents,
+            snapshot.handleInventory,
+            selectedPlan?.handles ?? Self.hiddenHandleInventory,
             file: file,
             line: line
         )
@@ -196,10 +238,21 @@ final class DeterministicInteractionFixture {
         return snapshot
     }
 
+    private static let hiddenHandleInventory = HandleInventory(
+        selection: SelectionInventory(selectedMarkID: nil, isVisible: false),
+        hover: HoverInventory(hoveredMarkID: nil, isVisible: false),
+        resize: ResizeInventory(handles: [], isVisible: false),
+        contextualDeleteVisible: false
+    )
+
     func makeHarness() -> DeterministicInteractionHarness {
         DeterministicInteractionHarness(
+            screenProvider: screenProvider,
             displayCoordinator: displayCoordinator,
             commandRouter: commandRouter,
+            palette: palette,
+            menuBar: menuBar,
+            shortcutController: shortcutController,
             metadataProvider: metadataProvider,
             clock: interactionClock
         )

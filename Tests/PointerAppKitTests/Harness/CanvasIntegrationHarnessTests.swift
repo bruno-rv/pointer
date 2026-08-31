@@ -226,6 +226,17 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
         let bMarkID = try XCTUnwrap(bSelectedSession.selection)
         _ = fixture.assertConvergence(harness, on: displayB)
 
+        harness.route(.setTool(.rectangle))
+        try harness.beginGesture(at: NSPoint(x: 500, y: 400), on: displayB)
+        try harness.continueGesture(to: NSPoint(x: 800, y: 600), on: displayB)
+        let staleBDraftSession = try XCTUnwrap(
+            (fixture.displayCoordinator.overlays[displayB] as? OverlayPanel)?.canvasView.session
+        )
+        XCTAssertTrue(staleBDraftSession.hasActiveGesture(on: displayB))
+        try harness.cancelGesture(on: displayB)
+        _ = fixture.assertConvergence(harness, on: displayB)
+
+        harness.route(.setTool(.select))
         try harness.beginGesture(at: NSPoint(x: 250, y: 200), on: displayA)
         _ = fixture.assertConvergence(harness, on: displayA)
         try harness.endGesture(on: displayA)
@@ -236,6 +247,7 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
         fixture.screenProvider.displays = [try XCTUnwrap(fixture.otherDescriptor)]
         fixture.screenProvider.pointerUUID = displayB
         _ = harness.synchronizeDisplays()
+        _ = fixture.assertConvergence(harness, on: displayB)
 
         // Reintroduce only a stale, non-selected overlay plan through the real
         // OverlayPanel update API. The harness must not fall back to it when
@@ -243,10 +255,11 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
         let remainingOverlay = try XCTUnwrap(
             fixture.displayCoordinator.overlays[displayB] as? OverlayPanel
         )
-        remainingOverlay.update(session: bSelectedSession)
+        remainingOverlay.update(session: staleBDraftSession)
 
         let snapshot = harness.snapshot()
         XCTAssertEqual(snapshot.selection, aSelectedMarkID)
+        XCTAssertNil(snapshot.activeDraftMarkID)
         XCTAssertNil(snapshot.handleInventory.selection.selectedMarkID)
         XCTAssertFalse(snapshot.handleInventory.selection.isVisible)
         XCTAssertTrue(snapshot.handleInventory.resize.handles.isEmpty)
@@ -280,13 +293,20 @@ final class CanvasIntegrationHarnessTests: XCTestCase {
         XCTAssertEqual(disconnected.connectedUUIDs, [other.uuid])
         XCTAssertTrue(fixture.displayCoordinator.overlays[display] == nil)
         XCTAssertTrue((fixture.displayCoordinator.overlays[other.uuid] as? OverlayPanel) === initialOtherOverlay)
-        XCTAssertEqual(harness.snapshot().marksByDisplay[other.uuid, default: []].count, 0)
+        _ = fixture.assertConvergence(harness, on: other.uuid)
+        let disconnectedSnapshot = harness.snapshot()
+        XCTAssertEqual(disconnectedSnapshot.marksByDisplay[display]?.count, 1)
+        XCTAssertTrue(disconnectedSnapshot.marksByDisplay.keys.contains(display))
+        XCTAssertEqual(disconnectedSnapshot.previewMarksByDisplay[display]?.count, 1)
+        XCTAssertTrue(disconnectedSnapshot.undoAvailable)
+        XCTAssertEqual(disconnectedSnapshot.marksByDisplay[other.uuid, default: []].count, 0)
 
         fixture.screenProvider.displays = [other, try XCTUnwrap(fixture.reconnectedDescriptor)]
         fixture.screenProvider.pointerUUID = display
         let reconnected = harness.synchronizeDisplays()
         XCTAssertTrue(reconnected.connectedUUIDs.contains(display))
         XCTAssertEqual(reconnected.connectedUUIDs, [display, other.uuid])
+        _ = fixture.assertConvergence(harness, on: display)
 
         let recreatedOverlay = try XCTUnwrap(fixture.displayCoordinator.overlays[display] as? OverlayPanel)
         XCTAssertFalse(recreatedOverlay === initialOverlay)
