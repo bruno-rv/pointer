@@ -461,6 +461,10 @@ public final class PaletteViewController: NSViewController {
             help: "Current annotation mode and shortcut status"
         )
         statusLabel.isSelectable = false
+        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.maximumNumberOfLines = 1
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         controls += [modeButton]
         controls += PointerTool.allCases.compactMap { toolButtons[$0] }

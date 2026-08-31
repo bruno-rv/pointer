@@ -126,6 +126,17 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         setFrameOrigin(NSPoint(x: placement.x, y: placement.y))
         orderFrontRegardless()
 
+        guard Self.isFinalLayoutContained(
+            frame: frame,
+            contentFrame: contentView?.frame,
+            requestedSize: NSSize(width: width, height: size.height),
+            visibleFrame: display.visibleFrame,
+            margin: Self.placementMargin
+        ) else {
+            hide()
+            return .failed("Palette layout exceeded the requested display bounds; try a wider display")
+        }
+
         guard isVisible else {
             hide()
             return .failed("Palette window did not become visible")
@@ -160,5 +171,43 @@ public final class PalettePanel: NSPanel, PalettePresenting {
         frame.x.isFinite && frame.y.isFinite
             && frame.width.isFinite && frame.width > 0
             && frame.height.isFinite && frame.height > 0
+    }
+
+    static func isFinalLayoutContained(
+        frame: NSRect,
+        contentFrame: NSRect?,
+        requestedSize: NSSize,
+        visibleFrame: DisplayFrame,
+        margin: CGFloat
+    ) -> Bool {
+        let tolerance: CGFloat = 0.5
+        guard requestedSize.width.isFinite, requestedSize.width > 0,
+              requestedSize.height.isFinite, requestedSize.height > 0,
+              margin.isFinite, margin >= 0,
+              isFinite(frame),
+              frame.width <= requestedSize.width + tolerance,
+              frame.height <= requestedSize.height + tolerance,
+              frame.minX >= CGFloat(visibleFrame.x) + margin - tolerance,
+              frame.maxX <= CGFloat(visibleFrame.x + visibleFrame.width)
+                  - margin + tolerance,
+              frame.minY >= CGFloat(visibleFrame.y) + margin - tolerance,
+              frame.maxY <= CGFloat(visibleFrame.y + visibleFrame.height)
+                  - margin + tolerance,
+              let contentFrame,
+              isFinite(contentFrame),
+              contentFrame.minX >= -tolerance,
+              contentFrame.minY >= -tolerance,
+              contentFrame.maxX <= requestedSize.width + tolerance,
+              contentFrame.maxY <= requestedSize.height + tolerance
+        else {
+            return false
+        }
+        return true
+    }
+
+    private static func isFinite(_ rect: NSRect) -> Bool {
+        rect.origin.x.isFinite && rect.origin.y.isFinite
+            && rect.width.isFinite && rect.width > 0
+            && rect.height.isFinite && rect.height > 0
     }
 }

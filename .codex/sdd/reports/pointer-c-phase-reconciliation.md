@@ -304,6 +304,44 @@ overflow headers and tool rows are also asserted as `AXMenuItem`. The existing
 dirty A-owned `ControlMetadataHarnessTests.swift` and
 `pointer-a-harness-metadata-report.md` paths were preserved and not edited.
 
+## Narrow-display reconciliation addendum
+
+The canonical 420-point visible display now remains a 388-point palette after
+the real synchronized overlay and shortcut surface are initialized. The root
+cause was the active-shortcut status string contributing an unconstrained
+intrinsic width: AppKit computed a 487-point palette fitting width before the
+panel was ordered. The status field now stays on one truncated line and allows
+horizontal compression; the style row remains an intrinsic 635-point
+document inside its horizontal scroll view, so no essential control hit target
+is compressed.
+
+The regression was observed RED in the real A-owned narrow fixture:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter ControlMetadataHarnessTests/testCanonicalNarrowFixtureKeepsNativePaletteAndOverflowAccessible
+exit 1
+palette.show(on:) returned .failed after the synchronized fixture measured a
+487-point final frame for a 388-point request
+```
+
+The focused C regression coverage is now GREEN:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'PaletteInteractionTests/testNarrowPaletteKeepsRequestedWidthAndScrollsStyleControls|PaletteInteractionTests/testFinalPaletteLayoutGuardRejectsFrameOrContentOverflow|ControlMetadataHarnessTests/testCanonicalNarrowFixtureKeepsNativePaletteAndOverflowAccessible'
+exit 0
+3 passed, 0 failed
+```
+
+`PalettePanel` also performs a fail-closed post-ordering check over the final
+window frame and content frame. A violation hides the panel, stops appearance
+observation, and returns an actionable `.failed` result. Existing smaller-than-
+native coverage continues to assert `.failed`, hidden state, and zero
+observers. The new narrow test asserts exact 388-point sizing, 16-point
+visible-frame margins, horizontal style scrolling, and Select/More topology.
+The A harness files and their six-test metadata fixture remain unchanged by
+this addendum; the coordinator should rerun that complete six-test filter
+before phase sign-off.
+
 ## Remaining verification / concerns
 
 The coordinator must still send this diff through the independent reviewer and

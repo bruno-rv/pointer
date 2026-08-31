@@ -299,6 +299,118 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertTrue(palette.isVisible)
     }
 
+    func testNarrowPaletteKeepsRequestedWidthAndScrollsStyleControls() throws {
+        let descriptor = DisplayDescriptor(
+            uuid: DisplayUUID(rawValue: "narrow-width"),
+            frame: DisplayFrame(x: 0, y: 0, width: 420, height: 1_080),
+            visibleFrame: DisplayFrame(x: 0, y: 24, width: 420, height: 1_056),
+            scaleFactor: 2
+        )
+        let provider = PaletteInteractionScreenProvider(displays: [descriptor])
+        let coordinator = DisplayCoordinator(
+            screenProvider: provider,
+            overlayFactory: { OverlayPanel(descriptor: $0) }
+        )
+        let shortcutController = HotKeyController(
+            registrar: PaletteShortcutRegistrar(),
+            store: PaletteShortcutStore(),
+            scheduler: PaletteShortcutScheduler()
+        )
+        let router = CommandRouter(
+            coordinator: coordinator,
+            screenProvider: provider,
+            shortcutController: shortcutController
+        )
+        let menuBar = MenuBarController(
+            router: router,
+            shortcutController: shortcutController,
+            terminate: {}
+        )
+        let palette = PalettePanel(
+            router: router,
+            guidePlacementProvider: GuidePlacementProvider()
+        )
+        _ = ControlMetadataInventory(palette: palette, menuBar: menuBar)
+        shortcutController.start()
+        _ = coordinator.synchronize()
+        palette.refresh(session: router.session)
+        menuBar.refresh(session: router.session)
+        defer {
+            palette.close()
+            shortcutController.stop()
+            _ = coordinator.stop()
+        }
+
+        guard case .shown = palette.show(on: descriptor) else {
+            return XCTFail("Expected supported narrow display")
+        }
+
+        XCTAssertEqual(palette.frame.width, 388, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(
+            palette.contentView?.frame.width ?? .greatestFiniteMagnitude,
+            388.5
+        )
+        XCTAssertGreaterThanOrEqual(
+            palette.frame.minX,
+            descriptor.visibleFrame.x + 16 - 0.5
+        )
+        XCTAssertLessThanOrEqual(
+            palette.frame.maxX,
+            descriptor.visibleFrame.x + descriptor.visibleFrame.width - 16 + 0.5
+        )
+
+        let scrollView = try XCTUnwrap(
+            descendantViews(of: palette.paletteViewController.view)
+                .compactMap { $0 as? NSScrollView }
+                .first(where: { $0.hasHorizontalScroller })
+        )
+        XCTAssertTrue(scrollView.hasHorizontalScroller)
+        XCTAssertGreaterThan(scrollView.documentView?.frame.width ?? 0, scrollView.contentView.bounds.width)
+
+        let controller = palette.paletteViewController
+        let overflow = try XCTUnwrap(
+            controller.control(identifier: "palette.tools.overflow") as? NSPopUpButton
+        )
+        XCTAssertFalse(overflow.isHidden)
+        XCTAssertFalse(controller.control(identifier: "palette.tool.select").isHidden)
+        XCTAssertEqual(overflow.menu?.items.count, PointerTool.allCases.count)
+    }
+
+    func testFinalPaletteLayoutGuardRejectsFrameOrContentOverflow() {
+        let visibleFrame = DisplayFrame(x: 10, y: 20, width: 420, height: 300)
+        let requestedSize = NSSize(width: 388, height: 156)
+        let containedFrame = NSRect(x: 26, y: 48, width: 388, height: 156)
+        let containedContent = NSRect(x: 0, y: 0, width: 388, height: 156)
+
+        XCTAssertTrue(
+            PalettePanel.isFinalLayoutContained(
+                frame: containedFrame,
+                contentFrame: containedContent,
+                requestedSize: requestedSize,
+                visibleFrame: visibleFrame,
+                margin: 16
+            )
+        )
+        XCTAssertFalse(
+            PalettePanel.isFinalLayoutContained(
+                frame: NSRect(x: 26, y: 48, width: 389, height: 156),
+                contentFrame: containedContent,
+                requestedSize: requestedSize,
+                visibleFrame: visibleFrame,
+                margin: 16
+            )
+        )
+        XCTAssertFalse(
+            PalettePanel.isFinalLayoutContained(
+                frame: containedFrame,
+                contentFrame: NSRect(x: 0, y: 0, width: 389, height: 156),
+                requestedSize: requestedSize,
+                visibleFrame: visibleFrame,
+                margin: 16
+            )
+        )
+    }
+
     func testTooSmallDirectShowDoesNotLeaveAppearanceObserverOnHiddenPalette() {
         let descriptor = DisplayDescriptor(
             uuid: DisplayUUID(rawValue: "tiny-fresh"),
@@ -1631,6 +1743,10 @@ final class PaletteInteractionTests: XCTestCase {
         XCTAssertEqual(palette.paletteViewController.statusMessage, "Nothing to clear")
         XCTAssertEqual(palette.frame.origin, origin)
         XCTAssertTrue(palette.firstResponder === firstResponder)
+    }
+
+    private func descendantViews(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { [$0] + descendantViews(of: $0) }
     }
 
     private func makeRouter() -> CommandRouter {
