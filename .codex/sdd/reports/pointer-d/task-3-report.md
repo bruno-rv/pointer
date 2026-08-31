@@ -8,10 +8,10 @@ All four masters were generated with the built-in `image_gen` tool. CLI/API
 fallback was not used. The tool recorded the outputs under the following
 stable source paths:
 
-- App icon: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-afa6eafe-6317-4f55-bfd4-ea92b29245ce.png` (1254×1254 RGBA PNG).
-- Light guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-eb69a9d4-c29e-4c75-bad8-6606e5c5cadf.png` (1774×887 RGB PNG).
-- Dark guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-076b53af-df9f-40e5-a81e-8cfb9d36d8c1.png` (1774×887 RGB PNG; light sheet used as the edit reference).
-- High-contrast guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-c315f5c0-a8ff-43cd-96bb-d6577af1b84f.png` (1774×887 RGB PNG; light sheet used as the edit reference).
+- App icon: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-afa6eafe-6317-4f55-bfd4-ea92b29245ce.png` (1254×1254 RGBA PNG), SHA-256 `06f076bcbcbf2506fd7d8469c59f59223f3af8bc09761970fb82caca3b528517`.
+- Light guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-eb69a9d4-c29e-4c75-bad8-6606e5c5cadf.png` (1774×887 RGB PNG), SHA-256 `fa93e06bd7805678e04e05cdea79fed7a22aeb5a078e3da508b122cb255a2a31`.
+- Dark guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-076b53af-df9f-40e5-a81e-8cfb9d36d8c1.png` (1774×887 RGB PNG; light sheet used as the edit reference), SHA-256 `274d17ad5ad582136490ad75e2cdf36de5e2bab40f82856a07588d80a0f6def6`.
+- High-contrast guide sheet: `/Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-c315f5c0-a8ff-43cd-96bb-d6577af1b84f.png` (1774×887 RGB PNG; light sheet used as the edit reference), SHA-256 `5339074641e0e5342810a31c1792fa1b61f82f47727aa7ccb7b38daf950c06df`.
 
 The exact final prompts were:
 
@@ -91,8 +91,74 @@ Avoid: changing cell order, adding objects, subtle gray-on-gray details, blue/pu
 
 ## Deterministic processing and mapping
 
-- `sips` matched each generated master to `/System/Library/ColorSync/Profiles/sRGB Profile.icc` and normalized the guide sheets to 2048×1024. The icon was normalized directly to 512×512 sRGB RGBA.
-- Each normalized guide sheet was cropped with `sips --cropToHeightWidth 512 512` and fixed top-left `--cropOffset` pairs `(row×512, column×512)`; explicit `0.0001` values select the origin cell without triggering sips' centered zero-offset default. The outputs match the sRGB profile without drawing or altering the generated content. The 24 final crops are all 512×512 RGB/sRGB PNGs with no alpha.
+The following are the exact successful `sips` commands used (run from the
+repository root). `/tmp/pointer-task3-assets` was the disposable intermediate
+directory; the four generated-image paths above are the immutable inputs.
+
+```sh
+sips -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' -z 512 512 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png /Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-afa6eafe-6317-4f55-bfd4-ea92b29245ce.png
+sips -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' -z 1024 2048 -s format png -s formatOptions best -o /tmp/pointer-task3-assets/guide-light-master.png /Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-eb69a9d4-c29e-4c75-bad8-6606e5c5cadf.png
+sips -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' -z 1024 2048 -s format png -s formatOptions best -o /tmp/pointer-task3-assets/guide-dark-master.png /Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-076b53af-df9f-40e5-a81e-8cfb9d36d8c1.png
+sips -m '/System/Library/ColorSync/Profiles/sRGB Profile.icc' -z 1024 2048 -s format png -s formatOptions best -o /tmp/pointer-task3-assets/guide-highContrast-master.png /Users/bruno/.codex/generated_images/01a05655-f69f-7f43-8d1e-d6487b652e4b/exec-c315f5c0-a8ff-43cd-96bb-d6577af1b84f.png
+```
+
+Icon renditions were downscaled from the normalized canonical icon with these
+exact commands:
+
+```sh
+sips -z 16 16 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-16-1x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 32 32 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-16-2x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 32 32 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-32-1x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 64 64 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-32-2x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 128 128 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-128-1x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 256 256 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-128-2x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 256 256 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-256-1x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 512 512 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-256-2x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+sips -z 1024 1024 -s format png -s formatOptions best -o Bundle/Assets.xcassets/AppIcon.appiconset/icon-512-2x.png Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png
+```
+
+Each guide sheet was cropped with this exact loop, preserving its normalized
+4×2 geometry:
+
+```sh
+PROFILE='/System/Library/ColorSync/Profiles/sRGB Profile.icc'
+MASTER_ROOT=/tmp/pointer-task3-assets
+for variant in light dark highContrast; do
+  case "$variant" in
+    light) master="$MASTER_ROOT/guide-light-master.png" ;;
+    dark) master="$MASTER_ROOT/guide-dark-master.png" ;;
+    highContrast) master="$MASTER_ROOT/guide-highContrast-master.png" ;;
+  esac
+  index=0
+  for y in 0.0001 512; do
+    for x in 0.0001 512 1024 1536; do
+      case "$index" in
+        0) id=arrow ;;
+        1) id=rectangle ;;
+        2) id=ellipse ;;
+        3) id=pen ;;
+        4) id=spotlight ;;
+        5) id=emoji ;;
+        6) id=select ;;
+        7) id=eraser ;;
+      esac
+      target="Bundle/Assets.xcassets/FirstUseGuide/$id-$variant.imageset/$id-$variant.png"
+      tmp="$MASTER_ROOT/rebuilt-$id-$variant.png"
+      sips --cropOffset "$y" "$x" --cropToHeightWidth 512 512 -m "$PROFILE" -s format png -s formatOptions best -o "$tmp" "$master" >/dev/null
+      mv "$tmp" "$target"
+      index=$((index + 1))
+    done
+  done
+done
+```
+
+`sips --cropOffset 0 0` was explicitly probed and uses its centered-crop
+default rather than selecting the top-left cell. The successful final command
+therefore uses the literal `0.0001` offset for each zero row/column coordinate,
+then `512 1024 1536` for the remaining columns and `512` for the second row.
+This records the zero-offset quirk exactly as executed. The outputs match the
+sRGB profile without drawing or altering the generated content. The 24 final
+crops are all 512×512 RGB/sRGB PNGs with no alpha.
 - The canonical icon is `Bundle/Assets.xcassets/AppIcon.appiconset/icon-512.png`, 512×512 RGBA/sRGB. Distinct deterministic icon renditions cover 16, 32, 64, 128, 256, 512, and 1024 physical pixels for the standard 16/32/128/256/512 logical 1×/2× slots; the Contents file does not reuse one filename for every slot.
 - Guide source lookup follows the existing `GuideAssetSourceMapping`: `assetIdentifier-variant.png`. Each source is inside the matching `assetIdentifier-variant.imageset`, so the compiled resource name remains the mapped filename without `.png` (for example, `arrow-dark`).
 - The catalog has exactly eight informative entries in this order: `arrow`, `rectangle`, `ellipse`, `pen`, `spotlight`, `emoji`, `select`, `eraser`. Each has exactly `light`, `dark`, and `highContrast` descriptors with `assetIdentifier` equal to its entry ID and the source hash below.
@@ -159,10 +225,10 @@ Post-correction verification was run after the sips-only recrop:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter AssetIdentityTests
-GREEN: 3 tests, 0 failures.
+GREEN: 4 tests, 0 failures.
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
-GREEN: 298 tests, 0 failures.
+GREEN: 301 tests, 0 failures.
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
 GREEN: Build complete (exit 0).
