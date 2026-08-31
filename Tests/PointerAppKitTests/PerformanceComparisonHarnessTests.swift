@@ -355,6 +355,8 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
 
     func testValidPairPassesMeasuredPreflightButCompareRemainsTask3Owned() throws {
         XCTAssertNoThrow(try PerformanceComparisonHarness.preflight(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
-        XCTAssertThrowsError(try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility))
+        let manualEvidenceDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("pointer-manual-evidence-\(UUID().uuidString)", isDirectory: true)
+        XCTAssertThrowsError(try PerformanceComparisonHarness.compare(baseline: PerformanceFixtures.baseline, candidate: PerformanceFixtures.candidate, configuration: PerformanceFixtures.configuration, eligibility: PerformanceFixtures.eligibility, manualEvidenceDirectory: manualEvidenceDirectory))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: manualEvidenceDirectory.path))
     }
 }

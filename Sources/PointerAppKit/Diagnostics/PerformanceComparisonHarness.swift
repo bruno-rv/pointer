@@ -51,8 +51,10 @@ public enum PerformanceComparisonHarness {
         baseline: PerformanceMeasurementReport,
         candidate: PerformanceMeasurementReport,
         configuration: PerformanceConfiguration,
-        eligibility: PerformancePairEligibility
+        eligibility: PerformancePairEligibility,
+        manualEvidenceDirectory: URL
     ) throws -> PerformanceComparisonDraft {
+        _ = manualEvidenceDirectory
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
         throw PerformanceValidationError.invalid("comparison calculations are deferred to Task 3")
     }

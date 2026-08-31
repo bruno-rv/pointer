@@ -1,7 +1,8 @@
 # Pointer E Task2b: comparison schema and preflight
 
-Status: implemented in the assigned comparison schema/preflight scope. No
-commit was created; the parent coordinator owns integration and phase commits.
+Status: integrated through code commits through `bb89ac5` and documentation
+commit `0883741`; the current Task2b follow-up remains in the working tree for
+the coordinator's next commit.
 
 ## Delivered
 
@@ -17,8 +18,9 @@ commit was created; the parent coordinator owns integration and phase commits.
 - Persisted exact baseline/candidate `FixtureIdentity` values and enforced the
   canonical `baseline` and `candidate` run variants.
 - Persisted lowercase-64hex SHA-256 bindings for the exact baseline and
-  candidate measurement-report bytes. Added an atomic report-bound writer that
-  hashes and matches both input files before writing `paired-comparison.json`.
+  candidate measurement-report bytes. Added an atomic draft-based writer that
+  hashes exact input files and injects both bindings before writing
+  `paired-comparison.json`.
 - Reused `ValidatedFoundationProvenance`, `PerformancePairEligibility`,
   `BootstrapInterval`, `ResilienceCase`, and `ResilienceMeasurement` from the
   measurement-owned schema. No duplicate wire types were introduced.
@@ -29,7 +31,8 @@ commit was created; the parent coordinator owns integration and phase commits.
 - Added `PerformanceComparisonHarness.preflight(...)` and the internal,
   calculation-deferred `compare(...)` seam. The public draft-based
   `writeComparison(draft:baselineURL:candidateURL:outputDirectory:configuration:eligibility:)`
-  is the sole persistence API. Preflight validates both
+  is the sole persistence API. The internal compare seam accepts the manual
+  evidence directory for Task 3. Preflight validates both
   measurement reports to completion before checking pair eligibility, rejects
   content-manifest diagnostics and failed/unmeasured inputs, and revalidates
   roots, commit identities, host, fixture, configuration, foundation, and
@@ -65,7 +68,8 @@ commit was created; the parent coordinator owns integration and phase commits.
   Baseline and candidate samples must be strictly positive. Only
   `combinedFrame` (16.7 ms), `responsiveness` (100 ms), and `inputToVisible`
   (100 ms) carry exact canonical absolute budgets; all other metrics persist
-  `nil` budgets, preventing caller-selected limits from hiding regressions.
+  `nil` budgets, preventing caller-selected limits from hiding regressions;
+  `budgetLimit` is optional in the wire schema and canonical when present.
   The canonical unit table uses milliseconds for `redrawLayout` (as well as
   frame, launch, responsiveness, and input metrics), nanoseconds for `model`,
   and bytes for allocation and memory metrics.
