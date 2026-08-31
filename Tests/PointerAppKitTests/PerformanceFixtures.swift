@@ -8,6 +8,7 @@ enum PerformanceFixtures {
     static let sourceManifest = String(repeating: "b", count: 64)
     static let executable = String(repeating: "c", count: 64)
     static let bundle = String(repeating: "d", count: 64)
+    static let foundationArtifact = String(repeating: "e", count: 64)
     static let recordedAtUTC = "2026-08-31T12:00:00Z"
 
     static let build = BuildProvenance(
@@ -16,11 +17,12 @@ enum PerformanceFixtures {
         sourceManifestSHA256: sourceManifest,
         executableSHA256: executable,
         bundleManifestSHA256: bundle,
+        buildConfiguration: "release",
         recordedAtUTC: recordedAtUTC,
         foundation: foundation,
         harnessVersion: configuration.harnessVersion,
         buildContractVersion: configuration.buildContractVersion,
-        acceptedFoundationArtifactSHA256: nil
+        acceptedFoundationArtifactSHA256: foundationArtifact
     )
 
     static let host = HostIdentity(
@@ -61,7 +63,8 @@ enum PerformanceFixtures {
         foundationProvenancePath: ".codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json",
         foundation: foundation,
         harnessVersion: configuration.harnessVersion,
-        buildContractVersion: configuration.buildContractVersion
+        buildContractVersion: configuration.buildContractVersion,
+        acceptedFoundationArtifactSHA256: foundationArtifact
     )
 
     static let model = ModelMeasurement(
@@ -105,20 +108,20 @@ enum PerformanceFixtures {
 
     static let launch = LaunchMeasurement(
         status: .measured,
-        coldMilliseconds: [120, 125, 123],
-        warmMilliseconds: [32, 31, 30]
+        coldMilliseconds: Array(repeating: 120, count: configuration.trialCount),
+        warmMilliseconds: Array(repeating: 32, count: configuration.trialCount)
     )
 
     static let allocations = AllocationMeasurement(
         status: .measured,
-        bytesPerGesture: [1024, 1152, 1088],
+        bytesPerGesture: Array(repeating: 1024, count: configuration.trialCount),
         peakAllocationBytes: 2048
     )
 
     static let redrawLayout = RedrawLayoutMeasurement(
         status: .measured,
-        redrawsPerSample: [1, 1, 2],
-        layoutPasses: [1, 1, 1],
+        redrawsPerSample: Array(repeating: 1, count: configuration.trialCount),
+        layoutPasses: Array(repeating: 1, count: configuration.trialCount),
         p95Milliseconds: 1.5
     )
 
@@ -152,12 +155,19 @@ enum PerformanceFixtures {
         observers: 0
     )
 
-    static let memorySamples = [
-        MemorySample(elapsedSeconds: 0, rssBytes: 100_000_000, phase: .running, resources: resources),
-        MemorySample(elapsedSeconds: 5, rssBytes: 100_001_000, phase: .running, resources: resources),
-        MemorySample(elapsedSeconds: 600, rssBytes: 100_001_024, phase: .stopping, resources: zeroResources),
-        MemorySample(elapsedSeconds: 605, rssBytes: 99_999_000, phase: .stopped, resources: zeroResources),
-        MemorySample(elapsedSeconds: 610, rssBytes: 100_000_500, phase: .restarted, resources: resources),
+    static let runningMemorySamples: [MemorySample] = (0...120).map { index in
+        MemorySample(
+            elapsedSeconds: Double(index * configuration.memorySampleIntervalSeconds),
+            rssBytes: 100_000_000,
+            phase: .running,
+            resources: resources
+        )
+    }
+
+    static let memorySamples = runningMemorySamples + [
+        MemorySample(elapsedSeconds: 605, rssBytes: 100_000_000, phase: .stopping, resources: zeroResources),
+        MemorySample(elapsedSeconds: 610, rssBytes: 100_000_000, phase: .stopped, resources: zeroResources),
+        MemorySample(elapsedSeconds: 615, rssBytes: 100_000_000, phase: .restarted, resources: resources),
     ]
 
     static let memory = MemoryMeasurement(
@@ -165,17 +175,19 @@ enum PerformanceFixtures {
         windowSeconds: configuration.memoryWindowSeconds,
         sampleIntervalSeconds: configuration.memorySampleIntervalSeconds,
         samples: memorySamples,
-        aggregates: [MemoryAggregate(
-            intervalIndex: 0,
-            sampleCount: 2,
-            meanRSSBytes: 100_000_500,
-            peakRSSBytes: 100_001_000
-        )],
-        peakRSSBytes: 100_001_024,
-        finalWindowDeltaBytes: 1_024,
-        finalWindowDeltaPercent: 0.01,
-        matchedBaselineSeries: [100_000_000, 100_000_500],
-        matchedBaselineValues: [100_000_000, 100_000_500],
+        aggregates: (0..<11).map { index in
+            MemoryAggregate(
+                intervalIndex: index,
+                sampleCount: 11,
+                meanRSSBytes: 100_000_000,
+                peakRSSBytes: 100_000_000
+            )
+        },
+        peakRSSBytes: 100_000_000,
+        finalWindowDeltaBytes: 0,
+        finalWindowDeltaPercent: 0,
+        matchedBaselineSeries: runningMemorySamples.map(\.elapsedSeconds),
+        matchedBaselineValues: Array(repeating: 100_000_000, count: runningMemorySamples.count),
         peakLiveResourceCounts: resources,
         endLiveResourceCounts: resources
     )
@@ -271,6 +283,34 @@ enum PerformanceFixtures {
             memory: MemoryMeasurement(status: measurementStatus, windowSeconds: report.memory.windowSeconds, sampleIntervalSeconds: report.memory.sampleIntervalSeconds, samples: report.memory.samples, aggregates: report.memory.aggregates, peakRSSBytes: report.memory.peakRSSBytes, finalWindowDeltaBytes: report.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: report.memory.finalWindowDeltaPercent, matchedBaselineSeries: report.memory.matchedBaselineSeries, matchedBaselineValues: report.memory.matchedBaselineValues, peakLiveResourceCounts: report.memory.peakLiveResourceCounts, endLiveResourceCounts: report.memory.endLiveResourceCounts),
             resilience: ResilienceMeasurement(status: measurementStatus, cases: report.resilience.cases.map { ResilienceCase(identifier: $0.identifier, status: measurementStatus, iterationCount: $0.iterationCount, peakResourceCounts: $0.peakResourceCounts, endResourceCounts: $0.endResourceCounts, leakedResource: $0.leakedResource, unexpectedGrowth: $0.unexpectedGrowth) }, disposition: report.resilience.disposition),
             disposition: report.disposition
+        )
+    }
+
+    static func makeMemory(
+        samples: [MemorySample] = PerformanceFixtures.memorySamples,
+        aggregates: [MemoryAggregate] = PerformanceFixtures.memory.aggregates,
+        peakRSSBytes: Int64 = PerformanceFixtures.memory.peakRSSBytes,
+        finalWindowDeltaBytes: Int64 = PerformanceFixtures.memory.finalWindowDeltaBytes,
+        finalWindowDeltaPercent: Double = PerformanceFixtures.memory.finalWindowDeltaPercent,
+        matchedBaselineSeries: [Double] = PerformanceFixtures.memory.matchedBaselineSeries,
+        matchedBaselineValues: [Int64] = PerformanceFixtures.memory.matchedBaselineValues,
+        peakLiveResourceCounts: ResourceCounts = PerformanceFixtures.memory.peakLiveResourceCounts,
+        endLiveResourceCounts: ResourceCounts = PerformanceFixtures.memory.endLiveResourceCounts,
+        status: MeasurementStatus = .measured
+    ) -> MemoryMeasurement {
+        MemoryMeasurement(
+            status: status,
+            windowSeconds: configuration.memoryWindowSeconds,
+            sampleIntervalSeconds: configuration.memorySampleIntervalSeconds,
+            samples: samples,
+            aggregates: aggregates,
+            peakRSSBytes: peakRSSBytes,
+            finalWindowDeltaBytes: finalWindowDeltaBytes,
+            finalWindowDeltaPercent: finalWindowDeltaPercent,
+            matchedBaselineSeries: matchedBaselineSeries,
+            matchedBaselineValues: matchedBaselineValues,
+            peakLiveResourceCounts: peakLiveResourceCounts,
+            endLiveResourceCounts: endLiveResourceCounts
         )
     }
 }

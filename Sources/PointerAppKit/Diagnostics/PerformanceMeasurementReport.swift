@@ -109,6 +109,7 @@ public struct BuildProvenance: Codable, Sendable, Equatable {
     public let sourceManifestSHA256: String
     public let executableSHA256: String
     public let bundleManifestSHA256: String
+    public let buildConfiguration: String
     public let recordedAtUTC: String
     public let foundation: FoundationIdentity
     public let harnessVersion: String
@@ -178,6 +179,7 @@ public struct PerformanceRunProvenance: Codable, Sendable, Equatable {
     public let foundation: FoundationIdentity
     public let harnessVersion: String
     public let buildContractVersion: String
+    public let acceptedFoundationArtifactSHA256: String?
 }
 
 public struct ModelMeasurement: Codable, Sendable, Equatable {
@@ -330,6 +332,7 @@ public struct PerformanceMeasurementReport: Codable, Sendable, Equatable {
 
 private enum PerformanceReportValidator {
     private static let hexCharacters = CharacterSet(charactersIn: "0123456789abcdef")
+    private static let emptyResources = ResourceCounts(overlays: 0, timers: 0, handlers: 0, windows: 0, observers: 0)
 
     static func validateStructure(_ report: PerformanceMeasurementReport) throws {
         try require(report.reportKind == .measurement, "reportKind must be measurement")
@@ -358,6 +361,7 @@ private enum PerformanceReportValidator {
         try require(report.buildContractVersion == report.runProvenance.buildContractVersion, "report/run build contract mismatch")
         try require(report.buildContractVersion == report.buildProvenance.buildContractVersion, "report/build build contract mismatch")
         try require(report.buildContractVersion == report.runProvenance.configuration.buildContractVersion, "report/configuration build contract mismatch")
+        try require(report.buildProvenance.buildConfiguration == report.identity.buildConfiguration, "report/build configuration mismatch")
 
         try validateModel(report.model)
         try validateFrame(report.renderer)
@@ -370,6 +374,7 @@ private enum PerformanceReportValidator {
         try validateInputToVisible(report.inputToVisible)
         try validateMemory(report.memory)
         try validateResilience(report.resilience)
+        try validateMeasuredCounts(report)
     }
 
     static func validateCompletion(_ report: PerformanceMeasurementReport) throws {
@@ -405,6 +410,14 @@ private enum PerformanceReportValidator {
         try require(report.resilience.cases.allSatisfy { $0.status == .measured && !$0.leakedResource && !$0.unexpectedGrowth }, "resilience evidence is incomplete")
         try require(report.disposition == .acceptedNoRegression, "report disposition is not accepted")
         try require(report.runProvenance.configuration == .standard, "completion requires the campaign standard configuration")
+        try require(report.identity.buildConfiguration == "release", "completion requires a Release build")
+        try require(report.buildProvenance.buildConfiguration == "release", "completion requires Release build provenance")
+        guard let acceptedFoundation = report.buildProvenance.acceptedFoundationArtifactSHA256 else {
+            throw PerformanceValidationError.invalid("completion requires accepted foundation provenance")
+        }
+        try require(isHex(acceptedFoundation, count: 64), "accepted foundation artifact must be lowercase 64-hex")
+        try require(report.runProvenance.acceptedFoundationArtifactSHA256 == acceptedFoundation, "run/foundation artifact mismatch")
+        try require(memoryPostWarmupSlope(report.memory) <= 0, "post-warmup memory slope is positive")
     }
 
     private static func validateIdentity(_ identity: MeasurementIdentity, against build: BuildProvenance) throws {
@@ -435,6 +448,7 @@ private enum PerformanceReportValidator {
         try require(isHex(build.sourceManifestSHA256, count: 64), "sourceManifestSHA256 must be lowercase 64-hex")
         try require(isHex(build.executableSHA256, count: 64), "executableSHA256 must be lowercase 64-hex")
         try require(isHex(build.bundleManifestSHA256, count: 64), "bundleManifestSHA256 must be lowercase 64-hex")
+        try require(!build.buildConfiguration.isEmpty, "buildConfiguration is required")
         try validateFoundation(build.foundation)
         try require(!build.harnessVersion.isEmpty, "build harnessVersion is required")
         try require(!build.buildContractVersion.isEmpty, "buildContractVersion is required")
@@ -455,6 +469,10 @@ private enum PerformanceReportValidator {
         try require(!run.harnessVersion.isEmpty, "run harnessVersion is required")
         try require(!run.buildContractVersion.isEmpty, "run buildContractVersion is required")
         try require(run.sourceRef == run.build.sourceIdentity.value, "run/source identity mismatch")
+        if let accepted = run.acceptedFoundationArtifactSHA256 {
+            try require(isHex(accepted, count: 64), "run accepted foundation artifact must be lowercase 64-hex")
+        }
+        try require(run.acceptedFoundationArtifactSHA256 == run.build.acceptedFoundationArtifactSHA256, "run/build foundation artifact mismatch")
     }
 
     private static func validateFoundation(_ foundation: FoundationIdentity) throws {
@@ -613,13 +631,42 @@ private enum PerformanceReportValidator {
             previousElapsed = sample.elapsedSeconds
             previousRank = rank
         }
+        let runningSamples = memory.samples.filter { $0.phase == .running }
         if memory.status == .measured {
-            try require(observedPhases == Set(MemoryPhase.allCases), "memory requires running/stopping/stopped/restarted phases")
-            try require(runningSampleCount > 0, "memory requires running samples")
+            let expectedRunningSampleCount = memory.windowSeconds / memory.sampleIntervalSeconds + 1
+            try require(runningSampleCount == expectedRunningSampleCount, "memory running cadence is incomplete")
+            try require(runningSamples.count == expectedRunningSampleCount, "memory requires the full running window")
+            for (index, sample) in runningSamples.enumerated() {
+                try require(sample.elapsedSeconds == Double(index * memory.sampleIntervalSeconds), "memory running cadence has a gap")
+            }
+            let checkpoints = Array(memory.samples.dropFirst(expectedRunningSampleCount))
+            try require(checkpoints.map(\.phase) == [.stopping, .stopped, .restarted], "memory lifecycle checkpoints are incomplete")
+            for (index, checkpoint) in checkpoints.enumerated() {
+                try require(checkpoint.elapsedSeconds == Double(memory.windowSeconds + (index + 1) * memory.sampleIntervalSeconds), "memory checkpoint cadence has a gap")
+            }
+            try require(checkpoints[1].resources == emptyResources, "stopped checkpoint must release all resources")
+            let runningMaximum = maximumResources(in: runningSamples)
+            try require(resourcesAreAtMost(checkpoints[2].resources, runningMaximum), "restarted resources exceed running bounds")
         }
-        try require(memory.peakRSSBytes >= memory.samples.map(\.rssBytes).max()!, "peak RSS is below a sample")
+        let maximumRSS = memory.samples.map(\.rssBytes).max()!
+        try require(memory.peakRSSBytes == maximumRSS, "peak RSS does not match sampled maximum")
         try require(memory.peakLiveResourceCounts == maximumResources(in: memory.samples), "peak live resources do not match sampled maximum")
         try require(memory.endLiveResourceCounts == memory.samples.last!.resources, "end live resources do not match final sample")
+
+        let hasCompleteBaseline = !runningSamples.isEmpty
+            && memory.matchedBaselineSeries.count == runningSamples.count
+            && memory.matchedBaselineValues.count == runningSamples.count
+        if hasCompleteBaseline {
+            try require(memory.matchedBaselineSeries == runningSamples.map(\.elapsedSeconds), "matched baseline series does not align with running samples")
+            let matchedFinal = memory.matchedBaselineValues.last!
+            try require(matchedFinal > 0, "matched baseline final RSS must be positive")
+            let candidateFinal = runningSamples.last!.rssBytes
+            let expectedDelta = candidateFinal - matchedFinal
+            let expectedPercent = Double(expectedDelta) / Double(matchedFinal) * 100
+            let percentTolerance = max(1e-12, abs(expectedPercent) * 1e-12)
+            try require(memory.finalWindowDeltaBytes == expectedDelta, "memory final-window byte delta does not match samples")
+            try require(abs(memory.finalWindowDeltaPercent - expectedPercent) <= percentTolerance, "memory final-window percentage does not match samples")
+        }
 
         var expectedInterval = 0
         var aggregateSampleTotal = 0
@@ -644,6 +691,8 @@ private enum PerformanceReportValidator {
             try require(!memory.aggregates.isEmpty, "measured memory requires aggregates")
             try require(aggregateSampleTotal == runningSampleCount, "memory aggregates do not cover running samples")
             try require(!memory.matchedBaselineSeries.isEmpty, "measured memory requires matched baseline series")
+            try require(memory.matchedBaselineSeries.count == runningSampleCount, "measured memory baseline series is incomplete")
+            try require(memory.matchedBaselineValues.count == runningSampleCount, "measured memory baseline values are incomplete")
         }
     }
 
@@ -661,6 +710,32 @@ private enum PerformanceReportValidator {
             try require(testCase.peakResourceCounts.handlers >= testCase.endResourceCounts.handlers, "resilience handler counts are incoherent")
             try require(testCase.peakResourceCounts.windows >= testCase.endResourceCounts.windows, "resilience window counts are incoherent")
             try require(testCase.peakResourceCounts.observers >= testCase.endResourceCounts.observers, "resilience observer counts are incoherent")
+        }
+    }
+
+    private static func validateMeasuredCounts(_ report: PerformanceMeasurementReport) throws {
+        let configuration = report.runProvenance.configuration
+        if report.model.status == .measured {
+            try require(report.model.trialNanoseconds.count == configuration.trialCount, "model trial count does not match configuration")
+        }
+        let frames = [report.renderer, report.compositor, report.combinedFrame]
+        if frames.allSatisfy({ $0.status == .measured }) {
+            try require(frames.allSatisfy { $0.sampleCount == configuration.trialCount }, "frame sample counts do not match configuration")
+            try require(frames.allSatisfy { $0.frameCount == configuration.trialCount }, "frame counts do not match configuration")
+        }
+        if report.launch.status == .measured {
+            try require(report.launch.coldMilliseconds.count == configuration.trialCount, "cold launch count does not match configuration")
+            try require(report.launch.warmMilliseconds.count == configuration.trialCount, "warm launch count does not match configuration")
+        }
+        if report.allocations.status == .measured {
+            try require(report.allocations.bytesPerGesture.count == configuration.trialCount, "allocation sample count does not match configuration")
+        }
+        if report.redrawLayout.status == .measured {
+            try require(report.redrawLayout.redrawsPerSample.count == configuration.trialCount, "redraw sample count does not match configuration")
+            try require(report.redrawLayout.layoutPasses.count == configuration.trialCount, "layout sample count does not match configuration")
+        }
+        if report.inputToVisible.status == .measured {
+            try require(report.inputToVisible.sampleCount == configuration.trialCount, "input sample count does not match configuration")
         }
     }
 
@@ -682,6 +757,26 @@ private enum PerformanceReportValidator {
                 observers: max(current.observers, sample.resources.observers)
             )
         }
+    }
+
+    private static func resourcesAreAtMost(_ resources: ResourceCounts, _ maximum: ResourceCounts) -> Bool {
+        resources.overlays <= maximum.overlays
+            && resources.timers <= maximum.timers
+            && resources.handlers <= maximum.handlers
+            && resources.windows <= maximum.windows
+            && resources.observers <= maximum.observers
+    }
+
+    private static func memoryPostWarmupSlope(_ memory: MemoryMeasurement) -> Double {
+        let running = memory.samples.filter { $0.phase == .running }
+        guard running.count > PerformanceConfiguration.standard.warmupCount,
+              let first = running.dropFirst(PerformanceConfiguration.standard.warmupCount).first,
+              let last = running.last,
+              last.elapsedSeconds > first.elapsedSeconds
+        else {
+            return .infinity
+        }
+        return Double(last.rssBytes - first.rssBytes) / (last.elapsedSeconds - first.elapsedSeconds)
     }
 
     private static func phaseRank(_ phase: MemoryPhase) -> Int {

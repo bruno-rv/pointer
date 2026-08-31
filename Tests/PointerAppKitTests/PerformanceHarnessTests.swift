@@ -19,13 +19,15 @@ final class PerformanceHarnessTests: XCTestCase {
         XCTAssertEqual(decoded.renderer.status, .measured)
         XCTAssertEqual(decoded.compositor.status, .measured)
         XCTAssertEqual(decoded.combinedFrame.status, .measured)
-        XCTAssertEqual(decoded.launch.coldMilliseconds, [120, 125, 123])
-        XCTAssertEqual(decoded.allocations.bytesPerGesture, [1024, 1152, 1088])
-        XCTAssertEqual(decoded.redrawLayout.layoutPasses, [1, 1, 1])
+        XCTAssertEqual(decoded.launch.coldMilliseconds.count, PerformanceFixtures.configuration.trialCount)
+        XCTAssertEqual(decoded.allocations.bytesPerGesture.count, PerformanceFixtures.configuration.trialCount)
+        XCTAssertEqual(decoded.redrawLayout.layoutPasses.count, PerformanceFixtures.configuration.trialCount)
         XCTAssertEqual(decoded.responsiveness.stallCount, 0)
         XCTAssertEqual(decoded.inputToVisible.missedSampleCount, 0)
-        XCTAssertEqual(decoded.memory.samples.map(\.phase), [.running, .running, .stopping, .stopped, .restarted])
-        XCTAssertEqual(decoded.memory.aggregates.count, 1)
+        XCTAssertEqual(decoded.memory.samples.count, 124)
+        XCTAssertEqual(decoded.memory.samples.prefix(121).allSatisfy { $0.phase == .running }, true)
+        XCTAssertEqual(decoded.memory.samples.suffix(3).map(\.phase), [.stopping, .stopped, .restarted])
+        XCTAssertEqual(decoded.memory.aggregates.count, 11)
         XCTAssertEqual(decoded.resilience.cases.count, 1)
         XCTAssertEqual(decoded.disposition, .acceptedNoRegression)
         try decoded.validateStructure()
@@ -87,13 +89,13 @@ final class PerformanceHarnessTests: XCTestCase {
         XCTAssertThrowsError(try PerformanceFixtures.report(identity: uppercase).validateStructure())
 
         let dirtyIdentity = MeasurementIdentity(sourceCommitSHA: nil, contentManifestSHA256: PerformanceFixtures.sourceManifest, hostModel: "Mac", macOSVersion: "14", xcodeVersion: "16", developerDirectory: "/Applications/Xcode.app/Contents/Developer", powerState: "ac", displayState: "one", buildConfiguration: "release")
-        let dirtyBuild = BuildProvenance(sourceTreeStatus: .dirty, sourceIdentity: SourceIdentity(kind: .contentManifestSHA256, value: PerformanceFixtures.sourceManifest), sourceManifestSHA256: PerformanceFixtures.sourceManifest, executableSHA256: PerformanceFixtures.executable, bundleManifestSHA256: PerformanceFixtures.bundle, recordedAtUTC: PerformanceFixtures.recordedAtUTC, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
-        let dirtyRun = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.sourceManifest, build: dirtyBuild, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: PerformanceFixtures.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion)
+        let dirtyBuild = BuildProvenance(sourceTreeStatus: .dirty, sourceIdentity: SourceIdentity(kind: .contentManifestSHA256, value: PerformanceFixtures.sourceManifest), sourceManifestSHA256: PerformanceFixtures.sourceManifest, executableSHA256: PerformanceFixtures.executable, bundleManifestSHA256: PerformanceFixtures.bundle, buildConfiguration: "release", recordedAtUTC: PerformanceFixtures.recordedAtUTC, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
+        let dirtyRun = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.sourceManifest, build: dirtyBuild, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: PerformanceFixtures.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
         let dirtyReport = PerformanceFixtures.report(identity: dirtyIdentity, build: dirtyBuild, run: dirtyRun)
         XCTAssertNoThrow(try dirtyReport.validateStructure())
 
-        let dirtyBuildWithMismatchedManifest = BuildProvenance(sourceTreeStatus: .dirty, sourceIdentity: SourceIdentity(kind: .contentManifestSHA256, value: PerformanceFixtures.sourceManifest), sourceManifestSHA256: PerformanceFixtures.bundle, executableSHA256: PerformanceFixtures.executable, bundleManifestSHA256: PerformanceFixtures.bundle, recordedAtUTC: PerformanceFixtures.recordedAtUTC, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
-        let dirtyRunWithMismatchedManifest = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.sourceManifest, build: dirtyBuildWithMismatchedManifest, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: PerformanceFixtures.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion)
+        let dirtyBuildWithMismatchedManifest = BuildProvenance(sourceTreeStatus: .dirty, sourceIdentity: SourceIdentity(kind: .contentManifestSHA256, value: PerformanceFixtures.sourceManifest), sourceManifestSHA256: PerformanceFixtures.bundle, executableSHA256: PerformanceFixtures.executable, bundleManifestSHA256: PerformanceFixtures.bundle, buildConfiguration: "release", recordedAtUTC: PerformanceFixtures.recordedAtUTC, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
+        let dirtyRunWithMismatchedManifest = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.sourceManifest, build: dirtyBuildWithMismatchedManifest, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: PerformanceFixtures.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
         XCTAssertThrowsError(try PerformanceFixtures.report(identity: dirtyIdentity, build: dirtyBuildWithMismatchedManifest, run: dirtyRunWithMismatchedManifest).validateStructure())
 
         let dirtyWithCommit = PerformanceFixtures.report(build: dirtyBuild, run: dirtyRun)
@@ -102,14 +104,14 @@ final class PerformanceHarnessTests: XCTestCase {
 
     func testProvenanceIdentityAndVersionMismatchesAreRejected() throws {
         var mismatchedBuild = PerformanceFixtures.build
-        mismatchedBuild = BuildProvenance(sourceTreeStatus: .clean, sourceIdentity: SourceIdentity(kind: .sourceCommitSHA, value: String(repeating: "e", count: 40)), sourceManifestSHA256: mismatchedBuild.sourceManifestSHA256, executableSHA256: mismatchedBuild.executableSHA256, bundleManifestSHA256: mismatchedBuild.bundleManifestSHA256, recordedAtUTC: mismatchedBuild.recordedAtUTC, foundation: mismatchedBuild.foundation, harnessVersion: mismatchedBuild.harnessVersion, buildContractVersion: mismatchedBuild.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
+        mismatchedBuild = BuildProvenance(sourceTreeStatus: .clean, sourceIdentity: SourceIdentity(kind: .sourceCommitSHA, value: String(repeating: "e", count: 40)), sourceManifestSHA256: mismatchedBuild.sourceManifestSHA256, executableSHA256: mismatchedBuild.executableSHA256, bundleManifestSHA256: mismatchedBuild.bundleManifestSHA256, buildConfiguration: mismatchedBuild.buildConfiguration, recordedAtUTC: mismatchedBuild.recordedAtUTC, foundation: mismatchedBuild.foundation, harnessVersion: mismatchedBuild.harnessVersion, buildContractVersion: mismatchedBuild.buildContractVersion, acceptedFoundationArtifactSHA256: mismatchedBuild.acceptedFoundationArtifactSHA256)
         XCTAssertThrowsError(try PerformanceFixtures.report(build: mismatchedBuild).validateStructure())
 
-        let mismatchedRun = PerformanceRunProvenance(variant: PerformanceFixtures.run.variant, outputRoot: PerformanceFixtures.run.outputRoot, sourceRef: PerformanceFixtures.run.sourceRef, build: PerformanceFixtures.run.build, host: PerformanceFixtures.run.host, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: PerformanceFixtures.run.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: FoundationIdentity(identity: "other", version: "v1"), harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion)
+        let mismatchedRun = PerformanceRunProvenance(variant: PerformanceFixtures.run.variant, outputRoot: PerformanceFixtures.run.outputRoot, sourceRef: PerformanceFixtures.run.sourceRef, build: PerformanceFixtures.run.build, host: PerformanceFixtures.run.host, recordedAtUTC: PerformanceFixtures.run.recordedAtUTC, configuration: PerformanceFixtures.run.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: FoundationIdentity(identity: "other", version: "v1"), harnessVersion: PerformanceFixtures.run.harnessVersion, buildContractVersion: PerformanceFixtures.run.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
         XCTAssertThrowsError(try PerformanceFixtures.report(run: mismatchedRun).validateStructure())
 
         let mismatchedConfiguration = PerformanceConfiguration(fixtureMarkCount: 12, samplesPerGesture: 240, warmupCount: 5, trialCount: 30, pairsPerOrder: 14, bootstrapSeed: 48271, bootstrapResamples: 10_000, memoryWindowSeconds: 600, memorySampleIntervalSeconds: 5, harnessVersion: "other-harness", foundationIdentity: PerformanceFixtures.foundation, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion)
-        let run = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.commit, build: PerformanceFixtures.build, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: mismatchedConfiguration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: mismatchedConfiguration.harnessVersion, buildContractVersion: mismatchedConfiguration.buildContractVersion)
+        let run = PerformanceRunProvenance(variant: "candidate", outputRoot: "build/candidate", sourceRef: PerformanceFixtures.commit, build: PerformanceFixtures.build, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: mismatchedConfiguration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: mismatchedConfiguration.harnessVersion, buildContractVersion: mismatchedConfiguration.buildContractVersion, acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256)
         XCTAssertThrowsError(try PerformanceFixtures.report(run: run).validateStructure())
     }
 
@@ -158,8 +160,56 @@ final class PerformanceHarnessTests: XCTestCase {
         let fabricatedEnd = MemoryMeasurement(status: .measured, windowSeconds: 600, sampleIntervalSeconds: 5, samples: samples, aggregates: PerformanceFixtures.memory.aggregates, peakRSSBytes: PerformanceFixtures.memory.peakRSSBytes, finalWindowDeltaBytes: PerformanceFixtures.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: PerformanceFixtures.memory.finalWindowDeltaPercent, matchedBaselineSeries: PerformanceFixtures.memory.matchedBaselineSeries, matchedBaselineValues: PerformanceFixtures.memory.matchedBaselineValues, peakLiveResourceCounts: highResources, endLiveResourceCounts: PerformanceFixtures.zeroResources)
         XCTAssertThrowsError(try PerformanceFixtures.report(memory: fabricatedEnd).validateStructure())
 
-        let coherent = MemoryMeasurement(status: .measured, windowSeconds: 600, sampleIntervalSeconds: 5, samples: samples, aggregates: PerformanceFixtures.memory.aggregates, peakRSSBytes: PerformanceFixtures.memory.peakRSSBytes, finalWindowDeltaBytes: PerformanceFixtures.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: PerformanceFixtures.memory.finalWindowDeltaPercent, matchedBaselineSeries: PerformanceFixtures.memory.matchedBaselineSeries, matchedBaselineValues: PerformanceFixtures.memory.matchedBaselineValues, peakLiveResourceCounts: highResources, endLiveResourceCounts: PerformanceFixtures.resources)
+        var coherentAggregates = PerformanceFixtures.memory.aggregates
+        coherentAggregates[0] = MemoryAggregate(intervalIndex: 0, sampleCount: 11, meanRSSBytes: 100_000_091, peakRSSBytes: 100_001_000)
+        let coherent = MemoryMeasurement(status: .measured, windowSeconds: 600, sampleIntervalSeconds: 5, samples: samples, aggregates: coherentAggregates, peakRSSBytes: 100_001_000, finalWindowDeltaBytes: PerformanceFixtures.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: PerformanceFixtures.memory.finalWindowDeltaPercent, matchedBaselineSeries: PerformanceFixtures.memory.matchedBaselineSeries, matchedBaselineValues: PerformanceFixtures.memory.matchedBaselineValues, peakLiveResourceCounts: highResources, endLiveResourceCounts: PerformanceFixtures.resources)
         XCTAssertNoThrow(try PerformanceFixtures.report(memory: coherent).validateStructure())
+    }
+
+    func testMemoryDerivesRSSAndWindowDeltaFromCandidateAndMatchedBaseline() throws {
+        var growingSamples = PerformanceFixtures.memorySamples
+        growingSamples[120] = MemorySample(elapsedSeconds: 600, rssBytes: 100_001_000, phase: .running, resources: PerformanceFixtures.resources)
+        var growingAggregates = PerformanceFixtures.memory.aggregates
+        growingAggregates[10] = MemoryAggregate(intervalIndex: 10, sampleCount: 11, meanRSSBytes: 100_000_091, peakRSSBytes: 100_001_000)
+        let growing = PerformanceFixtures.makeMemory(samples: growingSamples, aggregates: growingAggregates, peakRSSBytes: 100_001_000, finalWindowDeltaBytes: 1_000, finalWindowDeltaPercent: 0.001)
+        XCTAssertNoThrow(try PerformanceFixtures.report(memory: growing).validateStructure())
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: growing).validateCompletion())
+
+        var fakeZeroBaseline = PerformanceFixtures.memory.matchedBaselineValues
+        fakeZeroBaseline[120] = 0
+        let zeroBaseline = PerformanceFixtures.makeMemory(matchedBaselineValues: fakeZeroBaseline)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: zeroBaseline).validateStructure())
+
+        let fakeDelta = PerformanceFixtures.makeMemory(finalWindowDeltaBytes: 1, finalWindowDeltaPercent: 0)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: fakeDelta).validateStructure())
+
+        var shortenedSeries = PerformanceFixtures.memory.matchedBaselineSeries
+        shortenedSeries.removeLast()
+        let misalignedBaseline = PerformanceFixtures.makeMemory(matchedBaselineSeries: shortenedSeries)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: misalignedBaseline).validateStructure())
+    }
+
+    func testMeasuredEvidenceCountsMustMatchTheFixtureConfiguration() throws {
+        let oneTrialModel = ModelMeasurement(status: .measured, trialNanoseconds: [2_000_000], medianNanoseconds: 2_000_000, p95Nanoseconds: 2_000_000, madNanoseconds: 0, publicationCount: 2, modelChecksum: PerformanceFixtures.model.modelChecksum, finalStateValid: true)
+        XCTAssertThrowsError(try PerformanceFixtures.report(model: oneTrialModel).validateStructure())
+
+        let oneFrame = FrameMeasurement(status: .measured, sampleCount: 1, p95Milliseconds: 1, frameCount: 1, missedFrameCount: 0, instrumentationStatus: "fixture")
+        XCTAssertThrowsError(try PerformanceFixtures.report(renderer: oneFrame).validateStructure())
+    }
+
+    func testMemoryLifecycleRequiresFullCadenceAndHonestCheckpoints() throws {
+        var missingRunningSample = PerformanceFixtures.memorySamples
+        missingRunningSample.remove(at: 10)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: missingRunningSample)).validateStructure())
+
+        var nonZeroStoppedSample = PerformanceFixtures.memorySamples
+        nonZeroStoppedSample[122] = MemorySample(elapsedSeconds: 610, rssBytes: 100_000_000, phase: .stopped, resources: PerformanceFixtures.resources)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: nonZeroStoppedSample)).validateStructure())
+
+        let highRestartResources = ResourceCounts(overlays: 2, timers: 2, handlers: 2, windows: 2, observers: 2)
+        var overgrownRestart = PerformanceFixtures.memorySamples
+        overgrownRestart[123] = MemorySample(elapsedSeconds: 615, rssBytes: 100_000_000, phase: .restarted, resources: highRestartResources)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: overgrownRestart, peakLiveResourceCounts: highRestartResources, endLiveResourceCounts: highRestartResources)).validateStructure())
     }
 
     func testFailedAndUnmeasuredReportsRemainStructurallyValidButCannotComplete() throws {
@@ -204,9 +254,31 @@ final class PerformanceHarnessTests: XCTestCase {
             foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath,
             foundation: PerformanceFixtures.foundation,
             harnessVersion: nonstandardConfiguration.harnessVersion,
-            buildContractVersion: nonstandardConfiguration.buildContractVersion
+            buildContractVersion: nonstandardConfiguration.buildContractVersion,
+            acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256
         )
         let report = PerformanceFixtures.report(run: run)
+        XCTAssertNoThrow(try report.validateStructure())
+        XCTAssertThrowsError(try report.validateCompletion())
+    }
+
+    func testBootstrapOrDebugBuildCanBeDiagnosticButCannotComplete() throws {
+        let debugBuild = BuildProvenance(
+            sourceTreeStatus: .clean,
+            sourceIdentity: SourceIdentity(kind: .sourceCommitSHA, value: PerformanceFixtures.commit),
+            sourceManifestSHA256: PerformanceFixtures.sourceManifest,
+            executableSHA256: PerformanceFixtures.executable,
+            bundleManifestSHA256: PerformanceFixtures.bundle,
+            buildConfiguration: "debug",
+            recordedAtUTC: PerformanceFixtures.recordedAtUTC,
+            foundation: PerformanceFixtures.foundation,
+            harnessVersion: PerformanceFixtures.configuration.harnessVersion,
+            buildContractVersion: PerformanceFixtures.configuration.buildContractVersion,
+            acceptedFoundationArtifactSHA256: nil
+        )
+        let debugIdentity = MeasurementIdentity(sourceCommitSHA: PerformanceFixtures.commit, contentManifestSHA256: nil, hostModel: "MacBookPro18,3", macOSVersion: "14.6.1", xcodeVersion: "16.0", developerDirectory: "/Applications/Xcode.app/Contents/Developer", powerState: "ac", displayState: "one-display", buildConfiguration: "debug")
+        let debugRun = PerformanceRunProvenance(variant: "bootstrap", outputRoot: "build/bootstrap", sourceRef: PerformanceFixtures.commit, build: debugBuild, host: PerformanceFixtures.host, recordedAtUTC: PerformanceFixtures.recordedAtUTC, configuration: PerformanceFixtures.configuration, foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath, foundation: PerformanceFixtures.foundation, harnessVersion: PerformanceFixtures.configuration.harnessVersion, buildContractVersion: PerformanceFixtures.configuration.buildContractVersion, acceptedFoundationArtifactSHA256: nil)
+        let report = PerformanceFixtures.report(identity: debugIdentity, build: debugBuild, run: debugRun)
         XCTAssertNoThrow(try report.validateStructure())
         XCTAssertThrowsError(try report.validateCompletion())
     }
