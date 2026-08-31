@@ -217,6 +217,7 @@ final class AssetIdentityTests: XCTestCase {
                 let image = try imageProperties(at: imageURL)
                 XCTAssertEqual(image.width, 512, sourcePath)
                 XCTAssertEqual(image.height, 512, sourcePath)
+                XCTAssertFalse(image.hasAlpha, sourcePath)
                 XCTAssertTrue(image.isSRGB, sourcePath)
             }
         }

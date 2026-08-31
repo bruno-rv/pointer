@@ -221,7 +221,8 @@ All guide sources are 512×512, RGB/sRGB, and are tracked only under
 
 ## Verification
 
-Post-correction verification was run after the sips-only recrop:
+Final verification was rerun after the guide alpha-contract assertion was
+added; the sips-only recrop remains unchanged:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter AssetIdentityTests
