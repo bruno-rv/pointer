@@ -186,6 +186,7 @@ enum PerformanceFixtures {
         peakRSSBytes: 100_000_000,
         finalWindowDeltaBytes: 0,
         finalWindowDeltaPercent: 0,
+        postWarmupSlopeBytesPerSecond: 0,
         matchedBaselineSeries: runningMemorySamples.map(\.elapsedSeconds),
         matchedBaselineValues: Array(repeating: 100_000_000, count: runningMemorySamples.count),
         peakLiveResourceCounts: resources,
@@ -280,7 +281,7 @@ enum PerformanceFixtures {
             redrawLayout: RedrawLayoutMeasurement(status: measurementStatus, redrawsPerSample: report.redrawLayout.redrawsPerSample, layoutPasses: report.redrawLayout.layoutPasses, p95Milliseconds: report.redrawLayout.p95Milliseconds),
             responsiveness: ResponsivenessMeasurement(status: measurementStatus, stallCount: report.responsiveness.stallCount, maximumMainThreadStallMilliseconds: report.responsiveness.maximumMainThreadStallMilliseconds, p95ResponseMilliseconds: report.responsiveness.p95ResponseMilliseconds),
             inputToVisible: InputToVisibleMeasurement(status: measurementStatus, sampleCount: report.inputToVisible.sampleCount, p95Milliseconds: report.inputToVisible.p95Milliseconds, missedSampleCount: report.inputToVisible.missedSampleCount),
-            memory: MemoryMeasurement(status: measurementStatus, windowSeconds: report.memory.windowSeconds, sampleIntervalSeconds: report.memory.sampleIntervalSeconds, samples: report.memory.samples, aggregates: report.memory.aggregates, peakRSSBytes: report.memory.peakRSSBytes, finalWindowDeltaBytes: report.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: report.memory.finalWindowDeltaPercent, matchedBaselineSeries: report.memory.matchedBaselineSeries, matchedBaselineValues: report.memory.matchedBaselineValues, peakLiveResourceCounts: report.memory.peakLiveResourceCounts, endLiveResourceCounts: report.memory.endLiveResourceCounts),
+            memory: MemoryMeasurement(status: measurementStatus, windowSeconds: report.memory.windowSeconds, sampleIntervalSeconds: report.memory.sampleIntervalSeconds, samples: report.memory.samples, aggregates: report.memory.aggregates, peakRSSBytes: report.memory.peakRSSBytes, finalWindowDeltaBytes: report.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: report.memory.finalWindowDeltaPercent, postWarmupSlopeBytesPerSecond: report.memory.postWarmupSlopeBytesPerSecond, matchedBaselineSeries: report.memory.matchedBaselineSeries, matchedBaselineValues: report.memory.matchedBaselineValues, peakLiveResourceCounts: report.memory.peakLiveResourceCounts, endLiveResourceCounts: report.memory.endLiveResourceCounts),
             resilience: ResilienceMeasurement(status: measurementStatus, cases: report.resilience.cases.map { ResilienceCase(identifier: $0.identifier, status: measurementStatus, iterationCount: $0.iterationCount, peakResourceCounts: $0.peakResourceCounts, endResourceCounts: $0.endResourceCounts, leakedResource: $0.leakedResource, unexpectedGrowth: $0.unexpectedGrowth) }, disposition: report.resilience.disposition),
             disposition: report.disposition
         )
@@ -292,6 +293,7 @@ enum PerformanceFixtures {
         peakRSSBytes: Int64 = PerformanceFixtures.memory.peakRSSBytes,
         finalWindowDeltaBytes: Int64 = PerformanceFixtures.memory.finalWindowDeltaBytes,
         finalWindowDeltaPercent: Double = PerformanceFixtures.memory.finalWindowDeltaPercent,
+        postWarmupSlopeBytesPerSecond: Double? = nil,
         matchedBaselineSeries: [Double] = PerformanceFixtures.memory.matchedBaselineSeries,
         matchedBaselineValues: [Int64] = PerformanceFixtures.memory.matchedBaselineValues,
         peakLiveResourceCounts: ResourceCounts = PerformanceFixtures.memory.peakLiveResourceCounts,
@@ -307,10 +309,25 @@ enum PerformanceFixtures {
             peakRSSBytes: peakRSSBytes,
             finalWindowDeltaBytes: finalWindowDeltaBytes,
             finalWindowDeltaPercent: finalWindowDeltaPercent,
+            postWarmupSlopeBytesPerSecond: postWarmupSlopeBytesPerSecond ?? leastSquaresSlope(for: samples),
             matchedBaselineSeries: matchedBaselineSeries,
             matchedBaselineValues: matchedBaselineValues,
             peakLiveResourceCounts: peakLiveResourceCounts,
             endLiveResourceCounts: endLiveResourceCounts
         )
+    }
+
+    static func leastSquaresSlope(for samples: [MemorySample]) -> Double {
+        let running = samples.filter { $0.phase == .running }
+        let postWarmup = Array(running.dropFirst(configuration.warmupCount))
+        let meanElapsed = postWarmup.map(\.elapsedSeconds).reduce(0, +) / Double(postWarmup.count)
+        let meanRSS = postWarmup.map { Double($0.rssBytes) }.reduce(0, +) / Double(postWarmup.count)
+        let numerator = postWarmup.reduce(0.0) { total, sample in
+            total + (sample.elapsedSeconds - meanElapsed) * (Double(sample.rssBytes) - meanRSS)
+        }
+        let denominator = postWarmup.reduce(0.0) { total, sample in
+            total + pow(sample.elapsedSeconds - meanElapsed, 2)
+        }
+        return numerator / denominator
     }
 }

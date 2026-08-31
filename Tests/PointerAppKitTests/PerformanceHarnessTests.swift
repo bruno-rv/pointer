@@ -195,6 +195,9 @@ final class PerformanceHarnessTests: XCTestCase {
 
         let oneFrame = FrameMeasurement(status: .measured, sampleCount: 1, p95Milliseconds: 1, frameCount: 1, missedFrameCount: 0, instrumentationStatus: "fixture")
         XCTAssertThrowsError(try PerformanceFixtures.report(renderer: oneFrame).validateStructure())
+
+        let failedCompositor = FrameMeasurement(status: .failed, sampleCount: 0, p95Milliseconds: 0, frameCount: 0, missedFrameCount: 0, instrumentationStatus: "failed")
+        XCTAssertThrowsError(try PerformanceFixtures.report(renderer: oneFrame, compositor: failedCompositor).validateStructure())
     }
 
     func testMemoryLifecycleRequiresFullCadenceAndHonestCheckpoints() throws {
@@ -206,10 +209,54 @@ final class PerformanceHarnessTests: XCTestCase {
         nonZeroStoppedSample[122] = MemorySample(elapsedSeconds: 610, rssBytes: 100_000_000, phase: .stopped, resources: PerformanceFixtures.resources)
         XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: nonZeroStoppedSample)).validateStructure())
 
+        var nonZeroStoppingSample = PerformanceFixtures.memorySamples
+        nonZeroStoppingSample[121] = MemorySample(elapsedSeconds: 605, rssBytes: 100_000_000, phase: .stopping, resources: PerformanceFixtures.resources)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: nonZeroStoppingSample)).validateStructure())
+
+        var zeroRestart = PerformanceFixtures.memorySamples
+        zeroRestart[123] = MemorySample(elapsedSeconds: 615, rssBytes: 100_000_000, phase: .restarted, resources: PerformanceFixtures.zeroResources)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: zeroRestart, endLiveResourceCounts: PerformanceFixtures.zeroResources)).validateStructure())
+
         let highRestartResources = ResourceCounts(overlays: 2, timers: 2, handlers: 2, windows: 2, observers: 2)
         var overgrownRestart = PerformanceFixtures.memorySamples
         overgrownRestart[123] = MemorySample(elapsedSeconds: 615, rssBytes: 100_000_000, phase: .restarted, resources: highRestartResources)
         XCTAssertThrowsError(try PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(samples: overgrownRestart, peakLiveResourceCounts: highRestartResources, endLiveResourceCounts: highRestartResources)).validateStructure())
+    }
+
+    func testPostWarmupLeastSquaresTrendRejectsGrowThenDropEvenWhenFinalRSSFalls() throws {
+        var samples = PerformanceFixtures.memorySamples
+        for index in 5..<120 {
+            samples[index] = MemorySample(elapsedSeconds: Double(index * 5), rssBytes: 100_000_000 + Int64(index * 1_000), phase: .running, resources: PerformanceFixtures.resources)
+        }
+        samples[120] = MemorySample(elapsedSeconds: 600, rssBytes: 100_000_500, phase: .running, resources: PerformanceFixtures.resources)
+
+        let runningRSS = samples.prefix(121).map(\.rssBytes)
+        let aggregates = (0..<11).map { index in
+            let values = runningRSS[(index * 11)..<((index + 1) * 11)]
+            return MemoryAggregate(intervalIndex: index, sampleCount: values.count, meanRSSBytes: Int64((values.reduce(0.0) { $0 + Double($1) } / Double(values.count)).rounded()), peakRSSBytes: values.max()!)
+        }
+        let slope = PerformanceFixtures.leastSquaresSlope(for: samples)
+        let memory = PerformanceFixtures.makeMemory(samples: samples, aggregates: aggregates, peakRSSBytes: runningRSS.max()!, finalWindowDeltaBytes: 500, finalWindowDeltaPercent: 0.0005, postWarmupSlopeBytesPerSecond: slope)
+        let report = PerformanceFixtures.report(memory: memory)
+        XCTAssertNoThrow(try report.validateStructure())
+        XCTAssertThrowsError(try report.validateCompletion())
+    }
+
+    func testPostWarmupSlopeUsesDocumentedNoiseTolerance() throws {
+        let withinNoise = PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(postWarmupSlopeBytesPerSecond: 5e-10))
+        XCTAssertNoThrow(try withinNoise.validateStructure())
+        XCTAssertNoThrow(try withinNoise.validateCompletion())
+
+        let aboveNoise = PerformanceFixtures.report(memory: PerformanceFixtures.makeMemory(postWarmupSlopeBytesPerSecond: 2e-9))
+        XCTAssertThrowsError(try aboveNoise.validateCompletion())
+    }
+
+    func testDiagnosticMemoryRejectsNonFiniteSlopeEvenWithoutSamples() throws {
+        let nanMemory = PerformanceFixtures.makeMemory(samples: [], postWarmupSlopeBytesPerSecond: .nan, status: .failed)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: nanMemory).validateStructure())
+
+        let infiniteMemory = PerformanceFixtures.makeMemory(samples: [], postWarmupSlopeBytesPerSecond: .infinity, status: .unmeasured)
+        XCTAssertThrowsError(try PerformanceFixtures.report(memory: infiniteMemory).validateStructure())
     }
 
     func testFailedAndUnmeasuredReportsRemainStructurallyValidButCannotComplete() throws {
@@ -281,5 +328,43 @@ final class PerformanceHarnessTests: XCTestCase {
         let report = PerformanceFixtures.report(identity: debugIdentity, build: debugBuild, run: debugRun)
         XCTAssertNoThrow(try report.validateStructure())
         XCTAssertThrowsError(try report.validateCompletion())
+    }
+
+    func testAuthoritativeRunRequiresAcceptedFoundationArtifactSHA() throws {
+        let diagnosticBuild = BuildProvenance(
+            sourceTreeStatus: .clean,
+            sourceIdentity: SourceIdentity(kind: .sourceCommitSHA, value: PerformanceFixtures.commit),
+            sourceManifestSHA256: PerformanceFixtures.sourceManifest,
+            executableSHA256: PerformanceFixtures.executable,
+            bundleManifestSHA256: PerformanceFixtures.bundle,
+            buildConfiguration: "release",
+            recordedAtUTC: PerformanceFixtures.recordedAtUTC,
+            foundation: PerformanceFixtures.foundation,
+            harnessVersion: PerformanceFixtures.configuration.harnessVersion,
+            buildContractVersion: PerformanceFixtures.configuration.buildContractVersion,
+            acceptedFoundationArtifactSHA256: nil
+        )
+        let diagnosticRun = PerformanceRunProvenance(
+            variant: "candidate",
+            outputRoot: "build/candidate",
+            sourceRef: PerformanceFixtures.commit,
+            build: diagnosticBuild,
+            host: PerformanceFixtures.host,
+            recordedAtUTC: PerformanceFixtures.recordedAtUTC,
+            configuration: PerformanceFixtures.configuration,
+            foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath,
+            foundation: PerformanceFixtures.foundation,
+            harnessVersion: PerformanceFixtures.configuration.harnessVersion,
+            buildContractVersion: PerformanceFixtures.configuration.buildContractVersion,
+            acceptedFoundationArtifactSHA256: nil
+        )
+        let diagnosticReport = PerformanceFixtures.report(build: diagnosticBuild, run: diagnosticRun)
+        XCTAssertNoThrow(try diagnosticReport.validateStructure())
+        XCTAssertThrowsError(try diagnosticReport.validateCompletion())
+
+        let acceptedReport = PerformanceFixtures.report()
+        XCTAssertEqual(acceptedReport.buildProvenance.acceptedFoundationArtifactSHA256?.count, 64)
+        XCTAssertEqual(acceptedReport.runProvenance.acceptedFoundationArtifactSHA256, acceptedReport.buildProvenance.acceptedFoundationArtifactSHA256)
+        XCTAssertNoThrow(try acceptedReport.validateCompletion())
     }
 }

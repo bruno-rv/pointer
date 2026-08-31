@@ -266,10 +266,44 @@ public struct MemoryMeasurement: Codable, Sendable, Equatable {
     public let peakRSSBytes: Int64
     public let finalWindowDeltaBytes: Int64
     public let finalWindowDeltaPercent: Double
+    public let postWarmupSlopeBytesPerSecond: Double
     public let matchedBaselineSeries: [Double]
     public let matchedBaselineValues: [Int64]
     public let peakLiveResourceCounts: ResourceCounts
     public let endLiveResourceCounts: ResourceCounts
+}
+
+public extension MemoryMeasurement {
+    init(
+        status: MeasurementStatus,
+        windowSeconds: Int,
+        sampleIntervalSeconds: Int,
+        samples: [MemorySample],
+        aggregates: [MemoryAggregate],
+        peakRSSBytes: Int64,
+        finalWindowDeltaBytes: Int64,
+        finalWindowDeltaPercent: Double,
+        matchedBaselineSeries: [Double],
+        matchedBaselineValues: [Int64],
+        peakLiveResourceCounts: ResourceCounts,
+        endLiveResourceCounts: ResourceCounts
+    ) {
+        self.init(
+            status: status,
+            windowSeconds: windowSeconds,
+            sampleIntervalSeconds: sampleIntervalSeconds,
+            samples: samples,
+            aggregates: aggregates,
+            peakRSSBytes: peakRSSBytes,
+            finalWindowDeltaBytes: finalWindowDeltaBytes,
+            finalWindowDeltaPercent: finalWindowDeltaPercent,
+            postWarmupSlopeBytesPerSecond: 0,
+            matchedBaselineSeries: matchedBaselineSeries,
+            matchedBaselineValues: matchedBaselineValues,
+            peakLiveResourceCounts: peakLiveResourceCounts,
+            endLiveResourceCounts: endLiveResourceCounts
+        )
+    }
 }
 
 public struct ResilienceCase: Codable, Sendable, Equatable {
@@ -333,6 +367,7 @@ public struct PerformanceMeasurementReport: Codable, Sendable, Equatable {
 private enum PerformanceReportValidator {
     private static let hexCharacters = CharacterSet(charactersIn: "0123456789abcdef")
     private static let emptyResources = ResourceCounts(overlays: 0, timers: 0, handlers: 0, windows: 0, observers: 0)
+    private static let memorySlopeNoiseToleranceBytesPerSecond = 1e-9
 
     static func validateStructure(_ report: PerformanceMeasurementReport) throws {
         try require(report.reportKind == .measurement, "reportKind must be measurement")
@@ -372,7 +407,7 @@ private enum PerformanceReportValidator {
         try validateRedrawLayout(report.redrawLayout)
         try validateResponsiveness(report.responsiveness)
         try validateInputToVisible(report.inputToVisible)
-        try validateMemory(report.memory)
+        try validateMemory(report.memory, warmupCount: report.runProvenance.configuration.warmupCount)
         try validateResilience(report.resilience)
         try validateMeasuredCounts(report)
     }
@@ -417,7 +452,7 @@ private enum PerformanceReportValidator {
         }
         try require(isHex(acceptedFoundation, count: 64), "accepted foundation artifact must be lowercase 64-hex")
         try require(report.runProvenance.acceptedFoundationArtifactSHA256 == acceptedFoundation, "run/foundation artifact mismatch")
-        try require(memoryPostWarmupSlope(report.memory) <= 0, "post-warmup memory slope is positive")
+        try require(memoryPostWarmupSlope(report.memory) <= memorySlopeNoiseToleranceBytesPerSecond, "post-warmup memory slope exceeds measurement noise")
     }
 
     private static func validateIdentity(_ identity: MeasurementIdentity, against build: BuildProvenance) throws {
@@ -589,9 +624,10 @@ private enum PerformanceReportValidator {
         try require(input.p95Milliseconds.isFinite && input.p95Milliseconds >= 0, "input p95 must be finite and nonnegative")
     }
 
-    private static func validateMemory(_ memory: MemoryMeasurement) throws {
+    private static func validateMemory(_ memory: MemoryMeasurement, warmupCount: Int) throws {
         try require(memory.windowSeconds == PerformanceConfiguration.standard.memoryWindowSeconds, "memory window must be 600 seconds")
         try require(memory.sampleIntervalSeconds == PerformanceConfiguration.standard.memorySampleIntervalSeconds, "memory sample interval must be 5 seconds")
+        try require(memory.postWarmupSlopeBytesPerSecond.isFinite, "memory slope must be finite")
         try require(memory.peakRSSBytes >= 0, "peak RSS must be nonnegative")
         try require(memory.finalWindowDeltaPercent.isFinite, "memory delta percent must be finite")
         try require(memory.matchedBaselineSeries.allSatisfy { $0.isFinite && $0 >= 0 }, "matched baseline series must be finite and nonnegative")
@@ -646,6 +682,8 @@ private enum PerformanceReportValidator {
             }
             try require(checkpoints[1].resources == emptyResources, "stopped checkpoint must release all resources")
             let runningMaximum = maximumResources(in: runningSamples)
+            try require(checkpoints[0].resources == emptyResources, "stopping checkpoint must release all resources")
+            try require(checkpoints[2].resources == runningSamples.first!.resources, "restarted resources did not return to the running baseline")
             try require(resourcesAreAtMost(checkpoints[2].resources, runningMaximum), "restarted resources exceed running bounds")
         }
         let maximumRSS = memory.samples.map(\.rssBytes).max()!
@@ -666,6 +704,11 @@ private enum PerformanceReportValidator {
             let percentTolerance = max(1e-12, abs(expectedPercent) * 1e-12)
             try require(memory.finalWindowDeltaBytes == expectedDelta, "memory final-window byte delta does not match samples")
             try require(abs(memory.finalWindowDeltaPercent - expectedPercent) <= percentTolerance, "memory final-window percentage does not match samples")
+        }
+
+        if memory.status == .measured {
+            let expectedSlope = leastSquaresSlope(for: runningSamples, warmupCount: warmupCount)
+            try require(abs(memory.postWarmupSlopeBytesPerSecond - expectedSlope) <= memorySlopeNoiseToleranceBytesPerSecond, "memory slope does not match running samples")
         }
 
         var expectedInterval = 0
@@ -719,9 +762,13 @@ private enum PerformanceReportValidator {
             try require(report.model.trialNanoseconds.count == configuration.trialCount, "model trial count does not match configuration")
         }
         let frames = [report.renderer, report.compositor, report.combinedFrame]
-        if frames.allSatisfy({ $0.status == .measured }) {
-            try require(frames.allSatisfy { $0.sampleCount == configuration.trialCount }, "frame sample counts do not match configuration")
-            try require(frames.allSatisfy { $0.frameCount == configuration.trialCount }, "frame counts do not match configuration")
+        for frame in frames where frame.status == .measured {
+            try require(frame.sampleCount == configuration.trialCount, "frame sample count does not match configuration")
+            try require(frame.frameCount == configuration.trialCount, "frame count does not match configuration")
+        }
+        let measuredFrames = frames.filter { $0.status == .measured }
+        if measuredFrames.count > 1 {
+            try require(measuredFrames.dropFirst().allSatisfy { $0.sampleCount == measuredFrames[0].sampleCount }, "frame sample counts are not aligned")
         }
         if report.launch.status == .measured {
             try require(report.launch.coldMilliseconds.count == configuration.trialCount, "cold launch count does not match configuration")
@@ -776,7 +823,21 @@ private enum PerformanceReportValidator {
         else {
             return .infinity
         }
-        return Double(last.rssBytes - first.rssBytes) / (last.elapsedSeconds - first.elapsedSeconds)
+        return leastSquaresSlope(for: running, warmupCount: PerformanceConfiguration.standard.warmupCount)
+    }
+
+    private static func leastSquaresSlope(for running: [MemorySample], warmupCount: Int) -> Double {
+        let postWarmup = Array(running.dropFirst(warmupCount))
+        guard postWarmup.count >= 2 else { return .infinity }
+        let meanElapsed = postWarmup.map(\.elapsedSeconds).reduce(0, +) / Double(postWarmup.count)
+        let meanRSS = postWarmup.map { Double($0.rssBytes) }.reduce(0, +) / Double(postWarmup.count)
+        let numerator = postWarmup.reduce(0.0) { total, sample in
+            total + (sample.elapsedSeconds - meanElapsed) * (Double(sample.rssBytes) - meanRSS)
+        }
+        let denominator = postWarmup.reduce(0.0) { total, sample in
+            total + pow(sample.elapsedSeconds - meanElapsed, 2)
+        }
+        return numerator / denominator
     }
 
     private static func phaseRank(_ phase: MemoryPhase) -> Int {

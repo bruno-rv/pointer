@@ -38,8 +38,9 @@ Status: implemented in the assigned schema/test scope; no commit created.
   RSS/resource maxima, the final resource checkpoint, and matched baseline
   arrays. A measured standard report requires all 121 running samples at
   exactly 0...600 seconds in 5-second increments followed by stopping,
-  stopped, and restarted checkpoints at 605/610/615 seconds; stopped resources
-  must be zero and restarted resources remain within running bounds. It does
+  stopped, and restarted checkpoints at 605/610/615 seconds; stopping and
+  stopped resources must be exactly zero and restarted resources must exactly
+  return to the initial steady running baseline. It does
   not conflate a 120-vs-121 endpoint choice with a diagnostic failure: the
   structural contract is fixed to the inclusive 121-point standard window,
   while failed/unmeasured reports remain flexible when no samples exist.
@@ -48,8 +49,12 @@ Status: implemented in the assigned schema/test scope; no commit created.
   baseline RSS values. The final-window byte and percentage deltas are derived
   from the final running candidate RSS and final matched baseline RSS (a zero
   baseline is invalid), with an exact byte match and a small floating-point
-  percentage tolerance. Completion also rejects a positive post-warmup RSS
-  slope.
+  percentage tolerance. The reported post-warmup slope is the least-squares
+  regression over every post-warmup running sample, with an exact documented
+  tolerance of `1e-9` bytes/second; completion rejects a positive regression
+  above that master noise tolerance even when the final sample falls. A tiny
+  positive slope within the tolerance remains acceptable, while NaN or
+  infinity is rejected even for failed/unmeasured reports with no samples.
 - Measured model, frame, launch, allocation, redraw/layout, and input evidence
   counts must match the fixture/trial configuration; diagnostic failed or
   unmeasured objects may retain partial arrays. Completion additionally
@@ -67,12 +72,13 @@ then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceHarnessTests
 ```
 
-Result: 16 tests passed, including full Equatable round-trip coverage, typed report-kind
+Result: 20 tests passed, including full Equatable round-trip coverage, typed report-kind
 rejection, clean/dirty identity rules, provenance mismatches, non-finite and
 negative values, memory phase/duration/interval/aggregate/resource-checkpoint
 failures, derived RSS/delta and slope checks, full lifecycle cadence,
 configuration cardinality, diagnostic status preservation, nonstandard/debug
-diagnostic configurations, and completion acceptance/rejection.
+diagnostic configurations, named authoritative accepted-foundation rejection,
+and completion acceptance/rejection.
 
 The implementation intentionally stops at schema/validation. Instrumentation,
 `PerformanceHarness`, CLI dispatch, paired comparisons, and runtime evidence
