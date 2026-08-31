@@ -5,41 +5,53 @@ import XCTest
 
 @MainActor
 final class ChromeFrictionTests: XCTestCase {
-    func testCandidatePersistentChromeDoesNotIncreaseAndOneDimensionDecreases() {
-        let baseline = ChromeInventory(
-            alwaysVisibleControls: 17,
-            paletteRows: 2,
-            visibleStatusElements: 1,
-            focusStops: 17
-        )
-        let candidate = candidateInventory()
-        XCTAssertEqual(
-            candidate,
-            ChromeInventory(
-                alwaysVisibleControls: 15,
-                paletteRows: 1,
-                visibleStatusElements: 1,
-                focusStops: 10
-            )
-        )
+    func testCandidatePersistentChromeDoesNotIncreaseAcrossRealDisplayWidths() {
+        let baselineStandard = BaselineChromeEvidence.standard
+        let baselineClamped = BaselineChromeEvidence.clamped
+        let standard = candidateInventory(for: ChromeInventoryScreenProvider.standardDisplay)
+        let clamped = candidateInventory(for: ChromeInventoryScreenProvider.clampedDisplay)
 
-        XCTAssertLessThanOrEqual(
-            candidate.alwaysVisibleControls,
-            baseline.alwaysVisibleControls
-        )
-        XCTAssertLessThanOrEqual(candidate.paletteRows, baseline.paletteRows)
-        XCTAssertLessThanOrEqual(
-            candidate.visibleStatusElements,
-            baseline.visibleStatusElements
-        )
-        XCTAssertLessThanOrEqual(candidate.focusStops, baseline.focusStops)
-        XCTAssertTrue(
-            candidate.alwaysVisibleControls < baseline.alwaysVisibleControls
-                || candidate.paletteRows < baseline.paletteRows
-                || candidate.visibleStatusElements < baseline.visibleStatusElements
-                || candidate.focusStops < baseline.focusStops,
-            "Candidate must reduce at least one persistent dimension: baseline=\(baseline), candidate=\(candidate)"
-        )
+        XCTAssertEqual(standard, ChromeInventory(
+            contentWidth: 822,
+            alwaysVisibleControls: 17,
+            actualToolRows: 1,
+            visibleStatusElements: 1,
+            focusStops: 12
+        ))
+        XCTAssertEqual(clamped, ChromeInventory(
+            contentWidth: 760,
+            alwaysVisibleControls: 15,
+            actualToolRows: 1,
+            visibleStatusElements: 1,
+            focusStops: 10
+        ))
+
+        for (label, candidate, expectedBaseline) in [
+            ("standard", standard, baselineStandard),
+            ("clamped", clamped, baselineClamped),
+        ] {
+            XCTAssertLessThanOrEqual(
+                candidate.alwaysVisibleControls,
+                expectedBaseline.alwaysVisibleControls,
+                label
+            )
+            XCTAssertLessThanOrEqual(candidate.actualToolRows, expectedBaseline.actualToolRows, label)
+            XCTAssertLessThanOrEqual(
+                candidate.visibleStatusElements,
+                expectedBaseline.visibleStatusElements,
+                label
+            )
+            XCTAssertLessThanOrEqual(candidate.focusStops, expectedBaseline.focusStops, label)
+            let reductionMessage = "Candidate must reduce at least one persistent dimension at "
+                + "\(label) width: baseline=\(expectedBaseline), candidate=\(candidate)"
+            XCTAssertTrue(
+                candidate.alwaysVisibleControls < expectedBaseline.alwaysVisibleControls
+                    || candidate.actualToolRows < expectedBaseline.actualToolRows
+                    || candidate.visibleStatusElements < expectedBaseline.visibleStatusElements
+                    || candidate.focusStops < expectedBaseline.focusStops,
+                reductionMessage
+            )
+        }
     }
 
     func testFreshLaunchArrowDrawStandbyPathNeedsNoAdditionalClickOrKey() throws {
@@ -54,15 +66,38 @@ final class ChromeFrictionTests: XCTestCase {
 }
 
 private struct ChromeInventory: Equatable, CustomStringConvertible {
+    let contentWidth: Int
     let alwaysVisibleControls: Int
-    let paletteRows: Int
+    let actualToolRows: Int
     let visibleStatusElements: Int
     let focusStops: Int
 
     var description: String {
-        "controls=\(alwaysVisibleControls), rows=\(paletteRows), "
+        "width=\(contentWidth), controls=\(alwaysVisibleControls), rows=\(actualToolRows), "
             + "status=\(visibleStatusElements), focus=\(focusStops)"
     }
+}
+
+private enum BaselineChromeEvidence {
+    static let commit = "caa2bd0212c617ba6d4d599ede55be3624e525f4"
+    static let palettePanelSourceSHA256 = "94d350cbc58e3f9e909c87a4888253b89ba078b4909c738f1819c4984d8b1163"
+    static let paletteViewControllerSourceSHA256 = "faaf563522dfe4c4b658bc4efdb1001d79b240c478a8e8c113c9734171e27c52"
+    static let paletteLayoutSourceSHA256 = "06d061e3b54e150ded44efb082c3a6f3e1faa43d77430f1f68d8092200bb20c0"
+
+    static let standard = ChromeInventory(
+        contentWidth: 760,
+        alwaysVisibleControls: 17,
+        actualToolRows: 1,
+        visibleStatusElements: 1,
+        focusStops: 17
+    )
+    static let clamped = ChromeInventory(
+        contentWidth: 760,
+        alwaysVisibleControls: 17,
+        actualToolRows: 1,
+        visibleStatusElements: 1,
+        focusStops: 17
+    )
 }
 
 private struct CommonPathInventory: Equatable {
@@ -74,8 +109,8 @@ private struct CommonPathInventory: Equatable {
 private let comparisonWidth = 760.0
 
 @MainActor
-private func candidateInventory() -> ChromeInventory {
-    let provider = ChromeFrictionScreenProvider()
+private func candidateInventory(for display: DisplayDescriptor) -> ChromeInventory {
+    let provider = ChromeInventoryScreenProvider(display: display)
     let coordinator = DisplayCoordinator(
         screenProvider: provider,
         overlayFactory: { ChromeFrictionOverlay(display: $0) }
@@ -83,11 +118,29 @@ private func candidateInventory() -> ChromeInventory {
     let router = CommandRouter(coordinator: coordinator, screenProvider: provider)
     _ = coordinator.synchronize()
 
-    let controller = PaletteViewController(router: router)
-    controller.loadViewIfNeeded()
-    controller.refresh(session: router.session)
-    controller.applyLayout(for: comparisonWidth)
-    controller.view.layoutSubtreeIfNeeded()
+    let palette = PalettePanel(
+        router: router,
+        guidePlacementProvider: GuidePlacementProvider()
+    )
+    defer { palette.close() }
+    guard case .shown = palette.show(on: display) else {
+        XCTFail("Expected palette to show for display visible width \(display.visibleFrame.width)")
+        return ChromeInventory(
+            contentWidth: -1,
+            alwaysVisibleControls: -1,
+            actualToolRows: -1,
+            visibleStatusElements: -1,
+            focusStops: -1
+        )
+    }
+
+    let controller = palette.paletteViewController
+    palette.refresh(session: router.session)
+    palette.window.contentView?.layoutSubtreeIfNeeded()
+    let expectedContentWidth = display.visibleFrame.width >= PaletteLayout.minimumAllToolsWidth
+        ? Int(PaletteLayout.minimumAllToolsWidth.rounded())
+        : Int((display.visibleFrame.width - 32).rounded())
+    XCTAssertEqual(palette.frame.width, CGFloat(expectedContentWidth), accuracy: 1)
 
     let controls = controller.controls
     let identifier: (NSControl) -> String? = {
@@ -104,9 +157,27 @@ private func candidateInventory() -> ChromeInventory {
     }.count
 
     let visibleIDs = Set(visibleControls.compactMap(identifier))
-    XCTAssertEqual(
-        visibleIDs,
-        Set([
+    let expectedVisibleIDs: Set<String> = expectedContentWidth == 822
+        ? Set([
+            "palette.mode",
+            "palette.tool.select",
+            "palette.tool.arrow",
+            "palette.tool.rectangle",
+            "palette.tool.ellipse",
+            "palette.tool.pen",
+            "palette.tool.eraser",
+            "palette.tool.emoji",
+            "palette.tool.spotlight",
+            "palette.emoji",
+            "palette.style.color",
+            "palette.style.stroke-width",
+            "palette.style.opacity",
+            "palette.spotlight.radius",
+            "palette.spotlight.dimness",
+            "palette.undo",
+            "palette.clear",
+        ])
+        : Set([
             "palette.mode",
             "palette.tool.select",
             "palette.tool.arrow",
@@ -123,7 +194,7 @@ private func candidateInventory() -> ChromeInventory {
             "palette.undo",
             "palette.clear",
         ])
-    )
+    XCTAssertEqual(visibleIDs, expectedVisibleIDs)
     let arrow = controls.first { identifier($0) == "palette.tool.arrow" }
     XCTAssertTrue(arrow?.isAccessibilityElement() == true)
     XCTAssertFalse((arrow?.accessibilityLabel() ?? "").isEmpty)
@@ -131,12 +202,114 @@ private func candidateInventory() -> ChromeInventory {
     XCTAssertTrue(controls.first { identifier($0) == "palette.delete" }?.isHidden == true)
     XCTAssertEqual(visibleStatusElements, 1)
 
+    let actualToolRows = renderedToolRows(in: controller)
+    assertCandidateTextTaxonomy(in: controller, controls: controls)
+
     return ChromeInventory(
+        contentWidth: expectedContentWidth,
         alwaysVisibleControls: visibleControls.count,
-        paletteRows: controller.layoutPlan.rows.count,
+        actualToolRows: actualToolRows,
         visibleStatusElements: visibleStatusElements,
         focusStops: focusStops
     )
+}
+
+@MainActor
+private func renderedToolRows(in controller: PaletteViewController) -> Int {
+    let requiredIDs = Set([
+        "palette.mode",
+        "palette.tool.select",
+        "palette.tool.arrow",
+        "palette.tool.rectangle",
+        "palette.tool.ellipse",
+        "palette.tool.pen",
+        "palette.tool.eraser",
+        "palette.tool.emoji",
+        "palette.tool.spotlight",
+        "palette.tools.overflow",
+    ])
+    let firstRow = allDescendants(of: controller.view)
+        .compactMap { $0 as? NSStackView }
+        .first { stack in
+            let arrangedIDs = Set(stack.arrangedSubviews.compactMap { view in
+                (view as? NSControl)?.identifier?.rawValue
+            })
+            return arrangedIDs.isSuperset(of: requiredIDs)
+        }
+    guard let firstRow else {
+        XCTFail("Expected a rendered first-row stack containing every tool control")
+        return 0
+    }
+
+    let centers = firstRow.arrangedSubviews
+        .filter { !$0.isHidden }
+        .map { $0.convert($0.bounds, to: controller.view).midY }
+        .sorted()
+    guard !centers.isEmpty else {
+        XCTFail("Expected visible controls in the rendered first-row stack")
+        return 0
+    }
+    var rowCenters: [CGFloat] = []
+    for center in centers {
+        if let previous = rowCenters.last, abs(center - previous) <= 1 {
+            continue
+        }
+        rowCenters.append(center)
+    }
+    return rowCenters.count
+}
+
+@MainActor
+private func assertCandidateTextTaxonomy(
+    in controller: PaletteViewController,
+    controls: [NSControl]
+) {
+    let textFields = allDescendants(of: controller.view)
+        .compactMap { $0 as? NSTextField }
+        .filter { !$0.isHidden && !isButtonTitle($0) }
+    let statusFields = textFields.filter {
+        $0.identifier?.rawValue == "palette.status"
+    }
+    let valueCaptions = textFields.filter {
+        ["4", "100%", "15%", "50%"].contains($0.stringValue)
+    }
+    let contextLabels = textFields.filter {
+        ["Color", "Emoji", "Stroke", "Opacity", "Radius", "Dimness"].contains($0.stringValue)
+    }
+
+    XCTAssertEqual(statusFields.count, 1)
+    XCTAssertEqual(Set(statusFields.compactMap { $0.identifier?.rawValue }), ["palette.status"])
+    XCTAssertEqual(valueCaptions.map(\.stringValue).sorted(), ["100%", "15%", "4", "50%"])
+    XCTAssertEqual(contextLabels.map(\.stringValue).sorted(), ["Color", "Dimness", "Emoji", "Opacity", "Radius", "Stroke"])
+    let classifiedFields = Set(
+        (statusFields + valueCaptions + contextLabels).map(ObjectIdentifier.init)
+    )
+    XCTAssertEqual(Set(textFields.map(ObjectIdentifier.init)), classifiedFields)
+
+    let focusControls = controls.filter {
+        $0.isEnabled && !$0.isHidden && $0.acceptsFirstResponder
+    }
+    for field in valueCaptions + contextLabels {
+        XCTAssertFalse(controls.contains { $0 === field }, "Text caption must not be a palette control")
+        XCTAssertFalse(field.acceptsFirstResponder, "Text caption must not be a focus stop")
+        XCTAssertFalse(focusControls.contains { $0 === field }, "Text caption must not enter the focus loop")
+        XCTAssertNotEqual(field.identifier?.rawValue, "palette.status")
+    }
+}
+
+private func isButtonTitle(_ field: NSTextField) -> Bool {
+    var ancestor = field.superview
+    while let view = ancestor {
+        if view is NSButton || view is NSPopUpButton {
+            return true
+        }
+        ancestor = view.superview
+    }
+    return false
+}
+
+private func allDescendants(of view: NSView) -> [NSView] {
+    view.subviews.flatMap { [$0] + allDescendants(of: $0) }
 }
 
 @MainActor
@@ -223,6 +396,31 @@ private final class ChromeFrictionScreenProvider: ScreenProviding {
 
     func currentDisplays() -> [DisplayDescriptor] { [Self.display] }
     func pointerDisplay() -> DisplayUUID? { Self.display.uuid }
+}
+
+@MainActor
+private final class ChromeInventoryScreenProvider: ScreenProviding {
+    static let standardDisplay = DisplayDescriptor(
+        uuid: DisplayUUID(rawValue: "chrome-inventory-standard"),
+        frame: DisplayFrame(x: 0, y: 0, width: 1_920, height: 1_080),
+        visibleFrame: DisplayFrame(x: 0, y: 24, width: 1_920, height: 1_056),
+        scaleFactor: 2
+    )
+    static let clampedDisplay = DisplayDescriptor(
+        uuid: DisplayUUID(rawValue: "chrome-inventory-clamped"),
+        frame: DisplayFrame(x: 0, y: 0, width: 792, height: 1_080),
+        visibleFrame: DisplayFrame(x: 0, y: 24, width: 792, height: 1_056),
+        scaleFactor: 2
+    )
+
+    let display: DisplayDescriptor
+
+    init(display: DisplayDescriptor) {
+        self.display = display
+    }
+
+    func currentDisplays() -> [DisplayDescriptor] { [display] }
+    func pointerDisplay() -> DisplayUUID? { display.uuid }
 }
 
 @MainActor
