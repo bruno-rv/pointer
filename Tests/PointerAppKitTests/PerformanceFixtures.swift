@@ -51,7 +51,9 @@ enum PerformanceFixtures {
     )
 
     static let fixture = FixtureIdentity(
-        identifier: "pointer-dense-12-marks",
+        identifier: PerformanceFixtureProfile.standard12.identifier,
+        fixtureProfile: .standard12,
+        fixtureVersion: PerformanceFixtureProfile.standard12.version,
         markCount: configuration.fixtureMarkCount,
         continuationSamples: configuration.samplesPerGesture,
         warmupCount: configuration.warmupCount,
@@ -134,17 +136,44 @@ enum PerformanceFixtures {
         foundationProvenance: foundationProvenance
     )
 
-    static let manualEvidence = ManualMetricEvidence(
-        metricID: .inputToVisible,
-        evidenceClass: .manual,
-        host: host.machineIdentifier,
-        recordedAt: recordedAtUTC,
-        permissions: ["Screen Recording"],
-        steps: "Trigger the first-use guide and record input-to-visible latency.",
-        samples: Array(repeating: 25, count: configuration.trialCount),
-        result: "All samples remained below the 100 ms budget.",
-        evidencePath: "inputToVisible.json"
+    static let executionArtifact = PerformancePairExecutionArtifact(
+        baselineID: baselineCommit,
+        candidateID: commit,
+        baselineMeasurementReportSHA256: baselineMeasurementReportSHA256,
+        candidateMeasurementReportSHA256: candidateMeasurementReportSHA256,
+        records: (0..<configuration.totalPairs).map { index in
+            let baselineFirst = index < configuration.pairsPerOrder
+            let firstStart = index * 4
+            let secondStart = firstStart + 2
+            return PerformancePairExecutionRecord(
+                pairIndex: index,
+                order: baselineFirst ? .baselineFirst : .candidateFirst,
+                baselineSampleIndex: (index * 7) % configuration.totalPairs,
+                candidateSampleIndex: (index * 7) % configuration.totalPairs,
+                baselineStartedAtUTC: timestamp(baselineFirst ? firstStart : secondStart),
+                candidateStartedAtUTC: timestamp(baselineFirst ? secondStart : firstStart),
+                baselineEndedAtUTC: timestamp(baselineFirst ? firstStart + 1 : secondStart + 1),
+                candidateEndedAtUTC: timestamp(baselineFirst ? secondStart + 1 : firstStart + 1)
+            )
+        }
     )
+
+    private static func timestamp(_ offset: Int) -> String {
+        String(format: "2026-08-31T12:%02d:%02dZ", offset / 60, offset % 60)
+    }
+
+    static let executionArtifactSHA256: String = {
+        sha256(try! PerformancePairExecutionArtifact.canonicalData(for: executionArtifact))
+    }()
+
+    static let manualEvidencePair: ManualMetricEvidencePair = {
+        let records = executionArtifact.records.sorted { $0.pairIndex < $1.pairIndex }
+        let baselineSamples = records.map { inputToVisible.sampleMilliseconds[$0.baselineSampleIndex] }
+        let candidateSamples = records.map { inputToVisible.sampleMilliseconds[$0.candidateSampleIndex] }
+        let baseline = ManualMetricEvidence(metricID: .inputToVisible, evidenceClass: .manual, variant: "baseline", sourceCommitSHA: baselineCommit, measurementReportSHA256: baselineMeasurementReportSHA256, pairExecutionArtifactSHA256: executionArtifactSHA256, host: host.machineIdentifier, recordedAt: recordedAtUTC, permissions: ["Screen Recording"], steps: "Trigger the first-use guide and record input-to-visible latency.", samples: baselineSamples, result: "All samples remained below the 100 ms budget.", evidencePath: "inputToVisible.json")
+        let candidate = ManualMetricEvidence(metricID: .inputToVisible, evidenceClass: .manual, variant: "candidate", sourceCommitSHA: commit, measurementReportSHA256: candidateMeasurementReportSHA256, pairExecutionArtifactSHA256: executionArtifactSHA256, host: host.machineIdentifier, recordedAt: recordedAtUTC, permissions: ["Screen Recording"], steps: "Trigger the first-use guide and record input-to-visible latency.", samples: candidateSamples, result: "All samples remained below the 100 ms budget.", evidencePath: "inputToVisible.json")
+        return ManualMetricEvidencePair(procedureVersion: "pointer-manual-procedure/v1", pairOrders: records.map(\.order), baseline: baseline, candidate: candidate)
+    }()
 
     static func metricComparisons(manualMetric: PerformanceMetricID? = nil) -> [MetricComparison] {
         PerformanceMetricID.allCases.map { metricID in
@@ -161,10 +190,13 @@ enum PerformanceFixtures {
                 startingValue = metricID.canonicalBudgetLimit.map { $0 * 0.5 } ?? 100
                 delta = 1
             }
-            let baselineSamples = (0..<configuration.trialCount).map { index in
-                startingValue + ((metricID == .renderer || metricID == .compositor) ? 0 : Double(index) * 0.1)
-            }
-            let candidateSamples = metricID == manualMetric ? manualEvidence.samples : baselineSamples.map { $0 - delta }
+            let pairRecords = executionArtifact.records.sorted { $0.pairIndex < $1.pairIndex }
+            let baselineSamples = metricID == manualMetric
+                ? pairRecords.map { inputToVisible.sampleMilliseconds[$0.baselineSampleIndex] }
+                : (0..<configuration.trialCount).map { index in
+                    startingValue + ((metricID == .renderer || metricID == .compositor) ? 0 : Double(index) * 0.1)
+                }
+            let candidateSamples = metricID == manualMetric ? manualEvidencePair.candidate.samples : baselineSamples.map { $0 - delta }
             let ratios = zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate / baseline }
             let deltas = zip(baselineSamples, candidateSamples).map { baseline, candidate in candidate - baseline }
             let bootstrap = PerformanceComparisonBootstrap.interval(deltas: deltas, seed: configuration.bootstrapSeed, resampleCount: configuration.bootstrapResamples)
@@ -181,7 +213,7 @@ enum PerformanceFixtures {
                 deltas: deltas,
                 budgetLimit: metricID.canonicalBudgetLimit,
                 bootstrapInterval: bootstrap,
-                manualEvidence: metricID == manualMetric ? manualEvidence : nil,
+                manualEvidence: metricID == manualMetric ? manualEvidencePair : nil,
                 disposition: .acceptedNoRegression,
                 improvementClaimed: bootstrap.upperDelta < 0
             )
@@ -388,6 +420,8 @@ enum PerformanceFixtures {
         baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
         candidateRun: PerformanceRunProvenance = PerformanceFixtures.run,
         eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility,
+        pairExecutionArtifact: PerformancePairExecutionArtifact = PerformanceFixtures.executionArtifact,
+        pairExecutionArtifactSHA256: String = PerformanceFixtures.executionArtifactSHA256,
         baselineFixture: FixtureIdentity = PerformanceFixtures.fixture,
         candidateFixture: FixtureIdentity = PerformanceFixtures.fixture,
         baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
@@ -405,6 +439,8 @@ enum PerformanceFixtures {
             baselineRunProvenance: baselineRun,
             candidateRunProvenance: candidateRun,
             pairEligibility: eligibility,
+            pairExecutionArtifact: pairExecutionArtifact,
+            pairExecutionArtifactSHA256: pairExecutionArtifactSHA256,
             baselineFixture: baselineFixture,
             candidateFixture: candidateFixture,
             baselineMeasurementIdentity: baselineMeasurementIdentity,
@@ -425,6 +461,8 @@ enum PerformanceFixtures {
         baselineRun: PerformanceRunProvenance = PerformanceFixtures.baselineRun,
         candidateRun: PerformanceRunProvenance = PerformanceFixtures.run,
         eligibility: PerformancePairEligibility = PerformanceFixtures.eligibility,
+        pairExecutionArtifact: PerformancePairExecutionArtifact = PerformanceFixtures.executionArtifact,
+        pairExecutionArtifactSHA256: String = PerformanceFixtures.executionArtifactSHA256,
         baselineFixture: FixtureIdentity = PerformanceFixtures.fixture,
         candidateFixture: FixtureIdentity = PerformanceFixtures.fixture,
         baselineMeasurementIdentity: MeasurementIdentity = PerformanceFixtures.baselineIdentity,
@@ -442,6 +480,8 @@ enum PerformanceFixtures {
                 baselineRun: baselineRun,
                 candidateRun: candidateRun,
                 eligibility: eligibility,
+                pairExecutionArtifact: pairExecutionArtifact,
+                pairExecutionArtifactSHA256: pairExecutionArtifactSHA256,
                 baselineFixture: baselineFixture,
                 candidateFixture: candidateFixture,
                 baselineMeasurementIdentity: baselineMeasurementIdentity,
@@ -457,7 +497,8 @@ enum PerformanceFixtures {
 
     static func withStatuses(
         _ report: PerformanceMeasurementReport,
-        status measurementStatus: MeasurementStatus
+        status measurementStatus: MeasurementStatus,
+        disposition: Disposition = .revise
     ) -> PerformanceMeasurementReport {
         func modelWithStatus(_ value: ModelMeasurement) -> ModelMeasurement {
             ModelMeasurement(status: measurementStatus, trialNanoseconds: value.trialNanoseconds, medianNanoseconds: value.medianNanoseconds, p95Nanoseconds: value.p95Nanoseconds, madNanoseconds: value.madNanoseconds, publicationCount: value.publicationCount, modelChecksum: value.modelChecksum, finalStateValid: value.finalStateValid)
@@ -487,7 +528,7 @@ enum PerformanceFixtures {
             inputToVisible: InputToVisibleMeasurement(status: measurementStatus, sampleCount: measurementStatus == .measured ? report.inputToVisible.sampleCount : 0, p95Milliseconds: report.inputToVisible.p95Milliseconds, missedSampleCount: measurementStatus == .measured ? report.inputToVisible.missedSampleCount : 0, sampleMilliseconds: measurementStatus == .measured ? report.inputToVisible.sampleMilliseconds : []),
             memory: MemoryMeasurement(status: measurementStatus, windowSeconds: report.memory.windowSeconds, sampleIntervalSeconds: report.memory.sampleIntervalSeconds, samples: report.memory.samples, aggregates: report.memory.aggregates, peakRSSBytes: report.memory.peakRSSBytes, finalWindowDeltaBytes: report.memory.finalWindowDeltaBytes, finalWindowDeltaPercent: report.memory.finalWindowDeltaPercent, postWarmupSlopeBytesPerSecond: report.memory.postWarmupSlopeBytesPerSecond, matchedBaselineSeries: report.memory.matchedBaselineSeries, matchedBaselineValues: report.memory.matchedBaselineValues, peakLiveResourceCounts: report.memory.peakLiveResourceCounts, endLiveResourceCounts: report.memory.endLiveResourceCounts),
             resilience: ResilienceMeasurement(status: measurementStatus, cases: report.resilience.cases.map { ResilienceCase(identifier: $0.identifier, status: measurementStatus, iterationCount: $0.iterationCount, peakResourceCounts: $0.peakResourceCounts, endResourceCounts: $0.endResourceCounts, leakedResource: $0.leakedResource, unexpectedGrowth: $0.unexpectedGrowth) }, disposition: report.resilience.disposition),
-            disposition: report.disposition
+            disposition: disposition
         )
     }
 

@@ -4,15 +4,18 @@
 
 **Goal:** Measure the production model, renderer, compositor, launch, allocation, redraw, responsiveness, input-to-visible, memory, and resilience paths with immutable paired evidence, then return only measured regressions or fixes to the owning workstream.
 
-**Architecture:** Preserve GestureBenchmark's real PointerSession API and fixed
-12-mark/240-sample/5-warmup/30-trial model run. The
+**Architecture:** Preserve GestureBenchmark's real PointerSession API and its
+fixed standard12 12-mark/240-sample/5-warmup/30-trial model run. The typed
+fixture-profile harness parameterizes the same production model and renderer
+oracle for the separate dense1000 1,000-mark profile. The
 `--benchmark-gestures --format json` command remains the model-only
-`GestureBenchmark.Result` output. `PerformanceHarness` produces one variant
-`PerformanceMeasurementReport`; the separate
+`GestureBenchmark.Result` output. `PerformanceHarness` produces one typed
+fixture-profile report per variant and profile; the separate
 `PerformanceComparisonHarness` consumes immutable baseline/candidate
 measurement reports and produces the paired `PerformanceComparisonReport`.
-E owns diagnostics, benchmark contracts, fixtures, and performance reports;
-measured findings return to the named prior-phase owner:
+E-foundation owns diagnostics, benchmark contracts, fixtures, and report
+contracts; E-execution owns only runtime performance evidence. Measured
+findings return to the named prior-phase owner:
 A-foundation/A-harness, B-core/B-render-integration, C-product-surface, or
 D-visual-language.
 
@@ -25,13 +28,35 @@ D-visual-language.
 - Do not claim a performance improvement without before/after measurements from the same production path and fixture.
 - Structurally valid measurement reports may contain `measured`, `failed`, or
   `unmeasured` statuses; completion validation rejects failed or unmeasured
-  required metrics, and `not_applicable` is never permitted. Comparison
+  required metrics, and `not_applicable` is never permitted. Any missing,
+  failed, or unmeasured required metric leaves that measurement report's
+  disposition `revise`, never `blocked` or `acceptedNoRegression`. Comparison preflight then rejects it
+  before constructing or writing any comparison.
+  Comparison
   inputs are stricter: `PerformanceComparisonHarness` rejects any failed or
   unmeasured required metric before it constructs or writes a comparison, so a
   persisted comparison contains measured comparisons only.
-- Every comparison uses immutable commit SHA or SHA-256 content manifest identities, the same host/fixture, five warmups, `pairsPerOrder == 15`, and `totalPairs == pairsPerOrder * 2 == 30`: exactly 15 baseline-first and 15 candidate-first pairs. It uses a fixed-seed 10,000-resample bootstrap interval.
-- A candidate/baseline median or p95 ratio greater than 1.10, frame/input budget breach, leak, invalid schema, or required unmeasured metric is REVISE and blocks completion.
-- At 60 Hz equivalent, p95 render plus compositor work is at most 16.7 ms for 12-mark and dense 1,000-mark fixtures; no repeatable active-gesture main-thread stall exceeds 100 ms; p95 input-to-visible is at most 100 ms.
+- Every per-profile comparison uses immutable commit SHA or SHA-256 content
+  manifest identities, the same `PerformanceConfiguration.fixtureProfile`,
+  host, and fixture,
+  five warmups, `pairsPerOrder == 15`, and `totalPairs == pairsPerOrder * 2 ==
+  30`: exactly 15 baseline-first and 15 candidate-first pairs. It uses a
+  fixed-seed 10,000-resample bootstrap interval.
+- Task 3c/E-execution runs both typed fixture profiles, `standard12` and
+  `dense1000`, as separate configuration/provenance/
+  `PerformanceMeasurementReport` artifacts. Each profile has its own
+  `FixtureIdentity` profile/version/count, measurement reports, pair-execution
+  artifact, comparison, and output root. Only Task 3c's typed campaign
+  completion manifest requires one accepted comparison for each profile and
+  rejects missing, duplicate, or concatenated populations; an individual
+  foundation/report run remains bound to one profile.
+- `benchmark-quality.sh` interleaves each baseline→candidate or candidate→baseline pair per trial, records partial indexed artifacts, and never runs a whole baseline batch before a whole candidate batch.
+- A candidate/baseline median or p95 ratio greater than 1.10, frame/input budget breach, leak, invalid schema, or missing/failed/unmeasured required metric structurally requires disposition `revise` (never `blocked` or `acceptedNoRegression`) and blocks completion.
+- At 60 Hz equivalent, p95 render plus compositor work is at most 16.7 ms for
+  both the `standard12` 12-mark and `dense1000` 1,000-mark profiles; no
+  repeatable active-gesture main-thread stall exceeds 100 ms; p95
+  input-to-visible is at most 100 ms. The 16.7 ms gate is evaluated per
+  profile, never over concatenated samples.
 - Memory is a 600-second, 5-second sample-interval time series with running, stopping, stopped, and restarted phases; running plateau and stop/restart checkpoints are separate.
 - Performance fixes address a measured bottleneck in an owning workstream; no speculative cache, concurrency, dependency, or abstraction is accepted.
 - Full end-to-end interaction measurement depends on accepted A-foundation
@@ -44,15 +69,31 @@ D-visual-language.
   composition, launcher, and Release resource foundation. Model-only
   measurement may run after A-foundation and B-core, but it is never treated
   as end-to-end evidence.
-- Allowed instrumentation adapters are real offscreen CanvasView/CGContext renderer timing, os_signpost/CACurrentMediaTime WindowServer/compositor timing where available, /usr/bin/time/task_info/process metrics for launch/memory, and a manual physical metric adapter. No adapter may synthesize input, install global monitors/event taps, capture the screen, or replace the production route. Deterministic and manual evidence remain separate; missing required measured evidence blocks completion.
-- Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; E owns
-  Diagnostics/GestureBenchmark.swift, PerformanceHarness.swift,
+- E-foundation Task 3b defines the compositor, process, manual, and
+  combined-frame protocols and their honest `.unmeasured`/`revise` fallbacks.
+  The current renderer adapter measures the real offscreen CanvasView/CGContext
+  path; the current WindowServer compositor, process, combined-frame, and
+  manual adapters do not yet produce authoritative measurements. A
+  `CACurrentMediaTime` duration is not WindowServer compositor measurement,
+  and `combinedFrame` is not a renderer-plus-compositor sum. Task 3c's
+  `benchmark-quality.sh` and E-execution supply external trace/process/manual
+  evidence and sidecars through those typed protocols. `ManualMetricAdapter`
+  is currently a Codable evidence schema only until that Task 3c writer exists.
+  No adapter may synthesize input, install global monitors/event taps, capture
+  the screen, or replace the production route. Deterministic and manual
+  evidence remain separate; missing required measured evidence blocks
+  completion.
+- Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; E-foundation
+  owns Diagnostics/GestureBenchmark.swift, PerformanceHarness.swift,
   PerformanceComparisonHarness.swift, PerformanceCLI.swift, their tests,
-  benchmark scripts/fixtures, and
-  `.codex/sdd/reports/quality-campaign/performance/measurements/**`,
-  `provenance/**`, `comparisons/**`, and `resilience/**` only. E task 3 defines the immutable
-  protocol and CLI contracts; E-execution runs those commands only after the
-  F-foundation checkpoint described below.
+  `scripts/benchmark-quality.sh`, benchmark fixtures, and report schemas and
+  validators. E-execution owns only the runtime evidence under
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/{measurements,provenance,comparisons,resilience}/**`
+  for both profiles; it consumes the
+  already-implemented CLI/script and has no code or script ownership.
+  E task 3c defines and implements the immutable protocol and CLI/script
+  contracts before F-foundation; E-execution runs those commands only after
+  the F-foundation checkpoint described below.
 
 E uses the canonical source-manifest scope from the master design for every
 baseline and candidate. The script runs `git ls-files` with these exact
@@ -75,10 +116,11 @@ E has two explicit gates so its report schema can be implemented before the
 launcher and Release bundle exist, without allowing a paired result to depend
 on a stale or incomplete executable. The sequence is:
 
-1. **E-foundation (tasks 1–3):** implement and structurally test
-   `GestureBenchmark.Result`, typed measurement/comparison schemas, validators,
-   adapters, and the CLI/script argument contracts. These tasks may not pin a
-   baseline, run a paired comparison, or claim performance completion.
+1. **E-foundation (tasks 1–3, including Task 3c):** implement and structurally
+   test `GestureBenchmark.Result`, typed measurement/comparison schemas,
+   validators, adapters, `PerformanceCLI`, and `scripts/benchmark-quality.sh`
+   plus their argument contracts. These tasks may not pin a baseline, run a
+   paired comparison, or claim performance completion.
 2. **F-foundation (tasks 1–3):** implement and gate the importable composition,
    diagnostic launcher branches, compiled Release resources, and the
    `Assets.car`/guide identity contract. F must pass its worker/reviewer/
@@ -93,9 +135,10 @@ on a stale or incomplete executable. The sequence is:
    clean-clone, manual use, Chrome friction, and final aggregation.
 
 Baseline eligibility requires all of the following: the baseline and candidate
-use the same E schema version, typed `harnessVersion`,
-`foundationIdentity`/version, `buildContractVersion`, and fixture
-configuration; both use the F launcher/build foundation; the baseline
+use the same E schema version, exact `PerformanceConfiguration.fixtureProfile`
+and `fixtureVersion`, typed `harnessVersion`, `foundationIdentity`/version,
+`buildContractVersion`, and fixture configuration; both use the F
+launcher/build foundation; the baseline
   identity is observed and pinned after the F-foundation checkpoint; and the
   candidate is a different subsequent measured identity. A clean source tree
 uses `sourceCommitSHA`; a dirty tree uses `contentManifestSHA256` calculated
@@ -210,14 +253,16 @@ neither a previous report nor a documentation claim can satisfy it.
         public let buildContractVersion: String
     }
 
-    public struct HostIdentity: Codable, Sendable {
+    public struct HostIdentity: Codable, Sendable, Equatable {
         public let machineIdentifier: String
         public let processArchitecture: String
         public let connectedDisplayUUIDs: [String]
     }
 
-    public struct FixtureIdentity: Codable, Sendable {
+    public struct FixtureIdentity: Codable, Sendable, Equatable {
         public let identifier: String
+        public let fixtureProfile: PerformanceFixtureProfile
+        public let fixtureVersion: String
         public let markCount: Int
         public let continuationSamples: Int
         public let warmupCount: Int
@@ -322,6 +367,8 @@ neither a previous report nor a documentation claim can satisfy it.
 
     public struct PerformanceConfiguration: Codable, Sendable {
         public let fixtureMarkCount: Int
+        public let fixtureProfile: PerformanceFixtureProfile
+        public let fixtureVersion: String
         public let samplesPerGesture: Int
         public let warmupCount: Int
         public let trialCount: Int
@@ -334,8 +381,10 @@ neither a previous report nor a documentation claim can satisfy it.
         public let foundationIdentity: FoundationIdentity
         public let buildContractVersion: String
 
-        public static let standard = PerformanceConfiguration(
+        public static let standard12 = PerformanceConfiguration(
             fixtureMarkCount: 12,
+            fixtureProfile: .standard12,
+            fixtureVersion: "pointer-fixture-standard12/v1",
             samplesPerGesture: 240,
             warmupCount: 5,
             trialCount: 30,
@@ -352,8 +401,75 @@ neither a previous report nor a documentation claim can satisfy it.
             buildContractVersion: "pointer-build-contract/v1"
         )
 
+        public static let standard = standard12
+
+        public static let dense1000 = PerformanceConfiguration(
+            fixtureMarkCount: 1_000,
+            fixtureProfile: .dense1000,
+            fixtureVersion: "pointer-fixture-dense1000/v1",
+            samplesPerGesture: 240,
+            warmupCount: 5,
+            trialCount: 30,
+            pairsPerOrder: 15,
+            bootstrapSeed: 48271,
+            bootstrapResamples: 10_000,
+            memoryWindowSeconds: 600,
+            memorySampleIntervalSeconds: 5,
+            harnessVersion: "pointer-performance-harness/v1",
+            foundationIdentity: FoundationIdentity(
+                identity: "pointer-f-foundation",
+                version: "v1"
+            ),
+            buildContractVersion: "pointer-build-contract/v1"
+        )
+
+        public static let dense = dense1000
+
         public var totalPairs: Int { pairsPerOrder * 2 }
     }
+
+    public enum PerformanceFixtureProfile: String, Codable, Sendable, Equatable, CaseIterable {
+        case standard12
+        case dense1000
+
+        public var markCount: Int {
+            switch self {
+            case .standard12: return 12
+            case .dense1000: return 1_000
+            }
+        }
+
+        public var identifier: String {
+            switch self {
+            case .standard12: return "pointer-standard-12-marks"
+            case .dense1000: return "pointer-dense-1000-marks"
+            }
+        }
+
+        public var version: String {
+            switch self {
+            case .standard12: return "pointer-fixture-standard12/v1"
+            case .dense1000: return "pointer-fixture-dense1000/v1"
+            }
+        }
+    }
+
+    public struct PerformanceCampaignCompletionManifest: Codable, Sendable, Equatable {
+        public let schemaVersion: Int
+        public let standard12ComparisonPath: String
+        public let dense1000ComparisonPath: String
+    }
+
+The only accepted fixture profiles are `PerformanceFixtureProfile.standard12`
+(`pointer-fixture-standard12/v1`, identifier `pointer-standard-12-marks`,
+12 marks) and `.dense1000` (`pointer-fixture-dense1000/v1`, identifier
+`pointer-dense-1000-marks`, 1,000 marks). Each profile binds
+`PerformanceConfiguration.fixtureProfile`/`fixtureVersion` and
+`FixtureIdentity.fixtureProfile`/`fixtureVersion`/`markCount`; measurement and
+run provenance carry that configuration, while comparison persists each
+baseline/candidate configuration and fixture through their typed provenance and
+fixture fields. Profile populations, samples, pair artifacts, and comparisons
+remain separate and are never concatenated.
 
     public struct BootstrapInterval: Codable, Sendable, Equatable {
         public let lowerDelta: Double
@@ -392,6 +508,43 @@ neither a previous report nor a documentation claim can satisfy it.
         case candidateFirst
     }
 
+    public struct PerformancePairExecutionRecord: Codable, Sendable, Equatable {
+        public let pairIndex: Int
+        public let order: PairOrder
+        public let baselineSampleIndex: Int
+        public let candidateSampleIndex: Int
+        public let baselineStartedAtUTC: String
+        public let candidateStartedAtUTC: String
+        public let baselineEndedAtUTC: String
+        public let candidateEndedAtUTC: String
+    }
+
+    public struct PerformancePairExecutionArtifact: Codable, Sendable, Equatable {
+        public let schemaVersion: Int
+        public let baselineID: String
+        public let candidateID: String
+        public let baselineMeasurementReportSHA256: String
+        public let candidateMeasurementReportSHA256: String
+        public let records: [PerformancePairExecutionRecord]
+    }
+
+`PerformancePairExecutionArtifact` is a version-1 persisted code-worker
+artifact with exactly 30 unique contiguous `pairIndex` records: the first 15
+are `.baselineFirst` and the next 15 `.candidateFirst`. It carries
+baseline/candidate IDs and lowercase 64-hex measurement-report hashes; every
+record binds baseline/candidate sample indices and UTC start/end timestamps.
+Within each pair, each variant's start ≤ its own end, the first variant's end <
+the second variant's start, and each pair's second end < the next pair's first
+start. Its artifact SHA is
+the separate `pairExecutionArtifactSHA256` argument/field, not a JSON field in
+the artifact. The producer uses the canonical sorted-key encoder; the SHA is
+SHA-256 of those canonical artifact bytes and is recomputable from the embedded
+artifact. Unknown fields, alternate whitespace, or alternate key order are
+rejected before decoding/acceptance. Internal `compare` receives the decoded
+artifact plus that SHA;
+the public `writeComparison` reads the artifact URL, validates the SHA and
+records, and pairs samples by recorded indices rather than arrival order.
+
     public struct MetricComparison: Codable, Sendable {
         public let metricID: PerformanceMetricID
         public let evidenceClass: MetricEvidenceClass
@@ -401,12 +554,11 @@ neither a previous report nor a documentation claim can satisfy it.
         public let candidateSamples: [Double]
         public let ratios: [Double]
         public let deltas: [Double]
-        public let pairOrders: [PairOrder]
         public let unit: PerformanceMetricUnit
         public let budgetLimit: Double?
         public let bootstrapInterval: BootstrapInterval
         public let improvementClaimed: Bool
-        public let manualEvidence: ManualMetricEvidence?
+        public let manualEvidence: ManualMetricEvidencePair?
         public let disposition: Disposition
     }
 
@@ -466,7 +618,11 @@ neither a previous report nor a documentation claim can satisfy it.
         public static func measureInputToVisible(configuration: PerformanceConfiguration) -> InputToVisibleMeasurement
         public static func measureMemory(configuration: PerformanceConfiguration) -> MemoryMeasurement
         public static func measureResilience(configuration: PerformanceConfiguration) -> ResilienceMeasurement
-        public static func run(configuration: PerformanceConfiguration) throws -> PerformanceMeasurementReport
+        public static func run(
+            configuration: PerformanceConfiguration,
+            buildProvenance: BuildProvenance,
+            runProvenance: PerformanceRunProvenance
+        ) throws -> PerformanceMeasurementReport
     }
 
     @MainActor
@@ -476,12 +632,17 @@ neither a previous report nor a documentation claim can satisfy it.
             candidate: PerformanceMeasurementReport,
             configuration: PerformanceConfiguration,
             eligibility: PerformancePairEligibility,
-            manualEvidenceDirectory: URL
+            pairExecutionArtifact: PerformancePairExecutionArtifact,
+            manualEvidenceDirectory: URL,
+            pairExecutionArtifactSHA256: String,
+            baselineMeasurementReportSHA256: String? = nil,
+            candidateMeasurementReportSHA256: String? = nil
         ) throws -> PerformanceComparisonDraft
         public static func writeComparison(
             draft: PerformanceComparisonDraft,
             baselineURL: URL,
             candidateURL: URL,
+            pairExecutionURL: URL,
             manualEvidenceDirectory: URL,
             outputDirectory: URL,
             configuration: PerformanceConfiguration,
@@ -489,13 +650,13 @@ neither a previous report nor a documentation claim can satisfy it.
         ) throws -> PerformanceComparisonReport
     }
 
-    public struct PerformanceComparisonDraft: Sendable {
-        // Opaque non-persisted carrier produced only by internal compare. It
-        // has the same comparison content as PerformanceComparisonReport,
-        // excluding baselineMeasurementReportSHA256 and
-        // candidateMeasurementReportSHA256, and has no public initializer.
-        let reportKind: PerformanceReportKind
-        let schemaVersion: Int
+    public struct PerformanceComparisonDraft: Sendable, Equatable {
+        // Public opaque, non-persisted carrier produced only by internal
+        // compare. It has no public initializer or public stored properties.
+        // Its internal representation carries the remaining comparison
+        // content, excluding reportKind, schemaVersion,
+        // baselineMeasurementReportSHA256, and candidateMeasurementReportSHA256;
+        // the public writer owns and injects those four persisted fields.
         let harnessVersion: String
         let foundationIdentity: FoundationIdentity
         let buildContractVersion: String
@@ -507,6 +668,8 @@ neither a previous report nor a documentation claim can satisfy it.
         let candidateMeasurementIdentity: MeasurementIdentity
         let baselineFixture: FixtureIdentity
         let candidateFixture: FixtureIdentity
+        let pairExecutionArtifact: PerformancePairExecutionArtifact
+        let pairExecutionArtifactSHA256: String
         let pairEligibility: PerformancePairEligibility
         let baselineID: String
         let candidateID: String
@@ -518,18 +681,25 @@ neither a previous report nor a documentation claim can satisfy it.
     }
 
 Only public persisted entry is the exact
-`writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
+`writeComparison(draft:baselineURL:candidateURL:pairExecutionURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
 it reads the exact bytes at `baselineURL` and `candidateURL`, computes lowercase
-64-hex SHA-256 values, decodes the measurement reports, performs full
-preflight/cross-check validation against the supplied hash-free draft and the
-existing `manualEvidenceDirectory`, injects the computed hashes to construct
-the final `PerformanceComparisonReport`, then atomically writes it. There is no
-writer overload without `manualEvidenceDirectory`. Internal five-parameter
-`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+64-hex SHA-256 values, decodes the measurement reports, runs internal preflight
+for measurement/configuration/eligibility fields, and cross-checks the supplied
+hash-free draft and existing `manualEvidenceDirectory`. It reads canonical
+artifact bytes at `pairExecutionURL`; internal compare validates the decoded
+`PerformancePairExecutionArtifact` and separate SHA and pairs samples by its
+recorded indices. The writer owns and injects `reportKind == .comparison`,
+`schemaVersion == 1`, and the two computed measurement-report hashes to
+construct the final `PerformanceComparisonReport`, then atomically writes it.
+There is no writer
+overload without `manualEvidenceDirectory` or `pairExecutionURL`. Internal
+`compare(baseline:candidate:configuration:eligibility:pairExecutionArtifact:manualEvidenceDirectory:pairExecutionArtifactSHA256:baselineMeasurementReportSHA256:candidateMeasurementReportSHA256:)`
 returns only the hash-free `PerformanceComparisonDraft`; Task 3 loads and
-validates `manualEvidenceDirectory` before producing that draft. It is the
-Task 3 calculation seam, deferred and non-writing in Task 2b, and does not
-claim hash verification. The persisted report fields retain the exact
+validates `manualEvidenceDirectory` plus the decoded pair artifact and its
+separate SHA before producing that draft. It is the Task 3 calculation seam,
+deferred and non-writing in Task 2b, and recomputes/validates the canonical
+pair-artifact SHA from the decoded artifact. Exact input measurement-byte/source-
+URL hash verification remains public-writer-owned. The persisted report fields retain the exact
 input-byte hashes.
 
     public struct PerformanceComparisonReport: Codable, Sendable {
@@ -546,6 +716,8 @@ input-byte hashes.
         public let candidateMeasurementIdentity: MeasurementIdentity
         public let baselineFixture: FixtureIdentity
         public let candidateFixture: FixtureIdentity
+        public let pairExecutionArtifact: PerformancePairExecutionArtifact
+        public let pairExecutionArtifactSHA256: String
         public let baselineMeasurementReportSHA256: String
         public let candidateMeasurementReportSHA256: String
         public let pairEligibility: PerformancePairEligibility
@@ -560,15 +732,27 @@ input-byte hashes.
         public func validateCompletion() throws
     }
 
+Each comparison persists the baseline and candidate
+`PerformanceRunProvenance.configuration` values and their full
+`baselineFixture`/`candidateFixture` values. Preflight requires each
+configuration's `fixtureProfile`/`fixtureVersion` and each fixture's profile,
+version, and mark count to match, while rejecting a comparison that mixes
+fixture profiles.
+
     @MainActor
-    public protocol RendererInstrumentationAdapter: AnyObject {
+    public protocol RendererInstrumentationAdapter {
         func measureRenderer(configuration: PerformanceConfiguration) -> FrameMeasurement
     }
 
     @MainActor
-    public protocol CompositorInstrumentationAdapter: AnyObject {
+    public protocol CompositorInstrumentationAdapter {
         func measureCompositor(configuration: PerformanceConfiguration) -> FrameMeasurement
     }
+
+Both instrumentation protocols are value-type capable and impose no
+`AnyObject` class constraint. `PerformanceHarness.run` receives the
+configuration plus the validated `BuildProvenance` and
+`PerformanceRunProvenance` that it embeds in the measurement report.
 
     @MainActor
     public final class OffscreenCanvasRendererAdapter: RendererInstrumentationAdapter {
@@ -588,12 +772,16 @@ input-byte hashes.
     }
 
     public struct ManualMetricAdapter: Codable, Sendable {
-        public let evidence: ManualMetricEvidence
+        public let evidence: ManualMetricEvidencePair
     }
 
     public struct ManualMetricEvidence: Codable, Sendable {
         public let metricID: PerformanceMetricID
         public let evidenceClass: MetricEvidenceClass
+        public let variant: String
+        public let sourceCommitSHA: String
+        public let measurementReportSHA256: String
+        public let pairExecutionArtifactSHA256: String
         public let host: String
         public let recordedAt: String
         public let permissions: [String]
@@ -602,6 +790,25 @@ input-byte hashes.
         public let result: String
         public let evidencePath: String
     }
+
+    public struct ManualMetricEvidencePair: Codable, Sendable {
+        public let procedureVersion: String
+        public let pairOrders: [PairOrder]
+        public let baseline: ManualMetricEvidence
+        public let candidate: ManualMetricEvidence
+    }
+
+Manual evidence is pair-bound by `ManualMetricEvidencePair`: its baseline and
+candidate entries each carry the variant, lowercase 40-hex commit, lowercase
+64-hex measurement-report hash, lowercase 64-hex `pairExecutionArtifactSHA256`,
+host, procedure steps, and samples. The pair carries `procedureVersion` and
+typed `pairOrders`; both entries must use the same ordered steps, permissions,
+evidencePath, and shared `procedureVersion`, with exactly the matching
+compositor or input evidence files; extra or missing files are rejected.
+Each manual evidence file is emitted by the same canonical encoder/adapter as
+its schema and must be sorted-key JSON bytes; alternate whitespace or key order
+or unknown fields are rejected before decoding/acceptance, even when the bytes
+decode to an equivalent value.
 
     @MainActor
     public enum PerformanceCLI {
@@ -630,7 +837,9 @@ The v1 raw timing arrays are `FrameMeasurement.frameMilliseconds`,
 exactly `configuration.trialCount` finite, strictly positive values in each
 applicable array, and each stored p95 must be recomputed from that array;
 `failed`/`unmeasured` diagnostic reports may carry empty arrays and make no p95
-or completion claim.
+or completion claim. For every measured `FrameMeasurement`,
+`missedFrameCount` is exactly the count of `frameMilliseconds` samples greater
+than 16.7 ms; a mismatch is invalid.
 
 `PerformanceMeasurementReport.validateStructure()` requires
 `reportKind == .measurement`, all required keys/types, exactly one immutable
@@ -655,19 +864,28 @@ authoritative post-foundation run requires a nonnil lowercase 64-hex
 the accepted foundation artifact; only a bootstrap diagnostic run may leave it
 nil. The report's build/run provenance and configuration values must agree.
 Structural measurement validation allows `measured`,
-`failed`, and `unmeasured` so diagnostic failures round-trip honestly, but
-`validateCompletion()` rejects required failed/unmeasured metrics, budget
+`failed`, and `unmeasured` so diagnostic failures round-trip honestly. If any
+required metric is `failed` or `unmeasured`, structural validation requires
+the measurement report disposition to be `revise`, never `blocked` or
+`acceptedNoRegression`; `validateCompletion()` rejects required failed/unmeasured metrics, budget
 breaches, leaks, invalid dispositions, or any non-measured required status.
-Public `writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
-reads and hashes both exact measurement files, decodes them, validates both
-reports and all pair inputs against the supplied hash-free draft, injects the
-computed hashes to construct the final `PerformanceComparisonReport`, and
-writes only after all cross-checks pass. Internal
-`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
-returns only the hash-free `PerformanceComparisonDraft`; Task 3 loads and
-validates `manualEvidenceDirectory` before producing it. It is deferred to
-Task 3 calculations and is non-writing in Task 2b, with no hash-verification
-claim. A hash,
+Public `writeComparison(draft:baselineURL:candidateURL:pairExecutionURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
+reads and hashes both exact measurement files, decodes them, runs internal
+preflight for measurement/configuration/eligibility fields, and cross-checks
+all reports against the supplied hash-free draft. It reads canonical pair
+artifact bytes at `pairExecutionURL`; internal compare validates the decoded
+artifact and separate SHA, manual evidence, and recorded-index pairing before
+the writer injects `reportKind == .comparison`, `schemaVersion == 1`, and the
+measurement-report hashes to construct the final
+`PerformanceComparisonReport` and writes only after all cross-checks pass. Internal
+`compare(baseline:candidate:configuration:eligibility:pairExecutionArtifact:manualEvidenceDirectory:pairExecutionArtifactSHA256:baselineMeasurementReportSHA256:candidateMeasurementReportSHA256:)`
+returns only the hash-free `PerformanceComparisonDraft`; Task 3 validates
+`manualEvidenceDirectory` and the required decoded
+`PerformancePairExecutionArtifact` plus its separate SHA before producing it,
+pairing by recorded indices. It is deferred to Task 3 calculations and is
+non-writing in Task 2b, and recomputes/validates the canonical pair-artifact SHA
+from the decoded artifact. Exact input measurement-byte/source-URL hash
+verification remains public-writer-owned. A hash,
 identity, fixture, provenance, or eligibility mismatch therefore produces no
 output. A persisted `PerformanceComparisonReport` therefore contains measured
 comparisons only. Its structural validator requires
@@ -681,8 +899,12 @@ match exactly for host model, macOS, Xcode, developerDirectory, power state,
 display state, and buildConfiguration; their clean source commit identities
 must be distinct, and each must match its run/build provenance. It requires
 full `baselineFixture` and `candidateFixture` values, equal in every field,
-and each matching its corresponding measurement report. It requires one
-`MetricComparison` for every `PerformanceMetricID`, the canonical
+and each matching its corresponding measurement report. It requires
+`pairExecutionArtifactSHA256` to match the canonical bytes read by the public
+writer and the decoded artifact passed to internal compare, with its exact
+30-record contents and every metric's paired samples mapped by recorded
+indices. It requires one `MetricComparison` for every
+`PerformanceMetricID`, the canonical
 `PerformanceMetricUnit`, and a canonical optional `budgetLimit` (finite and
 positive only when that metric has an absolute budget). It requires nonempty
 ratio/delta arrays with exactly
@@ -693,9 +915,10 @@ are strictly positive absolute RSS bytes while signed
 `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) stay in the
 measurement report and are validated during pair preflight, not as comparison
 sample units.
-`MetricComparison.pairOrders` is typed `[PairOrder]` and must contain exactly
-15 `.baselineFirst` entries followed by exactly 15 `.candidateFirst` entries;
-its count is `configuration.totalPairs`. The validator deterministically
+The `PerformancePairExecutionArtifact.records` are the sole observed
+`PairOrder` source and must contain exactly 15 `.baselineFirst` entries followed
+by exactly 15 `.candidateFirst` entries; metrics use their recorded sample
+indices. The validator deterministically
 recomputes `BootstrapInterval` from the paired `deltas`, `seed`, and
 `resampleCount` and rejects any tampered interval summary or seed/count. The
 `improvementClaimed` flag may be true only when that recomputed bootstrap
@@ -711,8 +934,12 @@ nonfinite or nonpositive baseline or candidate
 samples, stale supplied ratios/deltas, wrong units, missing/huge/unexpected
 budgets, or budget/ratio breaches are rejected. It also requires valid
 `BootstrapInterval` values and the conditional manual-evidence rule. A manual metric requires
-complete `ManualMetricEvidence` (including host, timestamp, permissions, exact
-steps, result, and evidence path); a deterministic metric must have nil manual
+complete `ManualMetricEvidencePair` with baseline/candidate
+`ManualMetricEvidence` entries (variant, commit, measurement-report hash,
+pair-artifact hash, host, timestamp, permissions, exact steps, samples, result,
+and evidence path), pair `procedureVersion`, and typed `PairOrder` sequence.
+The entries must use equivalent procedures and exactly the identity-bound
+compositor or input evidence files; a deterministic metric must have nil manual
 evidence. Deterministic comparisons require at least 30 samples. Its
 `validateCompletion()` also requires the candidate renderer p95 plus candidate
 compositor p95 to be at most the canonical `combinedFrame` limit of 16.7 ms,
@@ -806,14 +1033,19 @@ Expected: Release JSON has fixed fixture/trial/publication/checksum/final-state 
     func testMeasuredTimingArraysHaveExactTrialCountAndRecomputedP95()
     func testDiagnosticTimingArraysMayBeEmpty()
     func testBuildAndRunProvenanceAreDistinctAndPortable()
+    func testPerformanceHarnessRunRequiresBuildAndRunProvenance()
+    func testInstrumentationAdaptersPermitValueTypes()
     func testBuildProvenanceCarriesValidatedConfigurationAndFoundationSHA()
     func testAuthoritativeRunRequiresAcceptedFoundationArtifactSHA()
     func testPerformanceReportRoundTripsTypedProvenanceAndFoundationVersions()
+    func testFixtureProfilesAreTypedAndIndependent()
     func testMemoryReportComputesPostWarmupLeastSquaresSlopeAndRejectsGrowth()
     func testStructurallyValidFailedAndUnmeasuredReportsRoundTrip()
     func testCompletionValidationRejectsFailedOrUnmeasuredRequiredMetric()
+    func testMissingFailedOrUnmeasuredRequiredMetricUsesReviseNotBlocked()
     func testManualMetricComparisonRoundTripsCompleteEvidence()
     func testManualMetricComparisonWithoutEvidenceOrWithDeterministicEvidenceIsRejected()
+    func testManualEvidenceRejectsNonCanonicalJSONBytes()
     func testComparisonRejectsFailedOrUnmeasuredInputBeforeWritingOutput()
     func testMemoryReportRequiresSeriesAggregatesPhasesAndCheckpoints()
 
@@ -824,10 +1056,18 @@ running/stopping/stopped/restarted phase counts. Decode a comparison fixture
 with `reportKind == .comparison`; assert Codable preserves the typed enum, and
 assert validateStructure() rejects a missing or wrong report kind rather than
 accepting a generic dictionary value. Decode structurally valid reports with
-measured, failed, and unmeasured statuses and assert they round-trip. Decode a
-manual MetricComparison with complete ManualMetricEvidence and assert every
-host, recordedAt timestamp, permission, exact-step, result, and evidencePath
-field survives round-trip. Decode a manual comparison with nil/empty evidence
+measured, failed, and unmeasured statuses and assert they round-trip; for a
+failed or unmeasured required metric, assert structural validation requires
+disposition `revise`, never `blocked` or `acceptedNoRegression`. Decode a
+manual MetricComparison with complete `ManualMetricEvidencePair` and assert
+each baseline/candidate `ManualMetricEvidence` entry's variant, commit,
+measurement-report hash, pair-artifact hash, host, timestamp, permissions,
+exact steps, samples, result, and evidencePath survive round-trip. Also assert
+the pair's procedure version and typed pair orders bind exactly the compositor
+or input evidence files and equivalent procedures. Assert manual evidence is
+written by the canonical sorted-key encoder and rejects alternate whitespace or
+key order. Decode a manual comparison
+with nil/empty evidence
 and a deterministic comparison with nonnil manual evidence; assert
 validateStructure() throws for both. Separately call validateCompletion() and
 assert it throws for failed/unmeasured required metrics rather than silently
@@ -859,21 +1099,28 @@ Expected: missing PerformanceMeasurementReport, PerformanceComparisonReport, and
 - [ ] **Step 3: Implement schema and validators.**
 
 Use explicit Codable structs, not an untyped dictionary. Every required object
-has exactly one `MeasurementStatus`. `validateStructure()` checks model
+has exactly one `MeasurementStatus`. `PerformanceFixtureProfile` is the typed
+profile input to the parameterized real `PointerSession` model and CanvasView
+renderer oracles; `PerformanceConfiguration.fixtureProfile` and
+`FixtureIdentity.fixtureProfile` carry that exact profile identity into each
+report and run provenance.
+`validateStructure()` checks model
 samples/median/p95/MAD/publications/checksum/final state; frame sample/frame/
 missed counts; launch cold/warm; allocation bytes/peak; redraw/layout; response
 stalls; input samples/latency/missed samples; memory series/aggregates/matched
 baseline/resource counts/phases; typed provenance and foundation/build
-versions; and the conditional manualEvidence rule. The comparison harness
+versions; and the conditional manualEvidence rule. It rejects a fixture-profile
+mismatch or any attempt to concatenate `standard12` and `dense1000` populations.
+The comparison harness
 requires each measured raw timing array to contain exactly `trialCount` finite,
 strictly positive values and recomputes its p95; failed/unmeasured diagnostics
-may use empty arrays. `PairOrder` and `MetricComparison.pairOrders` require
-the exact 15 baseline-first then 15 candidate-first sequence. It recomputes
+may use empty arrays. The artifact records require the exact 15 baseline-first
+then 15 candidate-first sequence, and metrics pair values by recorded sample
+indices. It recomputes
 the bootstrap interval from deltas/seed/resample count and rejects tampering;
 `improvementClaimed` is true only when the recomputed delta upper bound is
 strictly below zero and is false otherwise, including `acceptedNoRegression`.
-It then performs a
-performs a measured-status preflight on every required input metric and throws
+It then performs a measured-status preflight on every required input metric and throws
 before constructing or writing a comparison if any input is failed/unmeasured.
 `PerformanceComparisonReport.validateStructure()` accepts measured
 comparisons only. `validateCompletion()` rejects missing paired/resilience
@@ -889,6 +1136,17 @@ Expected: complete schema round-trip and rejection tests pass.
 
 ## Task 3: Define paired measurement, identity, budget, and resilience protocol
 
+Task 3b is the E-foundation adapter seam: it defines the compositor, process,
+manual, and combined-frame protocols plus honest `.unmeasured`/`revise`
+fallbacks. Task 3c is the E-foundation orchestration seam: E implements
+`PerformanceCLI` and `scripts/benchmark-quality.sh` here, parameterized over
+both `standard12` and `dense1000`, before F-foundation. F-foundation imports
+and wires the existing CLI into the launcher; E-execution only consumes these
+unchanged commands to produce the two fixture-profile evidence sets. Task 3c
+also writes the typed `PerformanceCampaignCompletionManifest` only after
+validating exactly one accepted comparison for each profile; an individual
+`PerformanceComparisonReport` covers one profile and never aggregates both.
+
 **Files:**
 
 - Modify: Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift
@@ -899,18 +1157,39 @@ Expected: complete schema round-trip and rejection tests pass.
 - Create: Tests/PointerAppKitTests/PerformanceCLITests.swift
 - Create: scripts/benchmark-quality.sh
 - Create: .codex/sdd/reports/quality-campaign/performance/README.md
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/measurements/baseline.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/measurements/candidate.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/baseline.json (published run-provenance copy)
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/provenance/candidate.json (published run-provenance copy)
-- Create at runtime: build/baseline/measurements/measurement.json
-- Create at runtime: build/candidate/measurements/measurement.json
-- Create at runtime: build/baseline/run-provenance.json
-- Create at runtime: build/candidate/run-provenance.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/pair-eligibility.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/paired-comparison.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/comparisons/manual/<metricID>.json
-- Create at runtime: .codex/sdd/reports/quality-campaign/performance/resilience/resilience.json
+For each variant and each fixture profile, the script writes a separate
+configuration/provenance and report set under these exact paths:
+
+```text
+build/standard12/baseline/Pointer.app
+build/standard12/candidate/Pointer.app
+build/standard12/pair-execution/partial/<pairOrder>-<pairIndex>.json
+build/dense1000/baseline/Pointer.app
+build/dense1000/candidate/Pointer.app
+build/dense1000/pair-execution/partial/<pairOrder>-<pairIndex>.json
+.codex/sdd/reports/quality-campaign/performance/standard12/measurements/{baseline,candidate}.json
+.codex/sdd/reports/quality-campaign/performance/standard12/provenance/{baseline,candidate}.json
+.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/pair-eligibility.json
+.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/pair-execution.json
+.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/paired-comparison.json
+.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/manual/<metricID>.json
+.codex/sdd/reports/quality-campaign/performance/standard12/resilience/resilience.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/measurements/{baseline,candidate}.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/provenance/{baseline,candidate}.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/pair-eligibility.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/pair-execution.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/paired-comparison.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/manual/<metricID>.json
+.codex/sdd/reports/quality-campaign/performance/dense1000/resilience/resilience.json
+.codex/sdd/reports/quality-campaign/performance/campaign-completion/manifest.json
+```
+
+The two profiles retain separate resilience outputs alongside their comparison
+directories. Task 3c writes the typed `PerformanceCampaignCompletionManifest`
+at the final path only after it has loaded exactly one accepted comparison for
+each profile; it rejects missing, duplicate, or concatenated profiles. No path
+is reused across profiles, and no aggregate combines the two sample
+populations.
 
 - [ ] **Step 1: Write failing paired-protocol tests.**
 
@@ -927,9 +1206,16 @@ Expected: complete schema round-trip and rejection tests pass.
     func testComparisonWriterRejectsProvenanceMismatchWithoutOutput()
     func testComparisonWriterRejectsEligibilityMismatchWithoutOutput()
     func testComparisonWriterInjectsExactInputHashesIntoPersistedReport()
+    func testCampaignCompletionManifestRequiresBothFixtureProfilesAndSeparateArtifacts()
+    func testComparisonDraftIsOpaqueAndWriterInjectsReportMetadata()
+    func testCampaignCompletionManifestRejectsDuplicateOrConcatenatedProfiles()
+    func testPairExecutionArtifactHasThirtyUniqueIndexedRecords()
+    func testComparisonPairsByRecordedIndicesAndRejectsArtifactMismatch()
+    func testBenchmarkQualityInterleavesBaselineAndCandidatePerTrial()
+    func testManualEvidencePairBindsVariantsCommitsHashesArtifactAndProcedure()
     func testInternalComparisonCalculationIsDeferredAndNonWriting()
     func testInternalComparisonLoadsAndValidatesManualEvidenceBeforeDraft()
-    func testComparisonCarriesTypedPairOrdersExactBaselineThenCandidateSequence()
+    func testPairExecutionArtifactCarriesTypedOrderSequence()
     func testImprovementClaimRequiresRecomputedBootstrapUpperBound()
     func testBootstrapIntervalRejectsTamperedSummary()
     func testMetricComparisonRejectsNonfiniteOrNonpositiveSamplesOrInvalidBudget()
@@ -951,28 +1237,55 @@ Also assert full `baselineMeasurementIdentity` and
 Xcode, developerDirectory, power/display state, and buildConfiguration, with
 distinct source commits matching each run/build provenance. Require nonempty
 ratios/deltas of exactly `totalPairs == pairsPerOrder * 2 == 30` per metric.
-Round-trip typed `MetricComparison.pairOrders` and require exactly 15
-`PairOrder.baselineFirst` entries followed by exactly 15
-`PairOrder.candidateFirst` entries. Assert `improvementClaimed` is true only
+Round-trip artifact `records` and require exactly 15 `PairOrder.baselineFirst`
+entries followed by exactly 15 `PairOrder.candidateFirst` entries, with every
+metric paired by recorded sample indices. Assert `improvementClaimed` is true only
 when the recomputed bootstrap delta upper bound (`upperDelta`) is strictly
 below zero; it is false otherwise, including for `acceptedNoRegression`, which
 is not an improvement claim. Recompute each `BootstrapInterval` from the
 paired deltas, seed, and resample count and reject tampered summaries or seed/
 count values.
+Round-trip `PerformancePairExecutionArtifact` and require exactly 30 unique
+records, 15 of each order, with only pairIndex/order, baseline/candidate sample
+indices, and `baselineStartedAtUTC`, `candidateStartedAtUTC`,
+`baselineEndedAtUTC`, and `candidateEndedAtUTC`; assert the artifact-level baseline/candidate
+IDs and lowercase 64-hex report hashes. Assert the artifact hash is verified,
+samples are paired by recorded indices, and an artifact/hash/order mismatch
+causes both internal comparison and public writing to produce no output.
 Round-trip lowercase 64-hex `baselineMeasurementReportSHA256` and
 `candidateMeasurementReportSHA256` fields, and assert the writer computes and
 verifies them against the exact input report bytes, injects them into the final
-persisted report, and emits output atomically.
+persisted report, injects `reportKind == .comparison` and `schemaVersion == 1`,
+and emits output atomically. Assert the public `Sendable, Equatable`
+`PerformanceComparisonDraft` surface has no initializer or stored properties;
+its internal compare-only
+carrier excludes those metadata and hash fields.
+Exercise both `PerformanceFixtureProfile` values and assert each variant has
+exactly one configuration/provenance and measurement report for
+`standard12` (`pointer-fixture-standard12/v1`, identifier
+`pointer-standard-12-marks`, 12 marks) and `dense1000`
+(`pointer-fixture-dense1000/v1`, identifier `pointer-dense-1000-marks`, 1,000
+marks). Assert their measurement, provenance, pair-artifact, comparison,
+resilience, and output-root paths remain distinct, their
+`PerformanceConfiguration.fixtureProfile`/`fixtureVersion` and
+`FixtureIdentity.fixtureProfile`/`fixtureVersion`/`markCount` values match
+end-to-end, and the Task 3c completion manifest rejects either missing profile,
+duplicate profile, or concatenated cross-profile population. Apply
+the 16.7 ms renderer-plus-compositor and combined-frame p95 gates separately
+to both profiles.
 Call only the public
-`writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
+`writeComparison(draft:baselineURL:candidateURL:pairExecutionURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`
 writer with a hash-free `PerformanceComparisonDraft`, persisted report paths,
-and the required existing manual-evidence directory (empty for deterministic
-runs), and assert there is no writer overload without that directory;
+the required existing manual-evidence directory (empty for deterministic runs),
+and the required pair-execution artifact URL; assert there is no writer
+overload without either required input;
 assert that internal decoded
-`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
-loads and validates manual evidence before producing the draft, remains
-calculation-deferred and non-writing in Task 2b, and does not claim hash
-verification. The public writer rejects byte-hash, identity, fixture,
+`compare(baseline:candidate:configuration:eligibility:pairExecutionArtifact:manualEvidenceDirectory:pairExecutionArtifactSHA256:baselineMeasurementReportSHA256:candidateMeasurementReportSHA256:)`
+receives the decoded artifact plus separate SHA, validates manual evidence and
+artifact records, recomputes/validates the canonical artifact SHA before
+producing the draft, and remains calculation-deferred and non-writing in Task
+2b. Exact input measurement-byte/source-URL hash verification remains public-
+writer-owned. The public writer rejects byte-hash, identity, fixture,
 provenance, or eligibility mismatches without creating an output file.
 Round-trip persisted `baselineFixture` and `candidateFixture` values, assert
 they are equal and match the corresponding measurement reports, reject
@@ -1027,29 +1340,39 @@ the envelope syntax and decodes/cross-checks its embedded BuildProvenance, then
 embeds the build/run artifacts in the report, but does not claim Git state or
 ancestry on the shell's behalf.
 
-OffscreenCanvasRendererAdapter measures the real CanvasView/CGContext path;
-SignpostWindowServerAdapter uses os_signpost/CACurrentMediaTime and records
-unmeasured when WindowServer cannot be observed; ProcessMetricsAdapter uses
-`/usr/bin/time` and task_info/process metrics for launch/RSS;
-ManualMetricAdapter writes ManualMetricEvidence for physical input-to-visible/
-compositor cases. None synthesizes input or captures the screen. Define the
-separate model, renderer, compositor, combined frame, launch, allocation,
-redraw/layout, responsiveness, input-to-visible, and 600-second memory runs,
-plus the repeated-toggle, rapid-tool, 1,000-mark, clear/undo, palette,
-display-churn, and shortcut-timeout resource checks. If the host cannot
-instrument an OS-level metric, record `unmeasured` with its adapter status and
-keep `validateCompletion()`/disposition `revise`; never fabricate a measured
-value. Keep manual metric evidence in `ManualMetricEvidence` and the final
-ledger; deterministic tests cannot substitute for a missing measured physical
-metric. This step defines the protocol but does not pin or execute a paired
-baseline/candidate run; that is E-execution after F tasks 1–3.
+The current `OffscreenCanvasRendererAdapter` measures the real
+CanvasView/CGContext renderer path. The current
+`SignpostWindowServerAdapter`, `UnavailableCombinedFrameAdapter`, and
+`DefaultProcessMetricsAdapter` return honest `.unmeasured` values; a
+`CACurrentMediaTime` duration is not WindowServer compositor measurement, and
+`combinedFrame` is not a renderer-plus-compositor sum. `ManualMetricAdapter`
+currently provides only the Codable evidence schema; its Task 3c writer is not
+yet present. Task 3b defines these compositor, process, manual, and
+combined-frame protocols and their `.unmeasured`/`revise` fallbacks. The
+the model/renderer fixture code is profile-aware for both standard12 and
+dense1000, with parameterized fixture construction and semantic checks covered
+by tests. Task 3c
+and E-execution supply external trace/process/manual evidence and sidecars
+through those protocols. None synthesizes input or captures the screen. Define
+the separate model, renderer, compositor, combined frame, launch, allocation,
+redraw/layout, responsiveness, input-to-visible, and 600-second memory runs
+for each fixture profile, plus the repeated-toggle, rapid-tool, 1,000-mark,
+clear/undo, palette, display-churn, and shortcut-timeout resource checks. If
+the host cannot instrument an OS-level metric, record `unmeasured` with its
+adapter status and keep `validateCompletion()`/disposition `revise`; never
+fabricate a measured value. Keep manual metric evidence in
+`ManualMetricEvidence` and the final ledger; deterministic tests cannot
+substitute for missing measured physical evidence. This step defines the
+protocol but does not pin or execute a paired baseline/candidate run; that is
+E-execution after F tasks 1–3.
 
 - [ ] **Step 4: Implement report disposition and foundation handoff.**
 
 Ratios at most 1.10 with no breach, leak, or missing metric may be
 `acceptedNoRegression`; any ratio above 1.10, breach, leak, invalid structure,
-failed metric, or unmeasured required metric makes completion disposition
-`revise` and blocks completion. Structural report generation still preserves
+or measurement report with a failed or unmeasured required metric structurally
+requires disposition `revise` (never `blocked` or `acceptedNoRegression`) and
+blocks completion. Structural report generation still preserves
 failed/unmeasured statuses for diagnosis. Return a measured bottleneck to the
 named A-foundation/A-harness, B-core/B-render-integration, C-product-surface,
 or D-visual-language owner with metric, reproduction, identity, comparison,
@@ -1069,19 +1392,33 @@ at this gate, these exact commands:
 
 ```text
 Pointer --quality-performance --format json --variant baseline|candidate \
+  --fixture-profile standard12|dense1000 \
   (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
   --run-provenance-file <path> --output-dir <directory>
 Pointer --quality-compare --format json \
+  --fixture-profile standard12|dense1000 \
   --baseline-report <path> --candidate-report <path> \
   --pair-eligibility-file <path> \
+  --pair-execution-artifact <path> \
   --manual-evidence-dir <comparisons/manual> \
   --output-dir <comparisons>
 ```
 
+For paired execution, each `--quality-performance` invocation carries
+`--fixture-profile standard12|dense1000` and additionally accepts
+`--pair-order baselineFirst|candidateFirst`, `--pair-index <0...29>`, and
+`--partial-pair-artifact <path>`; indices 0–14 are
+`.baselineFirst` and 15–29 are `.candidateFirst`, and each invocation records
+one variant trial into that partial artifact. `benchmark-quality.sh` invokes the
+two variants per trial in the required order, writes aggregate reports and
+their hashes, then assembles the 30 partials into the final
+`PerformancePairExecutionArtifact` before compare.
+
 The first command emits one `PerformanceMeasurementReport`; for the second,
-`--manual-evidence-dir` must name an existing directory and is always forwarded
-as `manualEvidenceDirectory` to internal `compare` and the public
-`writeComparison`. Internal `compare` loads and validates that evidence before
+`--manual-evidence-dir` must name an existing directory and binds directly to
+`manualEvidenceDirectory` on internal `compare` and the public
+`writeComparison`. Internal
+`compare` loads and validates that evidence before
 returning the hash-free draft; deterministic runs require the directory to be
 empty. The second emits one authoritative
 `PerformanceComparisonReport` only for clean 40-hex commit
@@ -1097,41 +1434,53 @@ the performance root.
 ## Task 4: Execute the paired immutable protocol after F-foundation
 
 This task starts only after F tasks 1–3 pass their worker, reviewer, and
-adversarial gates and produce the accepted foundation artifact. The
-authoritative comparison lineage uses clean 40-hex baseline and candidate
+adversarial gates and produce the accepted foundation artifact. The execution
+consumes the E-foundation `PerformanceCLI` and
+`scripts/benchmark-quality.sh` implementations; it does not modify their
+source or claim code/script ownership. The authoritative comparison lineage
+uses clean 40-hex baseline and candidate
 commits only; content-manifest measurements remain diagnostic-only and cannot
 be promoted or compared authoritatively without a separately accepted lineage
 artifact. At execution time, resolve both commits, verify clean checkout/head
-correspondence and ancestry, and build each commit with F's explicit output
-root contract. Pin the baseline only after the foundation checkpoint; a stale
-report, dirty checkout, symbolic label, or prior D checkpoint is not eligible.
+correspondence and ancestry, and build each commit with F's explicit
+fixture-profile-specific output-root contract. Pin the baseline only after the
+foundation checkpoint; a stale report, dirty checkout, symbolic label, prior D
+checkpoint, or missing fixture profile is not eligible.
 
 - [ ] **Step 1:** Observe and record the accepted foundation artifact,
-  baseline/candidate refs, host, fixture, E schema/harness version, and F
-  foundation identity. Require each source worktree to be clean and
+  baseline/candidate refs, both exact fixture profiles, host, fixture, E
+  schema/harness version, and F foundation identity. Require each source
+  worktree to be clean and
   `HEAD == <40hex ref>`, then require
   `git merge-base --is-ancestor <baseline-ref> <candidate-ref>`. Require the
   foundation checkpoint commit to be an ancestor of both refs. The candidate
-  must be a subsequent measured commit with the same host/fixture and a
-  different clean 40-hex commit identity; a content-manifest identity is
+  must be a subsequent measured commit with the same host/fixture and both
+  exact fixture profiles, but a different clean 40-hex commit identity; a
+  content-manifest identity is
   diagnostic-only and is rejected by the authoritative compare.
-- [ ] **Step 2:** Run both variants, then the comparison and resilience output:
+- [ ] **Step 2:** Run both variants for each fixture profile, then that profile's
+  comparison and resilience output:
 
-      DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-quality.sh \
-        --baseline-commit-sha <40hex-baseline> --candidate-commit-sha <40hex-candidate> \
-        --baseline-root build/baseline --candidate-root build/candidate \
-        --foundation-provenance .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json \
-        --manual-evidence-dir .codex/sdd/reports/quality-campaign/performance/comparisons/manual \
-        --output-dir .codex/sdd/reports/quality-campaign/performance
+      for fixture_profile in standard12 dense1000; do
+        DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/benchmark-quality.sh \
+          --fixture-profile "$fixture_profile" \
+          --baseline-commit-sha <40hex-baseline> --candidate-commit-sha <40hex-candidate> \
+          --baseline-root "build/$fixture_profile/baseline" --candidate-root "build/$fixture_profile/candidate" \
+          --foundation-provenance .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json \
+          --manual-evidence-dir ".codex/sdd/reports/quality-campaign/performance/$fixture_profile/comparisons/manual" \
+          --output-dir ".codex/sdd/reports/quality-campaign/performance/$fixture_profile"
+      done
 
-  `benchmark-quality.sh` creates scoped source worktrees at the two refs,
+  `benchmark-quality.sh` creates scoped source worktrees at the two refs for
+  the selected fixture profile, and the Task 3c implementation loops over both
+  `standard12` and `dense1000` without sharing a build or report path. It
   verifies clean status, exact `HEAD` values, ancestry, and foundation
   checkpoint ancestry, validates the explicit accepted foundation provenance,
   then invokes F's
-  `scripts/build-app.sh --output-root build/baseline --build-configuration
+  `scripts/build-app.sh --output-root build/<fixture-profile>/baseline --build-configuration
   release --foundation-provenance
   .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json` and
-  `scripts/build-app.sh --output-root build/candidate --build-configuration
+  `scripts/build-app.sh --output-root build/<fixture-profile>/candidate --build-configuration
   release --foundation-provenance
   .codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json`.
   Each output root must
@@ -1140,27 +1489,49 @@ report, dirty checkout, symbolic label, or prior D checkpoint is not eligible.
   hashes each executable and cross-checks it against that BuildProvenance
   before passing the per-variant `--run-provenance-file` to
   `--quality-performance`. It alone creates the per-variant
-  `PerformanceRunProvenance` and `PerformancePairEligibility`, then invokes
-  the full measurement branch for baseline then candidate, writing
-  `build/baseline/measurements/measurement.json` and
-  `build/candidate/measurements/measurement.json` plus each
-  `<variantRoot>/run-provenance.json`. It publishes byte-identical copies as
-  `performance/measurements/baseline.json` and `candidate.json`, writes the
-  typed `performance/comparisons/pair-eligibility.json`, then invokes the
+  `PerformanceRunProvenance` and `PerformancePairEligibility`, then
+  interleaves per-trial measurement: for pair indices 0 through 14 it runs
+  one baseline→candidate trial, then for pair indices 15 through 29 it runs
+  one candidate→baseline trial. Each per-trial CLI invocation writes a partial
+  record under `build/<fixture-profile>/pair-execution/partial/<pairOrder>-<pairIndex>.json`;
+  the script assembles and writes the aggregate measurement reports at
+  `build/<fixture-profile>/baseline/measurements/measurement.json` and
+  `build/<fixture-profile>/candidate/measurements/measurement.json` plus each
+  `<variantRoot>/run-provenance.json`, computes their exact report hashes,
+  finalizes the typed records with those hashes, and persists
+  `performance/<fixture-profile>/comparisons/pair-execution.json` before invoking compare. The
+  per-trial form is
+
+      Pointer --quality-performance --format json --variant baseline|candidate \
+        --fixture-profile <standard12|dense1000> \
+        (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
+        --run-provenance-file <path> --output-dir <variantRoot> \
+        --pair-order baselineFirst|candidateFirst --pair-index <0...29> \
+        --partial-pair-artifact build/<fixture-profile>/pair-execution/partial/<pairOrder>-<pairIndex>.json
+
+  and the script invokes the two variants for each pair before advancing to the
+  next index. It never runs a whole baseline batch
+  before a whole candidate batch. It publishes byte-identical copies as
+  `performance/<fixture-profile>/measurements/baseline.json` and `candidate.json`,
+  writes the typed `performance/<fixture-profile>/comparisons/pair-eligibility.json`,
+  then invokes the
   compare CLI with only report paths:
 
       Pointer --quality-compare --format json \
-        --baseline-report build/baseline/measurements/measurement.json \
-        --candidate-report build/candidate/measurements/measurement.json \
-        --pair-eligibility-file .codex/sdd/reports/quality-campaign/performance/comparisons/pair-eligibility.json \
-        --manual-evidence-dir .codex/sdd/reports/quality-campaign/performance/comparisons/manual \
-        --output-dir .codex/sdd/reports/quality-campaign/performance/comparisons
+        --fixture-profile <standard12|dense1000> \
+        --baseline-report build/<fixture-profile>/baseline/measurements/measurement.json \
+        --candidate-report build/<fixture-profile>/candidate/measurements/measurement.json \
+        --pair-eligibility-file .codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/pair-eligibility.json \
+        --pair-execution-artifact .codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/pair-execution.json \
+        --manual-evidence-dir .codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/manual \
+        --output-dir .codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons
 
   The compare rejects
   content-manifest identities, mismatched refs/provenance/foundation, and any
   failed or unmeasured input before writing
-  `comparisons/paired-comparison.json`; resilience remains at
-  `resilience/resilience.json`. It exits nonzero on missing IDs, nonzero CLI
+  `<fixture-profile>/comparisons/paired-comparison.json`; resilience remains at
+  `<fixture-profile>/resilience/resilience.json`. It exits nonzero on missing IDs,
+  missing profiles, cross-profile paths, nonzero CLI
   status, provenance/hash mismatch, invalid structure, non-ancestor refs, or
   completion `revise`.
 - [ ] **Step 3:** Hand raw samples, identities, disposition, and any measured
@@ -1189,8 +1560,10 @@ script-side provenance artifact and executable/bundle hash correspondence,
 canonical full source-manifest scope, separate
 PerformanceComparisonHarness/per-metric collection with measured-only
 preflight, mutually exclusive immutable source identities, baseline eligibility
-and E/F sequencing, executable PerformanceCLI/benchmark-quality ordering and
-measurements/comparisons/resilience output paths, allowed instrumentation
-adapters, production-path metrics, memory/resource phases, budgets, resilience
-runs, evidence reports, and required review loop are covered. No commit
+and E/F sequencing, executable PerformanceCLI/benchmark-quality ordering,
+typed `standard12`/`dense1000` fixture profiles with separate output paths and
+per-profile 16.7 ms gates, honest current adapter fallbacks plus external
+evidence sidecars, allowed instrumentation adapters, production-path metrics,
+memory/resource phases, budgets, resilience runs, evidence reports, and
+required review loop are covered. No commit
 instruction or cross-workstream source edit is included.

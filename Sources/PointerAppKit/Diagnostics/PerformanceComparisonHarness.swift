@@ -3,7 +3,7 @@ import CryptoKit
 
 @MainActor
 public enum PerformanceComparisonHarness {
-    public static func preflight(
+    internal static func preflight(
         baseline: PerformanceMeasurementReport,
         candidate: PerformanceMeasurementReport,
         configuration: PerformanceConfiguration,
@@ -15,7 +15,7 @@ public enum PerformanceComparisonHarness {
         try baseline.validateCompletion()
         try candidate.validateCompletion()
 
-        try require(configuration == .standard, "comparison requires the standard configuration")
+        try require(configuration.isCanonical, "comparison requires a canonical configuration")
         try require(baseline.reportKind == .measurement && candidate.reportKind == .measurement, "comparison inputs must be measurement reports")
         try require(baseline.runProvenance.variant == "baseline", "baseline run variant must be baseline")
         try require(candidate.runProvenance.variant == "candidate", "candidate run variant must be candidate")
@@ -52,28 +52,55 @@ public enum PerformanceComparisonHarness {
         candidate: PerformanceMeasurementReport,
         configuration: PerformanceConfiguration,
         eligibility: PerformancePairEligibility,
-        manualEvidenceDirectory: URL
+        pairExecutionArtifact: PerformancePairExecutionArtifact,
+        manualEvidenceDirectory: URL,
+        pairExecutionArtifactSHA256: String,
+        baselineMeasurementReportSHA256: String? = nil,
+        candidateMeasurementReportSHA256: String? = nil
     ) throws -> PerformanceComparisonDraft {
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
         let pairCount = configuration.totalPairs
         try require(configuration.pairsPerOrder == 15 && pairCount == 30, "comparison requires fifteen pairs per order")
+        let artifactHash = pairExecutionArtifactSHA256
+        let baselineReportHash = baselineMeasurementReportSHA256 ?? pairExecutionArtifact.baselineMeasurementReportSHA256
+        let candidateReportHash = candidateMeasurementReportSHA256 ?? pairExecutionArtifact.candidateMeasurementReportSHA256
+        try pairExecutionArtifact.validate(
+            expectedBaselineID: baseline.identity.sourceCommitSHA!,
+            expectedCandidateID: candidate.identity.sourceCommitSHA!,
+            expectedBaselineReportHash: baselineMeasurementReportSHA256,
+            expectedCandidateReportHash: candidateMeasurementReportSHA256,
+            expectedArtifactHash: artifactHash,
+            pairCount: pairCount
+        )
         let manualEvidence = try loadManualEvidence(
             from: manualEvidenceDirectory,
             host: baseline.host.machineIdentifier,
-            pairCount: pairCount
+            pairCount: pairCount,
+            baselineID: baseline.identity.sourceCommitSHA!,
+            candidateID: candidate.identity.sourceCommitSHA!,
+            baselineReportHash: baselineReportHash,
+            candidateReportHash: candidateReportHash,
+            artifactHash: artifactHash,
+            pairOrders: pairExecutionArtifact.records.sorted { $0.pairIndex < $1.pairIndex }.map(\.order)
         )
+        let records = pairExecutionArtifact.records.sorted { $0.pairIndex < $1.pairIndex }
 
         let metrics = try PerformanceMetricID.allCases.map { metricID in
-            let baselineSamples = try samples(for: metricID, report: baseline, pairCount: pairCount)
+            let baselineValues = try samples(for: metricID, report: baseline, pairCount: pairCount)
+            let baselineSamples = records.map { baselineValues[$0.baselineSampleIndex] }
+            let candidateValues = try samples(for: metricID, report: candidate, pairCount: pairCount)
+            let observedCandidateSamples = records.map { candidateValues[$0.candidateSampleIndex] }
             let candidateSamples: [Double]
-            let evidence: ManualMetricEvidence?
+            let evidence: ManualMetricEvidencePair?
             let evidenceClass: MetricEvidenceClass
             if let manual = manualEvidence[metricID] {
-                candidateSamples = manual.samples
+                try require(manual.baseline.samples.count == pairCount && manual.candidate.samples.count == pairCount, "manual evidence pair sample count does not match totalPairs")
+                try require(manual.baseline.samples == baselineSamples && manual.candidate.samples == observedCandidateSamples, "manual evidence samples do not match pair execution")
+                candidateSamples = manual.candidate.samples
                 evidence = manual
                 evidenceClass = .manual
             } else {
-                candidateSamples = try samples(for: metricID, report: candidate, pairCount: pairCount)
+                candidateSamples = observedCandidateSamples
                 evidence = nil
                 evidenceClass = .deterministic
             }
@@ -101,7 +128,6 @@ public enum PerformanceComparisonHarness {
                 bootstrapInterval: interval,
                 manualEvidence: evidence,
                 disposition: disposition,
-                pairOrders: PairOrder.canonicalSequence(pairCount: pairCount),
                 improvementClaimed: interval.upperDelta < 0
             )
         }
@@ -127,6 +153,8 @@ public enum PerformanceComparisonHarness {
             baselineRunProvenance: baseline.runProvenance,
             candidateRunProvenance: candidate.runProvenance,
             pairEligibility: eligibility,
+            pairExecutionArtifact: pairExecutionArtifact,
+            pairExecutionArtifactSHA256: artifactHash,
             baselineFixture: baseline.fixture,
             candidateFixture: candidate.fixture,
             baselineMeasurementIdentity: baseline.identity,
@@ -149,26 +177,7 @@ public enum PerformanceComparisonHarness {
         draft: PerformanceComparisonDraft,
         baselineURL: URL,
         candidateURL: URL,
-        manualEvidenceDirectory: URL,
-        outputDirectory: URL,
-        configuration: PerformanceConfiguration,
-        eligibility: PerformancePairEligibility
-    ) throws -> PerformanceComparisonReport {
-        try _writeComparison(
-            draft: draft,
-            baselineURL: baselineURL,
-            candidateURL: candidateURL,
-            manualEvidenceDirectory: manualEvidenceDirectory,
-            outputDirectory: outputDirectory,
-            configuration: configuration,
-            eligibility: eligibility
-        )
-    }
-
-    private static func _writeComparison(
-        draft: PerformanceComparisonDraft,
-        baselineURL: URL,
-        candidateURL: URL,
+        pairExecutionURL: URL,
         manualEvidenceDirectory: URL,
         outputDirectory: URL,
         configuration: PerformanceConfiguration,
@@ -176,19 +185,31 @@ public enum PerformanceComparisonHarness {
     ) throws -> PerformanceComparisonReport {
         let baselineData = try Data(contentsOf: baselineURL)
         let candidateData = try Data(contentsOf: candidateURL)
+        let pairExecutionData = try Data(contentsOf: pairExecutionURL)
+        let baselineHash = sha256(baselineData)
+        let candidateHash = sha256(candidateData)
+        let canonicalPairExecutionData = try PerformancePairExecutionArtifact.canonicalData(from: pairExecutionData)
+        try require(pairExecutionData == canonicalPairExecutionData, "pair execution artifact bytes are not canonical")
+        let pairExecutionHash = sha256(canonicalPairExecutionData)
         let baseline = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: baselineData)
         let candidate = try JSONDecoder().decode(PerformanceMeasurementReport.self, from: candidateData)
+        let pairExecutionArtifact = try JSONDecoder().decode(PerformancePairExecutionArtifact.self, from: pairExecutionData)
         try preflight(baseline: baseline, candidate: candidate, configuration: configuration, eligibility: eligibility)
         let expectedDraft = try compare(
             baseline: baseline,
             candidate: candidate,
             configuration: configuration,
             eligibility: eligibility,
-            manualEvidenceDirectory: manualEvidenceDirectory
+            pairExecutionArtifact: pairExecutionArtifact,
+            manualEvidenceDirectory: manualEvidenceDirectory,
+            pairExecutionArtifactSHA256: pairExecutionHash,
+            baselineMeasurementReportSHA256: baselineHash,
+            candidateMeasurementReportSHA256: candidateHash
         )
+        try require(expectedDraft.pairExecutionArtifactSHA256 == pairExecutionHash, "pair execution artifact hash does not match exact input bytes")
+        try require(pairExecutionArtifact.baselineMeasurementReportSHA256 == baselineHash, "pair execution baseline report hash mismatch")
+        try require(pairExecutionArtifact.candidateMeasurementReportSHA256 == candidateHash, "pair execution candidate report hash mismatch")
         try require(draft == expectedDraft, "comparison draft does not match decoded measurements")
-        let baselineHash = sha256(baselineData)
-        let candidateHash = sha256(candidateData)
         let report = PerformanceComparisonReport(draft: draft, baselineMeasurementReportSHA256: baselineHash, candidateMeasurementReportSHA256: candidateHash)
         try report.validateCompletion()
 
@@ -272,13 +293,19 @@ public enum PerformanceComparisonHarness {
     private static func loadManualEvidence(
         from directory: URL,
         host: String,
-        pairCount: Int
-    ) throws -> [PerformanceMetricID: ManualMetricEvidence] {
+        pairCount: Int,
+        baselineID: String,
+        candidateID: String,
+        baselineReportHash: String,
+        candidateReportHash: String,
+        artifactHash: String,
+        pairOrders: [PairOrder]
+    ) throws -> [PerformanceMetricID: ManualMetricEvidencePair] {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
         try require(fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory) && isDirectory.boolValue, "manual evidence directory is required")
         let allowed: Set<PerformanceMetricID> = [.compositor, .inputToVisible]
-        var result: [PerformanceMetricID: ManualMetricEvidence] = [:]
+        var result: [PerformanceMetricID: ManualMetricEvidencePair] = [:]
         let entries = try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [])
         for entry in entries {
             let values = try entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -291,33 +318,63 @@ public enum PerformanceComparisonHarness {
             try require(result[metricID] == nil, "duplicate manual evidence metric")
             let data = try Data(contentsOf: entry)
             try validateManualJSONShape(data)
+            let canonicalData = try ManualMetricAdapter.canonicalData(from: data)
+            try require(data == canonicalData, "manual evidence bytes are not canonical")
             let adapter = try JSONDecoder().decode(ManualMetricAdapter.self, from: data)
             let evidence = adapter.evidence
-            try require(evidence.metricID == metricID, "manual evidence metric does not match its file")
-            try require(evidence.evidenceClass == .manual, "manual evidence class is invalid")
-            try require(evidence.host == host, "manual evidence host mismatch")
-            try require(!evidence.recordedAt.isEmpty && evidence.recordedAt.hasSuffix("Z"), "manual evidence timestamp is required")
-            try require(ISO8601DateFormatter().date(from: evidence.recordedAt) != nil, "manual evidence timestamp is invalid")
-            try require(!evidence.permissions.isEmpty && evidence.permissions.allSatisfy { !$0.isEmpty }, "manual evidence permissions are required")
-            try require(!evidence.steps.isEmpty && !evidence.result.isEmpty, "manual evidence steps and result are required")
-            try require(evidence.samples.count == pairCount && evidence.samples.allSatisfy { $0.isFinite && $0 > 0 }, "manual evidence samples must contain exactly totalPairs positive values")
-            try require(!evidence.evidencePath.hasPrefix("/") && !evidence.evidencePath.split(separator: "/").contains(".."), "manual evidence path must be relative")
-            try require(evidence.evidencePath == entry.lastPathComponent, "manual evidence path does not match its file")
+            try require(evidence.pairOrders == pairOrders, "manual evidence pair order does not match execution artifact")
+            try validateManualEvidencePair(evidence, metricID: metricID, host: host, baselineID: baselineID, candidateID: candidateID, baselineReportHash: baselineReportHash, candidateReportHash: candidateReportHash, artifactHash: artifactHash, pairCount: pairCount)
+            try require(evidence.baseline.evidencePath == entry.lastPathComponent && evidence.candidate.evidencePath == entry.lastPathComponent, "manual evidence path does not match its file")
             result[metricID] = evidence
         }
         return result
     }
 
     private static func validateManualJSONShape(_ data: Data) throws {
-        guard let object = try? JSONSerialization.jsonObject(with: data),
-              let root = object as? [String: Any],
-              Set(root.keys) == ["evidence"],
-              let evidence = root["evidence"] as? [String: Any]
-        else {
-            throw PerformanceValidationError.invalid("manual evidence JSON envelope is invalid")
-        }
-        let expectedKeys: Set<String> = ["metricID", "evidenceClass", "host", "recordedAt", "permissions", "steps", "samples", "result", "evidencePath"]
-        try require(Set(evidence.keys) == expectedKeys, "manual evidence JSON fields are invalid")
+        _ = try ManualMetricAdapter.canonicalData(from: data)
+    }
+
+    private static func validateManualEvidencePair(
+        _ pair: ManualMetricEvidencePair,
+        metricID: PerformanceMetricID,
+        host: String,
+        baselineID: String,
+        candidateID: String,
+        baselineReportHash: String,
+        candidateReportHash: String,
+        artifactHash: String,
+        pairCount: Int
+    ) throws {
+        try require(!pair.procedureVersion.isEmpty, "manual evidence procedure version is required")
+        try require(pair.baseline.permissions == pair.candidate.permissions, "manual evidence permissions differ between variants")
+        try require(pair.baseline.steps == pair.candidate.steps, "manual evidence procedure steps differ between variants")
+        try require(pair.baseline.evidencePath == pair.candidate.evidencePath, "manual evidence paths differ between variants")
+        try validateManualEvidenceVariant(pair.baseline, expectedVariant: "baseline", expectedID: baselineID, expectedReportHash: baselineReportHash, artifactHash: artifactHash, metricID: metricID, host: host, pairCount: pairCount)
+        try validateManualEvidenceVariant(pair.candidate, expectedVariant: "candidate", expectedID: candidateID, expectedReportHash: candidateReportHash, artifactHash: artifactHash, metricID: metricID, host: host, pairCount: pairCount)
+    }
+
+    private static func validateManualEvidenceVariant(
+        _ evidence: ManualMetricEvidence,
+        expectedVariant: String,
+        expectedID: String,
+        expectedReportHash: String,
+        artifactHash: String,
+        metricID: PerformanceMetricID,
+        host: String,
+        pairCount: Int
+    ) throws {
+        try require(evidence.variant == expectedVariant, "manual evidence variant mismatch")
+        try require(evidence.sourceCommitSHA == expectedID, "manual evidence source identity mismatch")
+        try require(evidence.measurementReportSHA256 == expectedReportHash, "manual evidence report hash mismatch")
+        try require(evidence.pairExecutionArtifactSHA256 == artifactHash, "manual evidence artifact hash mismatch: expected \(artifactHash), got \(evidence.pairExecutionArtifactSHA256)")
+        try require(evidence.metricID == metricID && evidence.evidenceClass == .manual, "manual evidence metric/class mismatch")
+        try require(evidence.host == host, "manual evidence host mismatch")
+        try require(!evidence.recordedAt.isEmpty && evidence.recordedAt.hasSuffix("Z"), "manual evidence timestamp is required")
+        try require(ISO8601DateFormatter().date(from: evidence.recordedAt) != nil, "manual evidence timestamp is invalid")
+        try require(!evidence.permissions.isEmpty && evidence.permissions.allSatisfy { !$0.isEmpty }, "manual evidence permissions are required")
+        try require(!evidence.steps.isEmpty && !evidence.result.isEmpty, "manual evidence steps and result are required")
+        try require(evidence.samples.count == pairCount && evidence.samples.allSatisfy { $0.isFinite && $0 > 0 }, "manual evidence samples must contain exactly totalPairs positive values")
+        try require(evidence.evidencePath == "\(metricID.rawValue).json", "manual evidence path does not match its metric")
     }
 
     private static func median(_ values: [Double]) -> Double {

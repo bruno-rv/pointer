@@ -1,8 +1,23 @@
 import Foundation
+import AppKit
+import CoreGraphics
 import XCTest
+import PointerCore
 @testable import PointerAppKit
 
 final class PerformanceHarnessTests: XCTestCase {
+    private static let canonicalRenderPlanIdentity = [
+        "state=display=performance-render-display|mode=standby|canvasTool=select|sessionTool=arrow|toolStyle=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000|emoji=👉|spotlight=150000,500000|selection=none|selectedDisplay=none|activeGesture=0|cursor=clickThrough",
+        "committed=id=00000000-0000-0000-0000-000000000001,geometry=arrow:50000,80000:150000,170000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000002,geometry=rectangle:270000,80000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000003,geometry=ellipse:490000,80000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000004,geometry=arrow:710000,80000:810000,170000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000005,geometry=rectangle:50000,320000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000006,geometry=ellipse:270000,320000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000007,geometry=arrow:490000,320000:590000,410000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000008,geometry=rectangle:710000,320000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000009,geometry=ellipse:50000,560000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000010,geometry=arrow:270000,560000:370000,650000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000011,geometry=rectangle:490000,560000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000;id=00000000-0000-0000-0000-000000000012,geometry=ellipse:710000,560000,120000,100000,style=rgba=1000000,0,0,1000000;stroke=4000000;opacity=1000000",
+        "draft=none",
+        "handles=selection=none,0|hover=none,0|resize=0,|delete=0",
+    ].joined(separator: "|")
+    private static let canonicalMinimumPositiveHits = [2, 4, 4, 2, 4, 4, 2, 4, 4, 2, 4, 4]
+    private static let canonicalNegativeRegionCount = 27
+    private static let denseMinimumPositiveHits = Array(repeating: 1, count: 1_000)
+    private static let denseNegativeRegionCount = 9
+    private static let denseStratumCount = 16
+
     func testPerformanceMeasurementReportRoundTripsEveryRequiredMeasurementObject() throws {
         let report = PerformanceFixtures.report()
         let data = try JSONEncoder().encode(report)
@@ -80,6 +95,90 @@ final class PerformanceHarnessTests: XCTestCase {
         XCTAssertEqual(decoded.runProvenance.configuration.pairsPerOrder, 15)
         XCTAssertEqual(decoded.runProvenance.configuration.totalPairs, 30)
         XCTAssertEqual(decoded.runProvenance.harnessVersion, decoded.harnessVersion)
+    }
+
+    func testCanonicalFixtureProfilesExposeExactIDsVersionsAndConfigurations() throws {
+        XCTAssertEqual(PerformanceFixtureProfile.standard12.markCount, 12)
+        XCTAssertEqual(PerformanceFixtureProfile.dense1000.markCount, 1_000)
+        XCTAssertEqual(PerformanceFixtureProfile.standard12.identifier, "pointer-standard-12-marks")
+        XCTAssertEqual(PerformanceFixtureProfile.dense1000.identifier, "pointer-dense-1000-marks")
+        XCTAssertEqual(PerformanceFixtureProfile.standard12.version, "pointer-fixture-standard12/v1")
+        XCTAssertEqual(PerformanceFixtureProfile.dense1000.version, "pointer-fixture-dense1000/v1")
+        XCTAssertEqual(PerformanceConfiguration.standard.fixtureProfile, .standard12)
+        XCTAssertEqual(PerformanceConfiguration.standard.fixtureVersion, PerformanceFixtureProfile.standard12.version)
+        XCTAssertEqual(PerformanceConfiguration.standard12, PerformanceConfiguration.standard)
+        XCTAssertEqual(PerformanceConfiguration.dense1000.fixtureProfile, .dense1000)
+        XCTAssertEqual(PerformanceConfiguration.dense1000.fixtureMarkCount, 1_000)
+        XCTAssertEqual(PerformanceConfiguration.dense1000.fixtureVersion, PerformanceFixtureProfile.dense1000.version)
+    }
+
+    func testFixtureProfileIsBoundToItsConfigurationAndRejectsCrossProfileSpoofing() throws {
+        XCTAssertNoThrow(try PerformanceFixtures.report().validateStructure())
+
+        let spoofedFixture = FixtureIdentity(
+            identifier: PerformanceFixtureProfile.dense1000.identifier,
+            fixtureProfile: .dense1000,
+            fixtureVersion: PerformanceFixtureProfile.dense1000.version,
+            markCount: 12,
+            continuationSamples: PerformanceFixtures.fixture.continuationSamples,
+            warmupCount: PerformanceFixtures.fixture.warmupCount,
+            trialCount: PerformanceFixtures.fixture.trialCount,
+            seed: PerformanceFixtures.fixture.seed
+        )
+        XCTAssertThrowsError(try PerformanceFixtures.report(fixture: spoofedFixture).validateStructure())
+
+        let legacyFixture = FixtureIdentity(
+            identifier: "pointer-dense-12-marks",
+            fixtureProfile: .standard12,
+            fixtureVersion: PerformanceFixtureProfile.standard12.version,
+            markCount: 12,
+            continuationSamples: PerformanceFixtures.fixture.continuationSamples,
+            warmupCount: PerformanceFixtures.fixture.warmupCount,
+            trialCount: PerformanceFixtures.fixture.trialCount,
+            seed: PerformanceFixtures.fixture.seed
+        )
+        XCTAssertThrowsError(try PerformanceFixtures.report(fixture: legacyFixture).validateStructure())
+
+        let denseConfiguration = PerformanceConfiguration.dense1000
+        let denseRun = PerformanceRunProvenance(
+            variant: "candidate",
+            outputRoot: "build/dense-candidate",
+            sourceRef: PerformanceFixtures.commit,
+            build: PerformanceFixtures.build,
+            host: PerformanceFixtures.host,
+            recordedAtUTC: PerformanceFixtures.recordedAtUTC,
+            configuration: denseConfiguration,
+            foundationProvenancePath: PerformanceFixtures.run.foundationProvenancePath,
+            foundation: PerformanceFixtures.foundation,
+            harnessVersion: denseConfiguration.harnessVersion,
+            buildContractVersion: denseConfiguration.buildContractVersion,
+            acceptedFoundationArtifactSHA256: PerformanceFixtures.foundationArtifact
+        )
+        XCTAssertThrowsError(try PerformanceFixtures.report(run: denseRun).validateStructure())
+
+        let denseFixture = FixtureIdentity(
+            identifier: PerformanceFixtureProfile.dense1000.identifier,
+            fixtureProfile: .dense1000,
+            fixtureVersion: PerformanceFixtureProfile.dense1000.version,
+            markCount: 1_000,
+            continuationSamples: denseConfiguration.samplesPerGesture,
+            warmupCount: denseConfiguration.warmupCount,
+            trialCount: denseConfiguration.trialCount,
+            seed: PerformanceFixtures.fixture.seed
+        )
+        let validDenseReport = PerformanceFixtures.report(run: denseRun, fixture: denseFixture)
+        XCTAssertNoThrow(try validDenseReport.validateStructure())
+        XCTAssertNoThrow(try validDenseReport.validateCompletion())
+    }
+
+    func testOneReportCarriesExactlyOneFixtureProfileWithoutConcatenatedArrays() throws {
+        let report = PerformanceFixtures.report()
+        XCTAssertEqual(report.fixture.fixtureProfile, .standard12)
+        XCTAssertEqual(report.fixture.markCount, 12)
+        XCTAssertEqual(report.model.trialNanoseconds.count, report.fixture.trialCount)
+        XCTAssertEqual(report.renderer.frameMilliseconds.count, report.fixture.trialCount)
+        XCTAssertEqual(report.memory.samples.filter { $0.phase == .running }.count, 121)
+        XCTAssertNoThrow(try report.validateCompletion())
     }
 
     func testIdentityRequiresOneLowercaseImmutableIdentityAndCompatibleTreeStatus() throws {
@@ -208,6 +307,29 @@ final class PerformanceHarnessTests: XCTestCase {
         let valid = PerformanceFixtures.report()
         XCTAssertNoThrow(try valid.validateStructure())
 
+        let slowOutlier = FrameMeasurement(
+            status: .measured,
+            sampleCount: 30,
+            p95Milliseconds: 1,
+            frameMilliseconds: Array(repeating: 1, count: 29) + [17],
+            frameCount: 30,
+            missedFrameCount: 1,
+            instrumentationStatus: "fixture"
+        )
+        XCTAssertLessThan(slowOutlier.p95Milliseconds, 16.7)
+        XCTAssertNoThrow(try PerformanceFixtures.report(renderer: slowOutlier).validateStructure())
+
+        let underreportedOutlier = FrameMeasurement(
+            status: .measured,
+            sampleCount: 30,
+            p95Milliseconds: 1,
+            frameMilliseconds: slowOutlier.frameMilliseconds,
+            frameCount: 30,
+            missedFrameCount: 0,
+            instrumentationStatus: "fixture"
+        )
+        XCTAssertThrowsError(try PerformanceFixtures.report(renderer: underreportedOutlier).validateStructure())
+
         let badFrameP95 = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 2, frameMilliseconds: Array(repeating: 3.0, count: 30), frameCount: 30, missedFrameCount: 0, instrumentationStatus: "fixture")
         XCTAssertThrowsError(try PerformanceFixtures.report(renderer: badFrameP95).validateStructure())
 
@@ -222,6 +344,18 @@ final class PerformanceHarnessTests: XCTestCase {
 
         let shortRawFrame = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 3, frameMilliseconds: [3.0], frameCount: 30, missedFrameCount: 0, instrumentationStatus: "fixture")
         XCTAssertThrowsError(try PerformanceFixtures.report(renderer: shortRawFrame).validateStructure())
+    }
+
+    func testMeasuredFrameMissedCountMatchesSlowRawSamples() throws {
+        let slowSamples = Array(repeating: 3.0, count: 29) + [20.0]
+        let underreported = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 3, frameMilliseconds: slowSamples, frameCount: 30, missedFrameCount: 0, instrumentationStatus: "fixture")
+        XCTAssertThrowsError(try PerformanceFixtures.report(renderer: underreported).validateStructure())
+
+        let fastP95WithOutlier = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 20, frameMilliseconds: slowSamples, frameCount: 30, missedFrameCount: 1, instrumentationStatus: "fixture")
+        XCTAssertThrowsError(try PerformanceFixtures.report(renderer: fastP95WithOutlier).validateStructure())
+
+        let coherent = FrameMeasurement(status: .measured, sampleCount: 30, p95Milliseconds: 3, frameMilliseconds: slowSamples, frameCount: 30, missedFrameCount: 1, instrumentationStatus: "fixture")
+        XCTAssertNoThrow(try PerformanceFixtures.report(renderer: coherent).validateStructure())
     }
 
     func testRawTimingArraysRejectNonFiniteValuesAndDiagnosticPayloadsStayEmpty() throws {
@@ -304,12 +438,21 @@ final class PerformanceHarnessTests: XCTestCase {
 
     func testFailedAndUnmeasuredReportsRemainStructurallyValidButCannotComplete() throws {
         let failed = PerformanceFixtures.withStatuses(PerformanceFixtures.report(), status: .failed)
+        XCTAssertEqual(failed.disposition, .revise)
         XCTAssertNoThrow(try failed.validateStructure())
         XCTAssertThrowsError(try failed.validateCompletion())
 
         let unmeasured = PerformanceFixtures.withStatuses(PerformanceFixtures.report(), status: .unmeasured)
+        XCTAssertEqual(unmeasured.disposition, .revise)
         XCTAssertNoThrow(try unmeasured.validateStructure())
         XCTAssertThrowsError(try unmeasured.validateCompletion())
+
+        for invalidDisposition in [Disposition.acceptedNoRegression, .blocked] {
+            let failedReport = PerformanceFixtures.withStatuses(PerformanceFixtures.report(), status: .failed, disposition: invalidDisposition)
+            XCTAssertThrowsError(try failedReport.validateStructure())
+            let unmeasuredReport = PerformanceFixtures.withStatuses(PerformanceFixtures.report(), status: .unmeasured, disposition: invalidDisposition)
+            XCTAssertThrowsError(try unmeasuredReport.validateStructure())
+        }
     }
 
     func testValidMeasuredReportPassesCompletionValidation() throws {
@@ -318,7 +461,7 @@ final class PerformanceHarnessTests: XCTestCase {
         XCTAssertNoThrow(try report.validateCompletion())
     }
 
-    func testNonstandardConfigurationCanBeDiagnosticButCannotComplete() throws {
+    func testNoncanonicalConfigurationIsRejectedBeforeCompletion() throws {
         let nonstandardConfiguration = PerformanceConfiguration(
             fixtureMarkCount: 12,
             samplesPerGesture: 240,
@@ -348,8 +491,7 @@ final class PerformanceHarnessTests: XCTestCase {
             acceptedFoundationArtifactSHA256: PerformanceFixtures.run.acceptedFoundationArtifactSHA256
         )
         let report = PerformanceFixtures.report(run: run)
-        XCTAssertNoThrow(try report.validateStructure())
-        XCTAssertThrowsError(try report.validateCompletion())
+        XCTAssertThrowsError(try report.validateStructure())
     }
 
     func testBootstrapOrDebugBuildCanBeDiagnosticButCannotComplete() throws {
@@ -466,7 +608,7 @@ final class PerformanceHarnessTests: XCTestCase {
             runProvenance: PerformanceFixtures.run
         )
 
-        XCTAssertEqual(report.disposition, .blocked)
+        XCTAssertEqual(report.disposition, .revise)
         XCTAssertEqual(report.compositor.status, .unmeasured)
         XCTAssertEqual(report.compositor.sampleCount, 0)
         XCTAssertEqual(report.compositor.frameCount, 0)
@@ -648,11 +790,610 @@ final class PerformanceHarnessTests: XCTestCase {
         if measurement.status == .measured {
             XCTAssertEqual(measurement.sampleCount, PerformanceFixtures.configuration.trialCount)
             XCTAssertEqual(measurement.frameCount, PerformanceFixtures.configuration.trialCount)
+            XCTAssertEqual(measurement.frameMilliseconds.count, PerformanceFixtures.configuration.trialCount)
+            XCTAssertEqual(measurement.missedFrameCount, measurement.frameMilliseconds.filter { $0 > 16.7 }.count)
             XCTAssertGreaterThan(measurement.p95Milliseconds, 0)
         } else {
             XCTAssertEqual(measurement.status, .unmeasured)
             XCTAssertEqual(measurement.sampleCount, 0)
         }
+    }
+
+    func testOffscreenRendererUsesExplicitSRGBRGBA8BitmapContract() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("CGColorSpace(name: CGColorSpace.sRGB)"))
+        XCTAssertFalse(source.contains("CGColorSpaceCreateDeviceRGB"))
+        XCTAssertTrue(source.contains("bitsPerComponent: 8"))
+        XCTAssertTrue(source.contains("bytesPerRow: 512 * 4"))
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsInvalidMarkCardinalityAsFailed() {
+        let snapshot = RendererSemanticSnapshot(
+            committedMarkCount: 11,
+            hasActiveDraft: false,
+            nonTransparentPixelCount: 1_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(
+                snapshot
+            ),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsEmptyNoOpPixelsAsFailed() {
+        let snapshot = RendererSemanticSnapshot(
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            nonTransparentPixelCount: 0,
+            occupiedQuadrantCount: 0,
+            pixelChecksum: 0,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(
+                snapshot
+            ),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsFourDotWrongGeometryPixels() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Array(repeating: 1, count: 12),
+            positiveMarkColorMatches: Array(repeating: 1, count: 12),
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 4,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(
+                snapshot
+            ),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsCanonicalPlanWithWrongStyle() {
+        let wrongStyleIdentity = Self.canonicalRenderPlanIdentity.replacingOccurrences(
+            of: "rgba=1000000,0,0,1000000",
+            with: "rgba=0,1000000,0,1000000"
+        )
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: wrongStyleIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 1_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsCanonicalPlanWithWrongOpacity() {
+        let wrongOpacityIdentity = Self.canonicalRenderPlanIdentity.replacingOccurrences(
+            of: "opacity=1000000",
+            with: "opacity=500000"
+        )
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: wrongOpacityIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 1_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleAcceptsCanonicalNonEmptyOutput() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(
+                snapshot
+            ),
+            .measured
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsMissingPerMarkOccupancy() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Array(Self.canonicalMinimumPositiveHits.dropLast()) + [0],
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsWrongSemanticPlan() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: "pointer-render-plan/wrong",
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsUnexpectedNegativeRegionPixels() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount).enumerated().map { $0.offset == 4 },
+            nonTransparentPixelCount: 13,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleAllowsPortableRasterizerEdgeDrift() {
+        let snapshot = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 0xfeed,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticStatus(snapshot),
+            .measured
+        )
+    }
+
+    @MainActor
+    func testRendererSemanticOracleRejectsSameHostRasterInstability() {
+        let before = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+        let after = RendererSemanticSnapshot(
+            renderPlanIdentity: Self.canonicalRenderPlanIdentity,
+            committedMarkCount: PerformanceConfiguration.standard.fixtureMarkCount,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.canonicalMinimumPositiveHits,
+            positiveMarkColorMatches: Self.canonicalMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.canonicalNegativeRegionCount),
+            nonTransparentPixelCount: 12,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticRasterStatus(
+                before: before,
+                after: after
+            ),
+            .failed
+        )
+    }
+
+    func testRendererTimingStartsAfterBitmapPreparation() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let loopStart = try XCTUnwrap(
+            source.range(
+                of: "for _ in 0..<configuration.trialCount",
+                options: .backwards
+            )
+        )
+        let loopEnd = try XCTUnwrap(source.range(of: "guard samples.allSatisfy", range: loopStart.upperBound..<source.endIndex))
+        let timedLoop = String(source[loopStart.lowerBound..<loopEnd.lowerBound])
+        let preparation = try XCTUnwrap(timedLoop.range(of: "prepareBitmap()"))
+        let timerStart = try XCTUnwrap(timedLoop.range(of: "let start = CACurrentMediaTime()"))
+
+        XCTAssertLessThan(preparation.lowerBound, timerStart.lowerBound)
+        XCTAssertFalse(timedLoop.contains("context.clear(frame)"))
+        XCTAssertTrue(timedLoop.contains("renderIntoBitmap()"))
+    }
+
+    @MainActor
+    func testDenseModelRejectsWrongAppendedMark() {
+        let expectedPoints = (0...240).map { index in
+            NormalizedPoint(
+                x: 0.1 + Double(index) * 0.0005,
+                y: 0.2 + (index.isMultiple(of: 2) ? 0 : 0.005)
+            )
+        }
+        let valid = Mark(geometry: .freehand(expectedPoints), style: .default)
+        let wrongTool = Mark(
+            geometry: .rectangle(
+                NormalizedRect(x: 0.1, y: 0.2, width: 0.12, height: 0.12)
+            ),
+            style: .default
+        )
+        var wrongPoints = expectedPoints
+        wrongPoints[120] = NormalizedPoint(x: 0.9, y: 0.9)
+        let wrongGeometry = Mark(geometry: .freehand(wrongPoints), style: .default)
+        let wrongStyle = Mark(
+            geometry: .freehand(expectedPoints),
+            style: MarkStyle(color: .red, strokeWidth: 2, opacity: 1)
+        )
+
+        XCTAssertTrue(GestureBenchmarkInstrumentationAdapter.denseFreehandIsValid(valid, sampleCount: 240))
+        XCTAssertFalse(GestureBenchmarkInstrumentationAdapter.denseFreehandIsValid(wrongTool, sampleCount: 240))
+        XCTAssertFalse(GestureBenchmarkInstrumentationAdapter.denseFreehandIsValid(wrongGeometry, sampleCount: 240))
+        XCTAssertFalse(GestureBenchmarkInstrumentationAdapter.denseFreehandIsValid(wrongStyle, sampleCount: 240))
+    }
+
+    func testDenseModelTimingEndsImmediatelyAfterCommit() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let functionStart = try XCTUnwrap(source.range(of: "private static func denseMeasurement"))
+        let functionEnd = try XCTUnwrap(source.range(of: "private static func checksum", range: functionStart.upperBound..<source.endIndex))
+        let function = String(source[functionStart.lowerBound..<functionEnd.lowerBound])
+        let commit = try XCTUnwrap(function.range(of: "let committed = session.commitGesture()"))
+        let end = try XCTUnwrap(function.range(of: "let end = CACurrentMediaTime()"))
+        let publicationCheck = try XCTUnwrap(function.range(of: "if committed.boundaryEvent == .committed"))
+        let commitToEnd = String(function[commit.upperBound..<end.lowerBound])
+
+        XCTAssertLessThan(commit.lowerBound, end.lowerBound)
+        XCTAssertLessThan(end.lowerBound, publicationCheck.lowerBound)
+        XCTAssertFalse(commitToEnd.contains("session.canvas(for:"))
+        XCTAssertFalse(commitToEnd.contains("undo"))
+        XCTAssertFalse(commitToEnd.contains("checksum(for:"))
+    }
+
+    @MainActor
+    func testCanonicalProfilesMeasureSeparateStandardAndDenseEvidence() {
+        let standardModel = PerformanceHarness.measureModel(configuration: .standard12)
+        let denseModel = PerformanceHarness.measureModel(configuration: .dense1000)
+        XCTAssertEqual(standardModel.status, .measured)
+        XCTAssertEqual(denseModel.status, .measured)
+        XCTAssertEqual(standardModel.trialNanoseconds.count, PerformanceConfiguration.standard12.trialCount)
+        XCTAssertEqual(denseModel.trialNanoseconds.count, PerformanceConfiguration.dense1000.trialCount)
+        XCTAssertNotEqual(standardModel.modelChecksum, denseModel.modelChecksum)
+        XCTAssertEqual(standardModel.publicationCount, 2)
+        XCTAssertEqual(denseModel.publicationCount, 2)
+        XCTAssertTrue(standardModel.finalStateValid)
+        XCTAssertTrue(denseModel.finalStateValid)
+
+        let standardRenderer = PerformanceHarness.measureRenderer(configuration: .standard12)
+        let denseRenderer = PerformanceHarness.measureRenderer(configuration: .dense1000)
+        XCTAssertEqual(standardRenderer.status, .measured)
+        XCTAssertEqual(denseRenderer.status, .measured)
+        XCTAssertTrue(standardRenderer.instrumentationStatus.contains("standard12"))
+        XCTAssertTrue(denseRenderer.instrumentationStatus.contains("dense1000"))
+    }
+
+    @MainActor
+    func testPublicRunRejectsUnrecognizedFixtureProfile() {
+        let arbitrary = PerformanceConfiguration(
+            fixtureMarkCount: 999,
+            samplesPerGesture: 240,
+            warmupCount: 5,
+            trialCount: 30,
+            pairsPerOrder: 15,
+            bootstrapSeed: 48271,
+            bootstrapResamples: 10_000,
+            memoryWindowSeconds: 600,
+            memorySampleIntervalSeconds: 5,
+            harnessVersion: PerformanceFixtures.configuration.harnessVersion,
+            foundationIdentity: PerformanceFixtures.foundation,
+            buildContractVersion: PerformanceFixtures.configuration.buildContractVersion
+        )
+        XCTAssertNil(PerformanceHarness.fixtureProfile(for: arbitrary))
+        XCTAssertThrowsError(try PerformanceHarness.run(
+            configuration: arbitrary,
+            buildProvenance: PerformanceFixtures.build,
+            runProvenance: PerformanceFixtures.run
+        ))
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsWrongPlanEvenWithPlausiblePixels() {
+        let snapshot = RendererSemanticSnapshot(
+            profile: .dense1000,
+            renderPlanIdentity: "dense1000|wrong-plan",
+            committedMarkCount: 1_000,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.denseMinimumPositiveHits,
+            positiveMarkColorMatches: Self.denseMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.denseNegativeRegionCount),
+            occupiedStrata: Array(repeating: true, count: Self.denseStratumCount),
+            nonTransparentPixelCount: 10_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(OffscreenCanvasRendererAdapter.semanticStatus(snapshot), .failed)
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsSameHostChecksumInstability() {
+        let before = RendererSemanticSnapshot(
+            profile: .dense1000,
+            renderPlanIdentity: "dense1000|planDigest=cd81b9529b3682d5",
+            committedMarkCount: 1_000,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.denseMinimumPositiveHits,
+            positiveMarkColorMatches: Self.denseMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.denseNegativeRegionCount),
+            occupiedStrata: Array(repeating: true, count: Self.denseStratumCount),
+            nonTransparentPixelCount: 10_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+        let after = RendererSemanticSnapshot(
+            profile: .dense1000,
+            renderPlanIdentity: "dense1000|planDigest=cd81b9529b3682d5",
+            committedMarkCount: 1_000,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.denseMinimumPositiveHits,
+            positiveMarkColorMatches: Self.denseMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.denseNegativeRegionCount),
+            occupiedStrata: Array(repeating: true, count: Self.denseStratumCount),
+            nonTransparentPixelCount: 10_001,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 2,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(
+            OffscreenCanvasRendererAdapter.semanticRasterStatus(before: before, after: after),
+            .failed
+        )
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsOmittedLateMarks() {
+        var occupancy = Self.denseMinimumPositiveHits
+        var colorMatches = Self.denseMinimumPositiveHits
+        occupancy[999] = 0
+        colorMatches[999] = 0
+        let snapshot = RendererSemanticSnapshot(
+            profile: .dense1000,
+            renderPlanIdentity: "dense1000|planDigest=cd81b9529b3682d5",
+            committedMarkCount: 1_000,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: occupancy,
+            positiveMarkColorMatches: colorMatches,
+            negativeRegionOccupied: Array(repeating: false, count: Self.denseNegativeRegionCount),
+            occupiedStrata: Array(repeating: true, count: Self.denseStratumCount),
+            nonTransparentPixelCount: 10_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(OffscreenCanvasRendererAdapter.semanticStatus(snapshot), .failed)
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsOmittedWholeStratum() {
+        let snapshot = RendererSemanticSnapshot(
+            profile: .dense1000,
+            renderPlanIdentity: "dense1000|planDigest=cd81b9529b3682d5",
+            committedMarkCount: 1_000,
+            hasActiveDraft: false,
+            positiveMarkOccupancy: Self.denseMinimumPositiveHits,
+            positiveMarkColorMatches: Self.denseMinimumPositiveHits,
+            negativeRegionOccupied: Array(repeating: false, count: Self.denseNegativeRegionCount),
+            occupiedStrata: Array(repeating: true, count: Self.denseStratumCount).enumerated().map { $0.offset == 15 ? false : $0.element },
+            nonTransparentPixelCount: 10_000,
+            occupiedQuadrantCount: 4,
+            pixelChecksum: 1,
+            boundsWidth: 512,
+            boundsHeight: 512
+        )
+
+        XCTAssertEqual(OffscreenCanvasRendererAdapter.semanticStatus(snapshot), .failed)
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsLateMarkMissingFromCanonicalBitmap() throws {
+        let (view, context, bitmap) = try makeDenseBitmap()
+        defer { bitmap.deallocate() }
+
+        context.clear(
+            CGRect(
+                x: 0.92 * 512,
+                y: (1 - 0.93) * 512,
+                width: 0.08 * 512,
+                height: 0.08 * 512
+            )
+        )
+        let snapshot = OffscreenCanvasRendererAdapter.semanticSnapshot(
+            view: view,
+            profile: .dense1000,
+            bitmap: bitmap,
+            width: 512,
+            height: 512
+        )
+
+        XCTAssertEqual(snapshot.committedMarkCount, 1_000)
+        XCTAssertEqual(OffscreenCanvasRendererAdapter.semanticStatus(snapshot), .failed)
+    }
+
+    @MainActor
+    func testDenseSemanticOracleRejectsWholeStratumMissingFromCanonicalBitmap() throws {
+        let (view, context, bitmap) = try makeDenseBitmap()
+        defer { bitmap.deallocate() }
+
+        context.clear(
+            CGRect(
+                x: 0.75 * 512,
+                y: 0,
+                width: 0.25 * 512,
+                height: 0.25 * 512
+            )
+        )
+        let snapshot = OffscreenCanvasRendererAdapter.semanticSnapshot(
+            view: view,
+            profile: .dense1000,
+            bitmap: bitmap,
+            width: 512,
+            height: 512
+        )
+
+        XCTAssertEqual(snapshot.committedMarkCount, 1_000)
+        XCTAssertEqual(OffscreenCanvasRendererAdapter.semanticStatus(snapshot), .failed)
+    }
+
+    @MainActor
+    private func makeDenseBitmap() throws -> (CanvasView, CGContext, UnsafeMutableRawPointer) {
+        _ = NSApplication.shared
+        let display = DisplayUUID(rawValue: "performance-dense-test-display")
+        let frame = NSRect(x: 0, y: 0, width: 512, height: 512)
+        let session = OffscreenCanvasRendererAdapter.fixtureSession(
+            display: display,
+            profile: .dense1000
+        )
+        let view = CanvasView(frame: frame, display: display, session: session, tool: .select)
+        let bitmapByteCount = 512 * 512 * 4
+        let bitmap = UnsafeMutableRawPointer.allocate(
+            byteCount: bitmapByteCount,
+            alignment: MemoryLayout<UInt8>.alignment
+        )
+        bitmap.initializeMemory(as: UInt8.self, repeating: 0, count: bitmapByteCount)
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            bitmap.deallocate()
+            throw NSError(domain: "PerformanceHarnessTests", code: 1)
+        }
+        guard let context = CGContext(
+            data: bitmap,
+            width: 512,
+            height: 512,
+            bitsPerComponent: 8,
+            bytesPerRow: 512 * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            bitmap.deallocate()
+            throw NSError(domain: "PerformanceHarnessTests", code: 2)
+        }
+        context.clear(frame)
+        let graphicsContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphicsContext
+        view.draw(frame)
+        NSGraphicsContext.restoreGraphicsState()
+        return (view, context, bitmap)
     }
 }
 

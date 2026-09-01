@@ -160,9 +160,9 @@ publication to the coordinating agent.
 | D | Visual language, learning support, and render-plan contracts | `MarkRenderer.swift`; `Sources/PointerAppKit/Rendering/RenderPlan.swift`; `Sources/PointerAppKit/Rendering/HandleInventory.swift`; `Bundle/Assets.xcassets/**`; `Bundle/AppIconIdentity.json`; `Bundle/GuideAssetIdentity.json`; `Sources/PointerAppKit/Help/GuideAssetCatalog.swift`; `Sources/PointerAppKit/Help/FirstUseGuideController.swift`; `Sources/PointerAppKit/Help/FirstUseGuideViewController.swift`; the existing C-predeclared `Sources/PointerAppKit/Help/FirstUseGuideStateStoring.swift` seam (consumed, not redeclared); `Sources/PointerAppKit/Help/UserDefaultsFirstUseGuideStateStore.swift`; `Tests/PointerAppKitTests/FirstUseGuideTests.swift`; `Tests/PointerAppKitTests/FirstUseGuideTestFixtures.swift`; `Tests/PointerAppKitTests/AssetIdentityTests.swift`; `Tests/PointerAppKitTests/RenderPlanTests.swift`; visual/accessibility snapshot tests and resources (excluding `Tests/PointerAppKitTests/Support/**` and `Tests/PointerAppKitTests/Harness/**`) | B-core geometry/lifecycle contracts and C's accepted control/guide interface |
 | B-render-integration | CanvasView render-plan integration and standby live path | `CanvasView.swift` draw/render-plan integration only; `Tests/PointerAppKitTests/CanvasViewRenderIntegrationTests.swift` | D's accepted RenderPlan/HandleInventory and B-core CanvasView seam |
 | A-harness | Real integrated interaction harness | `Sources/PointerAppKit/Diagnostics/DeterministicInteractionHarness.swift`; `Tests/PointerAppKitTests/Harness/**`; harness-only report fixtures; `.codex/sdd/reports/pointer-a-harness-lifecycle-report.md`; `.codex/sdd/reports/pointer-a-harness-phase-report.md` | B-render-integration's accepted live rendering path and all prior phase contracts |
-| E-foundation (E tasks 1–3) | Performance benchmark, report schema, and harness contracts | `Sources/PointerAppKit/Diagnostics/GestureBenchmark.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceComparisonHarness.swift`; `Tests/PointerAppKitTests/GestureBenchmarkTests.swift`; `Tests/PointerAppKitTests/PerformanceHarnessTests.swift`; `Tests/PointerAppKitTests/PerformanceComparisonHarnessTests.swift`; benchmark scripts; performance fixtures; report schemas and validators | A-harness's converged production path |
+| E-foundation (E tasks 1–3, including Task 3c) | Performance benchmark, report schema, harness contracts, `PerformanceCLI`, and `scripts/benchmark-quality.sh` | `Sources/PointerAppKit/Diagnostics/GestureBenchmark.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceHarness.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceComparisonHarness.swift`; `Sources/PointerAppKit/Diagnostics/PerformanceCLI.swift`; `Tests/PointerAppKitTests/GestureBenchmarkTests.swift`; `Tests/PointerAppKitTests/PerformanceHarnessTests.swift`; `Tests/PointerAppKitTests/PerformanceComparisonHarnessTests.swift`; `Tests/PointerAppKitTests/PerformanceCLITests.swift`; `scripts/benchmark-quality.sh`; performance fixtures; report schemas and validators | A-harness's converged production path |
 | F-foundation (F tasks 1–3) | Composition, launcher, and Release resource foundation | `Package.swift`; `Sources/PointerComposition/PointerCompositionRoot.swift`; `Sources/Pointer/main.swift`; `Tests/PointerCompositionTests/PointerCompositionRootTests.swift`; `PointerBuildScriptsTests` target; `Tests/BuildScripts/**` including `LauncherContractTests.swift`, `GuideAssetCatalogBuildTests.swift`, `IconResolutionProbe.swift`, and `test-build-contract.sh`; `Bundle/Info.plist`; `scripts/build-app.sh`; `scripts/run-app.sh`; `.codex/sdd/reports/quality-campaign/foundation/**` | E-foundation contracts plus all prior reconciled phases |
-| E-execution | Paired immutable performance execution and reconciliation | `PerformanceCLI`; `benchmark-quality.sh`; `.codex/sdd/reports/quality-campaign/performance/measurements/**`; `.codex/sdd/reports/quality-campaign/performance/provenance/**`; `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; `.codex/sdd/reports/quality-campaign/performance/resilience/**`; no product-source ownership | F-foundation Release/launcher/resource foundation plus E-foundation |
+| E-execution | Paired immutable performance execution and reconciliation using E-foundation's existing CLI/script | `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/{measurements,provenance,comparisons,resilience}/**` for `standard12` and `dense1000`; no code or script ownership | F-foundation Release/launcher/resource foundation plus E-foundation |
 | F-final (F tasks 4–7) | CI, clean-clone, manual use, and completion evidence | `.github/workflows/verify.yml`; `scripts/verify.sh`; `scripts/test-clean-clone.sh`; `Tests/BuildScripts/CleanCloneContractTests.swift`; clean-clone/manual test harnesses; `.codex/sdd/reports/quality-campaign/final/**`; final validation matrix | E-execution plus all prior reconciled phases; owns final aggregation, not product behavior |
 
 The canonical phase graph is
@@ -174,9 +174,11 @@ B-core owns the public gesture/display/lifecycle seam without RenderPlan
 integration; C consumes B-core; D consumes B-core/C and publishes the
 RenderPlan/HandleInventory contract; B-render-integration consumes D and edits
 only the CanvasView draw seam; A-harness consumes the converged real view path;
-E-foundation defines the benchmark, schema, and harness contracts; F-foundation
-then makes the launcher, composition, and Release resource path executable;
-E-execution runs the paired immutable baseline/candidate protocol against that
+E-foundation defines and implements the benchmark, schema, harness contracts,
+`PerformanceCLI`, and `scripts/benchmark-quality.sh`; F-foundation then imports
+and wires that existing CLI into the launcher while making the composition and
+Release resource path executable. E-execution consumes those unchanged
+commands to run the paired immutable baseline/candidate protocol against that
 foundation; F-final aggregates the results and runs the final gates. There are
 no back edges or E/F cycles: D never edits B, B-render-integration never edits
 D, A-harness cannot change B-core APIs, and E-execution cannot change F.
@@ -808,22 +810,28 @@ Acceptance criteria:
 Purpose: find and remove perceived sluggishness with production evidence, not
 speculative caching or broad rewrites.
 
-E is staged. Tasks 1–3 are the E-foundation: they establish the model
-benchmark, typed report schemas, validators, adapters, and CLI/script
-contracts after A-harness. The paired immutable baseline/candidate execution
-and reconciliation run only after F tasks 1–3 have made the composition,
-launcher, and Release resource path executable. E cannot pin a baseline or
-claim performance completion from a pre-F report.
+E is staged. Tasks 1–3 are the E-foundation: they establish and implement the
+model benchmark, typed report schemas, validators, adapters,
+`PerformanceCLI`, and `scripts/benchmark-quality.sh` contracts after
+A-harness. F-foundation imports and wires that existing CLI into the launcher.
+The paired immutable baseline/candidate execution and reconciliation run only
+after F tasks 1–3 have made the composition, launcher, and Release resource
+path executable. E-execution consumes the unchanged CLI/script and owns only
+runtime evidence; it cannot pin a baseline or claim performance completion
+from a pre-F report.
 
 Acceptance criteria:
 
 - The Release benchmark continues to exercise production `PointerSession` and
-  gesture APIs with 12 fixture marks, 240 continuation samples, five warmups,
-  and at least 30 measured trials. It reports median, p95, MAD, publication
-  count, final-state validity, and a stable model checksum as the serialized
-  model-only `GestureBenchmark.Result` emitted by
-  `--benchmark-gestures --format json`. It is not a performance report and
-  makes no renderer, compositor, launch, or memory claim. The owned
+  gesture APIs with the `standard12` profile's 12 fixture marks, 240
+  continuation samples, five warmups, and at least 30 measured trials. It
+  reports median, p95, MAD, publication count, final-state validity, and a
+  stable model checksum as the serialized model-only
+  `GestureBenchmark.Result` emitted by `--benchmark-gestures --format json`.
+  It is not a performance report and makes no renderer, compositor, launch, or
+  memory claim. E's typed fixture-profile schema parameterizes the same real
+  `PointerSession` model and CanvasView renderer oracle for the separate
+  `dense1000` profile; the two populations are never concatenated. The owned
   `PerformanceHarness.swift` emits a versioned Codable
   `PerformanceMeasurementReport` for one immutable build/variant with a typed
   `reportKind: .measurement`, `schemaVersion`, immutable `identity`, `host`,
@@ -832,13 +840,15 @@ Acceptance criteria:
   `redrawLayout`, `responsiveness`, `inputToVisible`, `memory`, and
   `disposition` fields. Every required measurement object has exactly one
   status from `measured`, `failed`, or `unmeasured`; missing fields, `failed`,
-  and `unmeasured` statuses are invalid for completion, and
+  and `unmeasured` statuses require the measurement report disposition to be
+  `revise`, never `blocked` or `acceptedNoRegression`, and are invalid for
+  completion, and
   `not_applicable` is not permitted for a required metric. Model includes
   trial samples, median, p95, MAD, publication count, checksum, and
   final-state validity; renderer and compositor include sample count, p95,
   frame count, missed-frame count, and instrumentation status; `combinedFrame`
-  reports the measured render-plus-compositor frame work and missed-frame
-  count; launch includes cold/warm timings; allocations includes bytes per
+  reports independently measured end-to-end frame work (never a renderer-plus-
+  compositor sum) and missed-frame count; launch includes cold/warm timings; allocations includes bytes per
   gesture and peak allocation bytes; `redrawLayout` includes redraws per sample,
   layout passes, and p95 work; responsiveness includes stall count, maximum
   main-thread stall, and p95 response; `inputToVisible` includes sample count,
@@ -851,15 +861,89 @@ Acceptance criteria:
   redraw/layout, `responseMilliseconds`, and `sampleMilliseconds` for
   input-to-visible. A measured report carries exactly `trialCount` finite,
   strictly positive values in each applicable array and recomputed p95 fields;
-  failed/unmeasured diagnostics may carry empty arrays.
+  failed/unmeasured diagnostics may carry empty arrays. For measured frames,
+  `missedFrameCount` is exactly the count of raw `frameMilliseconds` samples
+  greater than 16.7 ms.
   `PerformanceHarnessTests` validates the complete schema, typed report kind,
   and statuses and rejects missing/wrong-kind fields rather than treating them
-  as zero. E writes variant measurements and paired comparisons only under
-  `.codex/sdd/reports/quality-campaign/performance/measurements/**`,
-  `.codex/sdd/reports/quality-campaign/performance/provenance/**`, and
-  `.codex/sdd/reports/quality-campaign/performance/comparisons/**`; F may
-  consume them but does not edit those E-owned subtrees.
-- `PerformanceConfiguration` and every measurement report carry typed
+  as zero. `PerformanceHarness.run(configuration:buildProvenance:runProvenance:)`
+  receives and embeds the validated build/run provenance, and renderer/
+  compositor adapter protocols remain value-type capable with no `AnyObject`
+  requirement. E writes variant measurements and paired comparisons only under
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/measurements/**`,
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/provenance/**`,
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/**`,
+  and `<fixture-profile>/resilience/**` for both required profiles; F may consume
+  them but does not edit those E-owned subtrees.
+- E's typed fixture contract has exactly `PerformanceFixtureProfile.standard12`
+  (`pointer-fixture-standard12/v1`, identifier `pointer-standard-12-marks`,
+  `fixtureMarkCount: 12`) and `.dense1000`
+  (`pointer-fixture-dense1000/v1`, identifier `pointer-dense-1000-marks`,
+  `fixtureMarkCount: 1000`). Each profile binds
+  `PerformanceConfiguration.fixtureProfile`/`fixtureVersion` and
+  `FixtureIdentity.fixtureProfile`/`fixtureVersion`/`markCount`; measurement
+  and run provenance carry that configuration, while comparison persists the
+  baseline/candidate configurations through typed run provenance and both
+  fixtures. Profile populations are separate and never concatenated.
+  The typed fixture surface is:
+
+  ```swift
+  public enum PerformanceFixtureProfile: String, Codable, Sendable, Equatable, CaseIterable {
+      case standard12
+      case dense1000
+
+      public var markCount: Int {
+          switch self {
+          case .standard12: return 12
+          case .dense1000: return 1_000
+          }
+      }
+
+      public var identifier: String {
+          switch self {
+          case .standard12: return "pointer-standard-12-marks"
+          case .dense1000: return "pointer-dense-1000-marks"
+          }
+      }
+
+      public var version: String {
+          switch self {
+          case .standard12: return "pointer-fixture-standard12/v1"
+          case .dense1000: return "pointer-fixture-dense1000/v1"
+          }
+      }
+  }
+
+  public struct PerformanceCampaignCompletionManifest: Codable, Sendable, Equatable {
+      public let schemaVersion: Int
+      public let standard12ComparisonPath: String
+      public let dense1000ComparisonPath: String
+  }
+  ```
+  Canonical roots are `build/<fixture-profile>/{baseline,candidate}` and canonical
+  evidence paths are
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/{measurements,provenance,comparisons,resilience}/`;
+  Task 3c writes the typed `PerformanceCampaignCompletionManifest` (schema
+  version plus distinct `standard12ComparisonPath` and
+  `dense1000ComparisonPath`) at
+  `.codex/sdd/reports/quality-campaign/performance/campaign-completion/manifest.json`
+  only after accepting exactly one comparison for each profile; the two
+  profiles never share a path or sample population.
+- Task 3b/E-foundation owns the typed compositor, process, manual, and
+  combined-frame adapter protocols and honest `.unmeasured`/`revise` fallback
+  fields. The current offscreen renderer adapter is real CanvasView/CGContext;
+  current WindowServer compositor, process, combined-frame, and manual writer
+  paths remain unmeasured/schema-only until Task 3c/E-execution supplies
+  external trace/process/manual sidecars. The profile-aware model/renderer
+  fixture implementation covers both standard12 and dense1000, with tests for
+  fixture construction and semantic checks. `CACurrentMediaTime` alone is not a
+  WindowServer compositor measurement, and `combinedFrame` is never inferred
+  by summing renderer and compositor timings.
+- `PerformanceConfiguration` carries `fixtureMarkCount`,
+  `fixtureProfile`, and `fixtureVersion`, and every measurement report carries
+  that configuration through its run provenance plus a matching
+  `FixtureIdentity.fixtureProfile`/`fixtureVersion`/`markCount`.
+  `PerformanceConfiguration` and every measurement report also carry typed
   `harnessVersion`, `foundationIdentity` (identity and version), and
   `buildContractVersion` fields. F's build root contains typed `BuildProvenance`
   with observed source status/identity, source/executable/bundle hashes,
@@ -894,48 +978,94 @@ Acceptance criteria:
   checkpoint, and the candidate is a subsequent measured commit.
 - The fixed paired protocol runs five warmups per variant and
   `pairsPerOrder == 15`, with derived `totalPairs == 30` on the same
-  host/fixture: exactly 15 baseline-first plus 15 candidate-first pairs. Each
-  `MetricComparison.pairOrders` uses typed `PairOrder` values in that exact
-  sequence. It computes the paired candidate/baseline ratio and a fixed-seed
+  host/fixture: exactly 15 baseline-first plus 15 candidate-first pairs.
+  `PerformancePairExecutionArtifact.records` are the sole observed `PairOrder`
+  source in that exact sequence, and every metric pairs values by recorded
+  sample indices. It computes the paired candidate/baseline ratio and a fixed-seed
   10,000-resample bootstrap 95% interval for each metric, and the validator
   recomputes that interval from deltas/seed/resample count and rejects tampered
   summaries. `improvementClaimed` may be true only when the recomputed delta
   upper bound is strictly below zero; it is false otherwise, including for
   `acceptedNoRegression`, which is not an improvement claim.
+- `PerformancePairExecutionArtifact` persists 30 unique indexed records with
+  15 entries in each order, where records 0–14 are baseline-first and 15–29
+  candidate-first, carry sample indices and UTC start/end timestamps, and
+  require each variant's start ≤ its own end, the first variant's end < the
+  second variant's start, and each pair's second end < the next pair's first
+  start. The artifact carries the IDs and both report hashes at
+  `performance/<fixture-profile>/comparisons/pair-execution.json`; its artifact SHA is
+  stored separately as `pairExecutionArtifactSHA256` in the draft/report. The
+  public writer validates canonical artifact URL bytes, while internal preflight
+  validates measurement/configuration/eligibility and internal compare validates
+  the decoded artifact/order and pairs samples by recorded indices; the
+  E-foundation's `benchmark-quality.sh` remains the producer that emits each
+  pair record; E-execution consumes it and retains the artifact for F.
+- Manual compositor/input evidence is an identity-bound pair schema containing
+  both variants/commits/report hashes, the pair-artifact hash, procedure
+  version, typed pair orders, host, paired samples, and exactly the matching
+  compositor or input evidence file. Both variants must use the same ordered
+  steps, permissions, evidencePath, and shared procedureVersion. The artifact
+  and manual-evidence producers use canonical sorted-key encoding; artifact SHA
+  is SHA-256 of canonical bytes and is recomputable from the embedded artifact.
+  Unknown fields, alternate whitespace, or alternate key order are rejected
+  before decoding/acceptance. Procedures must be equivalent.
 - `PerformanceComparisonHarness.swift` consumes two validated
-  `PerformanceMeasurementReport` files and emits a versioned
-  `PerformanceComparisonReport` under
-  `.codex/sdd/reports/quality-campaign/performance/comparisons/**` with
-  a typed `reportKind: .comparison`, full
-  `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values,
+  `PerformanceMeasurementReport` files for one exact fixture profile and
+  emits a versioned `PerformanceComparisonReport` under
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/**`
+  with a typed `reportKind: .comparison`, full baseline/candidate
+  `PerformanceRunProvenance.configuration` values and full
+  `baselineFixture`/`candidateFixture` values; preflight requires matching
+  fixture profile/version/count and rejects cross-profile mixing. It also has
+  full `baselineMeasurementIdentity` and `candidateMeasurementIdentity` values,
   lowercase 64-hex `baselineMeasurementReportSHA256` and
   `candidateMeasurementReportSHA256` values binding the persisted comparison
   to the exact input report bytes; `writeComparison` computes and verifies
   those hashes before output, and F retains the exact input reports unchanged,
+  and the report carries the validated `pairExecutionArtifactSHA256`,
   paired ratios, bootstrap intervals, budget results, and an unambiguous
   disposition. `Pointer --quality-performance --format json` emits one
   `PerformanceMeasurementReport`, and `Pointer --quality-compare --format
-  json` emits one `PerformanceComparisonReport`. Scripts orchestrate those
-  full-quality commands after the F launcher/build foundation is accepted.
+  json` emits one `PerformanceComparisonReport`. Task 3c's script
+  orchestrates both exact profiles separately after the F launcher/build
+  foundation is accepted; each profile has separate measurement, provenance,
+  pair-artifact, comparison, resilience, and output paths; no fixture-profile
+  populations are concatenated.
   `Pointer --benchmark-gestures --format json` remains the model-only
   `GestureBenchmark.Result`; it does not produce either full-quality report.
-  Internal `PerformanceComparisonDraft` is an opaque, non-persisted carrier
-  containing all comparison content except the two exact input-report hashes;
-  only internal `compare` produces it and it has no public initializer.
+  Internal `PerformanceComparisonDraft` is a public `Sendable, Equatable`
+  opaque, non-persisted carrier containing the remaining comparison content except `reportKind`,
+  `schemaVersion`, and the two exact input-report hashes; only internal
+  `compare` produces it, and it has no public initializer or public stored
+  properties. The writer owns and injects `reportKind == .comparison`,
+  `schemaVersion == 1`, and the two hashes.
+  The exact public declaration is:
+
+  ```swift
+  public struct PerformanceComparisonDraft: Sendable, Equatable {
+      // Public opaque carrier: no public initializer or stored properties.
+  }
+  ```
+
   The only public persisted entry is the exact
-  `writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
+  `writeComparison(draft:baselineURL:candidateURL:pairExecutionURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`:
   it reads exact report bytes from the URLs, computes hashes, decodes, performs
-  full preflight/cross-check validation against the supplied hash-free draft,
-  injects those hashes into the final `PerformanceComparisonReport`, and then
-  writes. The required existing `manualEvidenceDirectory` is always forwarded
-  from `--manual-evidence-dir`; deterministic runs require it to be empty, and
-  no writer overload omits it. Internal
-  `compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`
+  full preflight/cross-check validation against the supplied hash-free draft
+  and required pair-execution artifact URL, pairs samples by recorded indices,
+  injects `reportKind == .comparison`, `schemaVersion == 1`, and those hashes
+  into the final `PerformanceComparisonReport`, and then writes. The required
+  existing `manualEvidenceDirectory` binds directly to
+  `--manual-evidence-dir`; deterministic runs require it to be empty, and no
+  writer overload omits the
+  manual directory or pair artifact URL. Internal
+  `compare(baseline:candidate:configuration:eligibility:pairExecutionArtifact:manualEvidenceDirectory:pairExecutionArtifactSHA256:baselineMeasurementReportSHA256:candidateMeasurementReportSHA256:)`
   receives `--manual-evidence-dir` from the CLI, returns only the hash-free
   `PerformanceComparisonDraft`, and Task 3 loads and validates
-  `manualEvidenceDirectory` before producing it. It is the Task 3
-  calculation seam, deferred and non-writing in Task 2b, with no
-  hash-verification claim. A hash, identity, fixture, provenance, or eligibility
+  `manualEvidenceDirectory` and the pair artifact before producing it, pairing
+  samples by recorded indices. It is the Task 3 calculation seam, deferred and
+  non-writing in Task 2b, and recomputes/validates the canonical pair-artifact
+  SHA from the decoded artifact. Exact input measurement-byte/source-URL hash
+  verification remains public-writer-owned. A hash, identity, fixture, provenance, or eligibility
   mismatch produces no comparison file. Before constructing or writing a comparison, the harness
   validates both input reports and rejects any required `failed` or `unmeasured` metric. A
   persisted `PerformanceComparisonReport` contains measured comparisons only;
@@ -968,8 +1098,10 @@ Acceptance criteria:
   `measureAllocations`, `measureRedrawLayout`, `measureResponsiveness`,
   `measureInputToVisible`, and `measureMemory`); a report never presents
   model-only timing as an end-to-end frame-rate or launch guarantee. If an
-  OS-level compositor metric cannot be instrumented, its schema status is
-  `unmeasured`, the report is invalid, and the completion gate remains blocked.
+  OS-level compositor metric cannot be instrumented, its structurally valid
+  diagnostic report carries `unmeasured` with disposition `revise` (never
+  `blocked` or `acceptedNoRegression`); comparison preflight rejects it and
+  the completion gate remains blocked.
 - `PerformanceComparisonHarnessTests` validates the paired
   `PerformanceComparisonReport` against two `PerformanceMeasurementReport`
   inputs, including identity matching, fixed pair ordering, bootstrap
@@ -1022,12 +1154,14 @@ Acceptance criteria:
 - Performance fixes address a measured bottleneck in the owning workstream;
   speculative caches, premature concurrency, dependency additions, and
   abstractions without a second use are rejected.
-- Disposition is evidence-gated: ratios ≤`1.10` with no budget breach, leak,
-  or missing metric may be accepted as no regression and must retain the
-  report; any ratio >`1.10`, budget breach, leak, invalid schema, or
-  `unmeasured` required metric returns to the owning worker as `REVISE` and
-  blocks campaign completion. An unmeasured metric is never an approval or a
-  reason to claim completion.
+- Disposition is evidence-gated: ratios ≤`1.10` with no budget breach or leak
+  may be accepted as no regression only when all required metrics are measured
+  and the report is retained. Any ratio >`1.10`, budget breach, leak, invalid
+  schema, or measurement report with a missing, failed, or `unmeasured`
+  required metric structurally requires disposition `revise` (never `blocked`
+  or `acceptedNoRegression`) and returns to the owning worker, blocking
+  campaign completion. An unmeasured metric is never an approval or a reason
+  to claim completion.
 - Resilience checks cover repeated mode toggles, rapid tool changes, 1,000-mark
   sessions, repeated clear/undo, palette show/hide, display churn, and
   shortcut candidate timeout without leaked timers, handlers, windows, or
@@ -1136,20 +1270,28 @@ Acceptance criteria:
   `--quality-performance --format json` (one
   `PerformanceMeasurementReport`) and
   `--quality-compare --format json` (one
-  `PerformanceComparisonReport`) before composition; each measurement
+  `PerformanceComparisonReport`) before composition; each full-quality
+  invocation requires exactly one `--fixture-profile standard12|dense1000`; each measurement
   invocation accepts exactly one of `--source-commit-sha <40hex>` or
   `--content-manifest-sha256 <64hex>`, and comparison requires
   `--baseline-report`, `--candidate-report`, `--pair-eligibility-file`,
-  `--manual-evidence-dir`, and `--output-dir`. Roots/refs belong to the
+  `--pair-execution-artifact`, `--manual-evidence-dir`, and `--output-dir`.
+  Roots/refs belong to the
   script orchestrator, not the compare CLI.
-  Scripts orchestrate those full-quality branches. A separate
+  Scripts orchestrate both fixture-profile branches separately. A separate
   `PointerCompositionTests` test target depends directly on
   `PointerComposition`, `PointerAppKit`, and XCTest, and never imports or
   links the top-level `Pointer` executable.
   The existing `PointerAppKitTests` target remains the home of AppKit and
   diagnostic tests and does not own composition tests. The target graph and
   canonical `Tests/PointerCompositionTests/PointerCompositionRootTests.swift`
-  construction test must compile this topology from a clean checkout.
+  construction test must compile this topology from a clean checkout. API
+  boundary acceptance uses a temporary external-module probe that imports only
+  `PointerComposition`/`PointerAppKit` and resolves
+  `PointerCompositionRoot.make(resourceBundle:)` and `PointerComposition`
+  symbols with `swiftc -typecheck`; it also inspects the package graph to prove
+  `PointerCompositionTests` has no `Pointer` executable dependency. A source
+  substring search is not acceptance evidence.
 - `scripts/verify.sh` must invoke the built executable's `--smoke --format
   json` branch, and `scripts/benchmark-gestures.sh` must invoke its
   `--benchmark-gestures --format json` branch. Their contract tests assert that
@@ -1396,8 +1538,8 @@ The audit must show:
 | Use the app extensively | Direct/manual matrix for every supported tool, mode, editing action, palette flow, shortcut path, and available display/Space condition, with exact untestable gaps |
 | Find confusing, ugly, missing, inconsistent, costly, inaccessible, slow, and edge-case behavior | Reviewed issue ledger with reproduction and disposition; no unresolved blocker/high-severity item; a second fresh audit finds no meaningful new issue or reopens the loop |
 | Fix the findings | Diff plus focused regression test or direct evidence for each accepted finding; no symptom-only workaround where a root-cause fix is in scope |
-| Preserve executable composition and injection | F's `Package.swift` target graph proves `PointerComposition` and `PointerAppKit` are directly importable by `PointerCompositionTests` without tests importing the executable, while `Pointer` preserves pre-composition `--smoke`/model-only `--benchmark-gestures` diagnostic dispatch and adds the distinct full-quality `--quality-performance`/`--quality-compare` report branches; canonical `Tests/PointerCompositionTests/PointerCompositionRootTests.swift` proves the sole `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` factory injects one explicit resource bundle into `GuideAssetCatalog`, every production dependency, `ControlMetadataProvider`, `GuidePlacementProvider`, `GuideAssetCatalogProviding`, `UserDefaultsShortcutStore`, guide store, registrar, and scheduler, uses `PointerApplication.shared as! PointerApplication`, and keeps the graph alive through `let composition` and `application.run()` |
-| Preserve phase ownership and ordering | The reconciled graph is exactly `A-foundation → B-core → C → D → B-render-integration → A-harness → E-foundation (tasks 1–3) → F-foundation (tasks 1–3) → E-execution → F-final (tasks 4–7)`; CanvasView gesture/cursor edits remain B-core-owned, draw/RenderPlan consumption is B-render-owned, real integrated views are A-harness-owned, and no downstream gate starts before its worker, reviewer, and adversarial gate |
+| Preserve executable composition and injection | F's `Package.swift` target graph proves `PointerComposition` and `PointerAppKit` are directly importable by `PointerCompositionTests` without tests importing the executable, while `Pointer` preserves pre-composition `--smoke`/model-only `--benchmark-gestures` diagnostic dispatch and adds the distinct full-quality `--quality-performance`/`--quality-compare` report branches; the external-module, symbol-aware `swiftc -typecheck` probe resolves `PointerCompositionRoot.make(resourceBundle:)` and `PointerComposition`, and package-graph inspection proves no `Pointer` executable dependency. Canonical `Tests/PointerCompositionTests/PointerCompositionRootTests.swift` proves the sole `PointerCompositionRoot.make(resourceBundle: Bundle = .main)` factory injects one explicit resource bundle into `GuideAssetCatalog`, every production dependency, `ControlMetadataProvider`, `GuidePlacementProvider`, `GuideAssetCatalogProviding`, `UserDefaultsShortcutStore`, guide store, registrar, and scheduler, uses `PointerApplication.shared as! PointerApplication`, and keeps the graph alive through `let composition` and `application.run()` |
+| Preserve phase ownership and ordering | The reconciled graph is exactly `A-foundation → B-core → C → D → B-render-integration → A-harness → E-foundation (tasks 1–3, including Task 3c) → F-foundation (tasks 1–3) → E-execution → F-final (tasks 4–7)`; E-foundation owns and implements `PerformanceCLI`/`scripts/benchmark-quality.sh`, F-foundation imports and wires them, and E-execution consumes them for runtime evidence. CanvasView gesture/cursor edits remain B-core-owned, draw/RenderPlan consumption is B-render-owned, real integrated views are A-harness-owned, and no downstream gate starts before its worker, reviewer, and adversarial gate |
 | Preserve marks and control through mode/display lifecycle | B's `DisplayCoordinator.stop()`/`DisplayStopResult` plus deterministic standby, zero-display, and same-process running/stopped/restarted checkpoints prove entering standby clears selection while retaining marks/undo/shortcut/menu-bar state, hidden standby selection chrome, exact-once hotkey rebinding, bounded running counts, zero stop cleanup, cleared handlers, fresh-overlay restart/no closed-panel reuse, observer/timer release, distinct non-committing display-loss versus application-stop guide cleanup, palette hide, and duplicate-free reconnect/restart restoration |
 | Preserve geometric boundary behavior | B's inclusive/epsilon hit-testing suite covers collinear overlap, endpoint/tangent contact, rectangle-edge and arrow-endpoint regressions, and just-outside misses |
 | Prove standby rendering rather than only model state | D's offscreen `MarkRenderer`/RenderPlan check, B-render-integration's real CanvasView draw test, A-harness convergence proof, palette affordance test, and F's live built-app CanvasView manual proof all agree that marks remain visible while standby selection/handles/Delete stay absent and explicit re-selection is required |
@@ -1406,7 +1548,7 @@ The audit must show:
 | Make first-use support safe and reversible | Fresh-defaults manual matrix proves guide show only after successful palette show, first-display retry after zero-display startup, visible-panel-before-seen marking, non-committing display-loss hide and reconnect restore after palette show, distinct application-stop intent clearing with normal seen/unseen restart rules, no orphan panel/seen mutation/mode-tool mutation, Close/Done, reopen, Escape, annotation-triggered dismissal, no automatic reappearance, no CanvasView interference, deterministic guide metadata, and live VoiceOver evidence |
 | Add delight while removing more than adding | User-facing diff review showing contextual feedback or micro-details with a clear job, removal/collapse of redundant chrome, and no net increase to common-path friction |
 | Keep iterating until meaningful improvements are hard to find | Worker/reviewer/Codex reconciliation records plus a final adversarial pass with no unresolved meaningful finding; remaining lower-severity items are explicit and bounded |
-| Prove performance and resource health | Model-only `GestureBenchmark.Result` from `--benchmark-gestures --format json`, plus typed variant `PerformanceMeasurementReport` and paired `PerformanceComparisonReport` from the separate `--quality-performance`/`--quality-compare` commands, full `baselineMeasurementIdentity`/`candidateMeasurementIdentity` fields with exact environment equality and distinct source commits matching run/build provenance, typed `PerformanceMetricUnit`/optional canonical `budgetLimit` values (`combinedFrame` 16.7 ms, `responsiveness`/`inputToVisible` 100 ms; nil for other metrics), finite strictly positive baseline/candidate samples, nonempty ratio/delta arrays of exactly `totalPairs == pairsPerOrder * 2`, universal ratio median/p95 ≤1.10, and memoryRSS delta/slope evidence rather than absolute p95, immutable commit/content-manifest identities with mutually exclusive 40/64-hex flags, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, baseline eligibility after the F foundation checkpoint, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
+| Prove performance and resource health | Model-only `GestureBenchmark.Result` from `--benchmark-gestures --format json`, plus typed `standard12` and `dense1000` `PerformanceFixtureProfile` report sets with separate `PerformanceMeasurementReport` and `PerformanceComparisonReport` artifacts/paths, both required by Task 3c's typed `PerformanceCampaignCompletionManifest` and the 16.7 ms renderer-plus-compositor/combined-frame gates evaluated per profile; full `baselineMeasurementIdentity`/`candidateMeasurementIdentity` fields with exact environment equality and distinct source commits matching run/build provenance, typed `PerformanceMetricUnit`/optional canonical `budgetLimit` values (`combinedFrame` 16.7 ms, `responsiveness`/`inputToVisible` 100 ms; nil for other metrics), finite strictly positive baseline/candidate samples, nonempty ratio/delta arrays of exactly `totalPairs == pairsPerOrder * 2`, universal ratio median/p95 ≤1.10, and memoryRSS delta/slope evidence rather than absolute p95, immutable commit/content-manifest identities with mutually exclusive 40/64-hex flags, fixed paired A/B measurements and bootstrap rule, required model/renderer/compositor/combined-frame/launch/allocation/redraw-layout/responsiveness/input-to-visible/memory schemas with measured statuses, memory phase/window/sample/RSS-series/aggregate/peak/final-delta/matched-baseline/resource-count fields, running-only plateau validation plus separate stop/restart checkpoints, frame/input budgets, leak validation, baseline eligibility after the F foundation checkpoint, and `REVISE` plus completion block for missing, failed, or unmeasured metrics |
 | Complete supported physical evidence | A capable-host preflight and mandatory host/date/steps/result/evidence ledger covers every supported physical case; any capable but untested or failed case keeps the goal active |
 | Preserve validation, security, accessibility, architecture, and scope | Full verifier, Release bundle, clean-clone, manual, keyboard/VoiceOver, appearance, permission, performance, and boundary checks; no new forbidden dependency, permission, or production import |
 | Preserve project boundaries | Stable-app-only diff, untouched primary dirty README/`graphify-out`, no unapproved commit/push/publication, and a clean final status for the campaign-owned paths |

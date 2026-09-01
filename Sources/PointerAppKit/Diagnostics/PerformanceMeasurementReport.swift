@@ -34,6 +34,36 @@ public enum SourceTreeStatus: String, Codable, Sendable, Equatable {
     case dirty
 }
 
+public enum PerformanceFixtureProfile: String, Codable, Sendable, Equatable, CaseIterable {
+    case standard12
+    case dense1000
+
+    public var markCount: Int {
+        switch self {
+        case .standard12: return 12
+        case .dense1000: return 1_000
+        }
+    }
+
+    public var identifier: String {
+        switch self {
+        case .standard12: return "pointer-standard-12-marks"
+        case .dense1000: return "pointer-dense-1000-marks"
+        }
+    }
+
+    public var version: String {
+        switch self {
+        case .standard12: return "pointer-fixture-standard12/v1"
+        case .dense1000: return "pointer-fixture-dense1000/v1"
+        }
+    }
+
+    fileprivate static func canonical(for markCount: Int) -> PerformanceFixtureProfile {
+        markCount == dense1000.markCount ? .dense1000 : .standard12
+    }
+}
+
 public enum MetricEvidenceClass: String, Codable, Sendable, Equatable {
     case deterministic
     case manual
@@ -125,6 +155,8 @@ public struct HostIdentity: Codable, Sendable, Equatable {
 
 public struct FixtureIdentity: Codable, Sendable, Equatable {
     public let identifier: String
+    public let fixtureProfile: PerformanceFixtureProfile
+    public let fixtureVersion: String
     public let markCount: Int
     public let continuationSamples: Int
     public let warmupCount: Int
@@ -132,8 +164,33 @@ public struct FixtureIdentity: Codable, Sendable, Equatable {
     public let seed: UInt64
 }
 
+extension FixtureIdentity {
+    init(
+        identifier: String,
+        markCount: Int,
+        continuationSamples: Int,
+        warmupCount: Int,
+        trialCount: Int,
+        seed: UInt64
+    ) {
+        let profile = PerformanceFixtureProfile.canonical(for: markCount)
+        self.init(
+            identifier: profile.identifier,
+            fixtureProfile: profile,
+            fixtureVersion: profile.version,
+            markCount: markCount,
+            continuationSamples: continuationSamples,
+            warmupCount: warmupCount,
+            trialCount: trialCount,
+            seed: seed
+        )
+    }
+}
+
 public struct PerformanceConfiguration: Codable, Sendable, Equatable {
     public let fixtureMarkCount: Int
+    public let fixtureProfile: PerformanceFixtureProfile
+    public let fixtureVersion: String
     public let samplesPerGesture: Int
     public let warmupCount: Int
     public let trialCount: Int
@@ -146,8 +203,10 @@ public struct PerformanceConfiguration: Codable, Sendable, Equatable {
     public let foundationIdentity: FoundationIdentity
     public let buildContractVersion: String
 
-    public static let standard = PerformanceConfiguration(
+    public static let standard12 = PerformanceConfiguration(
         fixtureMarkCount: 12,
+        fixtureProfile: .standard12,
+        fixtureVersion: PerformanceFixtureProfile.standard12.version,
         samplesPerGesture: 240,
         warmupCount: 5,
         trialCount: 30,
@@ -164,7 +223,70 @@ public struct PerformanceConfiguration: Codable, Sendable, Equatable {
         buildContractVersion: "pointer-build-contract/v1"
     )
 
+    public static let standard = standard12
+
+    public static let dense1000 = PerformanceConfiguration(
+        fixtureMarkCount: 1_000,
+        fixtureProfile: .dense1000,
+        fixtureVersion: PerformanceFixtureProfile.dense1000.version,
+        samplesPerGesture: 240,
+        warmupCount: 5,
+        trialCount: 30,
+        pairsPerOrder: 15,
+        bootstrapSeed: 48271,
+        bootstrapResamples: 10_000,
+        memoryWindowSeconds: 600,
+        memorySampleIntervalSeconds: 5,
+        harnessVersion: "pointer-performance-harness/v1",
+        foundationIdentity: FoundationIdentity(
+            identity: "pointer-f-foundation",
+            version: "v1"
+        ),
+        buildContractVersion: "pointer-build-contract/v1"
+    )
+
+    public static let dense = dense1000
+
     public var totalPairs: Int { pairsPerOrder * 2 }
+
+    public var isCanonical: Bool {
+        self == .standard12 || self == .dense1000
+    }
+}
+
+public extension PerformanceConfiguration {
+    init(
+        fixtureMarkCount: Int,
+        samplesPerGesture: Int,
+        warmupCount: Int,
+        trialCount: Int,
+        pairsPerOrder: Int,
+        bootstrapSeed: UInt64,
+        bootstrapResamples: Int,
+        memoryWindowSeconds: Int,
+        memorySampleIntervalSeconds: Int,
+        harnessVersion: String,
+        foundationIdentity: FoundationIdentity,
+        buildContractVersion: String
+    ) {
+        let profile = PerformanceFixtureProfile.canonical(for: fixtureMarkCount)
+        self.init(
+            fixtureMarkCount: fixtureMarkCount,
+            fixtureProfile: profile,
+            fixtureVersion: profile.version,
+            samplesPerGesture: samplesPerGesture,
+            warmupCount: warmupCount,
+            trialCount: trialCount,
+            pairsPerOrder: pairsPerOrder,
+            bootstrapSeed: bootstrapSeed,
+            bootstrapResamples: bootstrapResamples,
+            memoryWindowSeconds: memoryWindowSeconds,
+            memorySampleIntervalSeconds: memorySampleIntervalSeconds,
+            harnessVersion: harnessVersion,
+            foundationIdentity: foundationIdentity,
+            buildContractVersion: buildContractVersion
+        )
+    }
 }
 
 public struct PerformanceRunProvenance: Codable, Sendable, Equatable {
@@ -473,6 +595,22 @@ private enum PerformanceReportValidator {
         try require(report.buildContractVersion == report.buildProvenance.buildContractVersion, "report/build build contract mismatch")
         try require(report.buildContractVersion == report.runProvenance.configuration.buildContractVersion, "report/configuration build contract mismatch")
         try require(report.buildProvenance.buildConfiguration == report.identity.buildConfiguration, "report/build configuration mismatch")
+        let statuses: [MeasurementStatus] = [
+            report.model.status,
+            report.renderer.status,
+            report.compositor.status,
+            report.combinedFrame.status,
+            report.launch.status,
+            report.allocations.status,
+            report.redrawLayout.status,
+            report.responsiveness.status,
+            report.inputToVisible.status,
+            report.memory.status,
+            report.resilience.status,
+        ]
+        if statuses.contains(where: { $0 == .failed || $0 == .unmeasured }) {
+            try require(report.disposition == .revise, "failed or unmeasured reports require revise disposition")
+        }
 
         try validateModel(report.model)
         try validateFrame(report.renderer)
@@ -520,7 +658,7 @@ private enum PerformanceReportValidator {
         try require(report.resilience.disposition == .acceptedNoRegression, "resilience disposition is not accepted")
         try require(report.resilience.cases.allSatisfy { $0.status == .measured && !$0.leakedResource && !$0.unexpectedGrowth }, "resilience evidence is incomplete")
         try require(report.disposition == .acceptedNoRegression, "report disposition is not accepted")
-        try require(report.runProvenance.configuration == .standard, "completion requires the campaign standard configuration")
+        try require(report.runProvenance.configuration.isCanonical, "completion requires a canonical fixture configuration")
         try require(report.identity.buildConfiguration == "release", "completion requires a Release build")
         try require(report.buildProvenance.buildConfiguration == "release", "completion requires Release build provenance")
         guard let acceptedFoundation = report.buildProvenance.acceptedFoundationArtifactSHA256 else {
@@ -600,6 +738,9 @@ private enum PerformanceReportValidator {
 
     private static func validateFixture(_ fixture: FixtureIdentity) throws {
         try require(!fixture.identifier.isEmpty, "fixture identifier is required")
+        try require(fixture.identifier == fixture.fixtureProfile.identifier, "fixture identifier does not match profile")
+        try require(fixture.fixtureVersion == fixture.fixtureProfile.version, "fixture version does not match profile")
+        try require(fixture.markCount == fixture.fixtureProfile.markCount, "fixture mark count does not match profile")
         try require(fixture.markCount > 0, "fixture markCount must be positive")
         try require(fixture.continuationSamples > 0, "fixture continuationSamples must be positive")
         try require(fixture.warmupCount >= 0, "fixture warmupCount must be nonnegative")
@@ -607,6 +748,9 @@ private enum PerformanceReportValidator {
     }
 
     private static func validateConfiguration(_ configuration: PerformanceConfiguration) throws {
+        try require(configuration.isCanonical, "configuration must be a canonical fixture profile")
+        try require(configuration.fixtureMarkCount == configuration.fixtureProfile.markCount, "configuration mark count does not match profile")
+        try require(configuration.fixtureVersion == configuration.fixtureProfile.version, "configuration version does not match profile")
         try require(configuration.fixtureMarkCount > 0, "configuration fixtureMarkCount must be positive")
         try require(configuration.samplesPerGesture > 0, "configuration samplesPerGesture must be positive")
         try require(configuration.warmupCount >= 0, "configuration warmupCount must be nonnegative")
@@ -649,6 +793,8 @@ private enum PerformanceReportValidator {
             try require(frame.frameMilliseconds.count == frame.sampleCount, "frame raw samples must match sampleCount")
             try require(frame.frameMilliseconds.allSatisfy { $0.isFinite && $0 > 0 }, "frame raw samples must be finite and positive")
             try require(frame.p95Milliseconds == nearestRankP95(frame.frameMilliseconds), "frame p95 does not match raw samples")
+            let expectedMissedFrameCount = frame.frameMilliseconds.filter { $0 > 16.7 }.count
+            try require(frame.missedFrameCount == expectedMissedFrameCount, "missedFrameCount does not match raw frame samples")
         } else {
             try require(frame.frameMilliseconds.isEmpty, "diagnostic frame raw samples must be empty")
         }

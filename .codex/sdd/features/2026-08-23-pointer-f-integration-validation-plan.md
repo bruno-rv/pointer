@@ -11,8 +11,11 @@ actool, validate exact icon resolution and idempotence, run the full
 Swift/Release/smoke/benchmark gate, and write final evidence under the
 F-owned report subtree. E's model-only `GestureBenchmark.Result` remains
 separate from the full-quality `PerformanceMeasurementReport` and paired
-`PerformanceComparisonReport`; F only wires their launcher branches and
-consumes E's reconciled output.
+`PerformanceComparisonReport`; E-foundation implements the typed
+`standard12`/`dense1000` fixture-profile schema, `PerformanceCLI`, and
+`scripts/benchmark-quality.sh` before F-foundation, while F only imports and
+wires the existing CLI's launcher branches and consumes both separate E
+evidence sets.
 
 **Tech Stack:** Swift tools 5.10, macOS 14+, SwiftPM, AppKit, Carbon, XCTest, xcodebuild/swift/actool/assetutil/Launch Services, shell scripts, GitHub Actions, Markdown evidence ledgers.
 
@@ -24,8 +27,15 @@ consumes E's reconciled output.
 - Pointer parses `--smoke --format json`, the model-only
   `--benchmark-gestures --format json`, full-quality
   `--quality-performance --format json`, and `--quality-compare --format json`
-  before composition; only the no-flag path calls
+  before composition. The full-quality branches carry exactly one
+  `--fixture-profile standard12|dense1000`; only the no-flag path calls
   `PointerCompositionRoot.make()`.
+- The accepted profiles are exact: `PerformanceFixtureProfile.standard12`
+  uses `pointer-fixture-standard12/v1`, identifier
+  `pointer-standard-12-marks`, and 12 marks; `.dense1000` uses
+  `pointer-fixture-dense1000/v1`, identifier `pointer-dense-1000-marks`, and
+  1,000 marks. F passes the selected `fixtureProfile` through unchanged and
+  never combines their report populations.
 - Runtime ships only the compiled `Contents/Resources/Assets.car`, the
   byte-identical tracked `GuideAssetIdentity.json`, `Info.plist`, and the
   executable. Raw PNGs, imagesets, or `.xcassets` directories never ship in
@@ -71,15 +81,32 @@ pair ancestry or baseline/candidate claim. E's
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve the primary checkout's unrelated README/graphify-out and do not reset/clean it.
 - F owns Package.swift, Sources/PointerComposition/PointerCompositionRoot.swift, Sources/Pointer/main.swift, Tests/PointerCompositionTests/**, .github/workflows/verify.yml, Bundle/Info.plist, scripts/build-app.sh, scripts/run-app.sh, scripts/verify.sh, scripts/test-clean-clone.sh, Tests/BuildScripts/**, clean-clone/manual harnesses, `.codex/sdd/reports/quality-campaign/foundation/**`, and `.codex/sdd/reports/quality-campaign/final/**`. A's Support/Harness test files remain inside the existing PointerAppKitTests target path; F does not add a support target or alter their ownership.
 - F-foundation consumes A-D interfaces plus the reconciled E-foundation
-  contracts; F-final consumes the reconciled E-execution reports. F does not
+  contracts, imports and wires the already-existing E-foundation
+  `PerformanceCLI` into the launcher, and does not own or edit that CLI or
+  `scripts/benchmark-quality.sh`; F-final consumes the reconciled E-execution
+  reports. F does not
   edit another phase's product behavior, performance subtree, shared fixtures,
   or guide/palette implementation to make integration pass.
 - F's final aggregation consumes E's variant reports only from
-  `.codex/sdd/reports/quality-campaign/performance/measurements/**`, their
-  typed provenance artifacts from `provenance/**`, paired reports from
-  `comparisons/**`, and resilience evidence from `resilience/**`; F retains the
-  exact E input reports unchanged, writes links/summaries under `final/**`,
-  and never creates direct-root performance JSON.
+  `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/measurements/**`
+  for both `standard12` and `dense1000`, their typed provenance artifacts from
+  each profile's `provenance/**`, paired reports from each profile's
+  `comparisons/**` including its persisted pair-execution artifact, and each
+  profile's resilience evidence from `resilience/**`; F retains the exact E
+  input reports and pair-execution artifacts unchanged, writes links/summaries
+  under `final/**`, and never creates direct-root performance JSON.
+- F-final requires both fixture profiles through Task 3c's typed campaign
+  completion manifest and evaluates the 16.7 ms
+  renderer-plus-compositor and combined-frame gates independently for each;
+  it never concatenates their measurements or treats one profile as a proxy for
+  the other. Current E adapter fallbacks remain honest: WindowServer
+  compositor, combined-frame, process, and manual writer evidence may remain
+  `.unmeasured`/`revise` until Task 3c/E-execution supplies external sidecars;
+  `ManualMetricAdapter` is currently a Codable schema, not a physical-evidence
+  writer. `CACurrentMediaTime` alone is not a WindowServer measurement, and
+  combined-frame evidence must be independently measured. F-foundation does
+  not silently accept missing profile fields; E-foundation's implemented
+  parameterized model/renderer oracle and tests cover both profiles.
 - The clean-clone gate observes its committed source identity and clean status
   at execution time. It is unavailable until the coordinator provides a
   committed campaign identity containing the reconciled implementation, tests,
@@ -205,16 +232,25 @@ composition-root default may select `.main`.
         XCTAssertEqual(guide.assetCatalog.bundleIdentifier, testResourceBundle.bundleIdentifier)
     }
 
-    func testCompositionTestsDoNotImportExecutableTarget() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let packageRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(contentsOfFile: packageRoot
-            .appendingPathComponent("Tests/PointerCompositionTests/PointerCompositionRootTests.swift")
-            .path)
-        XCTAssertNil(source.range(of: "(?m)^import Pointer$", options: .regularExpression))
+    func testCompositionPublicAPICompilesFromExternalModule() throws {
+        // Compile a temporary external client against only the library modules,
+        // resolve public symbols, and inspect the package graph for the test
+        // target's dependencies. This is symbol-aware and does not inspect
+        // source text for import substrings.
+        try runSwiftBuild(target: "PointerComposition")
+        let probe = """
+        import Foundation
+        import PointerComposition
+        @MainActor @main
+        enum ExternalCompositionProbe {
+            static func main() {
+                let _: PointerComposition = PointerCompositionRoot.make(resourceBundle: .main)
+            }
+        }
+        """
+        try compileExternalSwiftProbe(probe, imports: ["PointerComposition", "PointerAppKit"])
+        let packageGraph = try dumpPackageGraph()
+        XCTAssertFalse(packageGraph.testTarget(named: "PointerCompositionTests").dependencies.contains("Pointer"))
     }
 
 - [ ] **Step 2: Run RED.**
@@ -245,8 +281,8 @@ Add a library product/target PointerComposition depending on PointerCore and Poi
 
 Return all fields in the exact public shape. Keep a local `let composition` in
 main.swift through `application.run()`. Add weak probes for controller, guide,
-stores, and coordinator under `withExtendedLifetime(composition)`, and a
-source-level test proving the diagnostic branches do not construct the
+stores, and coordinator under `withExtendedLifetime(composition)`, and an
+executable branch test proving the diagnostic branches do not construct the
 container. The construction test must pass a non-main injected bundle and
 prove the guide catalog resolves through that bundle; the production default
 is `resourceBundle: Bundle = .main` at the root only.
@@ -272,10 +308,11 @@ Expected: composition identity passes and the source scan returns no production 
     func testSmokeBranchReturnsBeforeCompositionConstruction()
     func testBenchmarkBranchReturnsBeforeCompositionConstruction()
     func testQualityPerformanceAndComparisonBranchesReturnBeforeCompositionConstruction()
-    func testQualityCompareRequiresAndForwardsManualEvidenceDirectory()
+    func testQualityCompareRequiresManualEvidenceDirectory()
     func testNoFlagBranchConstructsOneStrongCompositionBeforeRun()
 
-Use source inspection plus executable invocations. The smoke branch must accept
+Use executable invocations plus the external-module/symbol-aware compile proof
+above. The smoke branch must accept
 `--smoke --format json` and optional built-in/external displays. The
 `--benchmark-gestures --format json` branch must remain the model-only
 `GestureBenchmark.Result` diagnostic. The quality branches must dispatch the
@@ -283,20 +320,24 @@ full reports with these mutually exclusive measurement identities:
 
 ```text
 --quality-performance --format json --variant baseline|candidate \
+  --fixture-profile standard12|dense1000 \
   (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
   --run-provenance-file <path> --output-dir <directory>
 --quality-compare --format json \
+  --fixture-profile standard12|dense1000 \
   --baseline-report <path> --candidate-report <path> \
   --pair-eligibility-file <path> \
+  --pair-execution-artifact <path> \
   --manual-evidence-dir <directory> --output-dir <directory>
 ```
 
 `--quality-performance` emits `PerformanceMeasurementReport` and requires a
 `--run-provenance-file` envelope. `--quality-compare` emits an authoritative
 `PerformanceComparisonReport` from the two report paths and typed eligibility
-file; its required existing `--manual-evidence-dir` value is always passed as
-`manualEvidenceDirectory` to internal `compare(...:manualEvidenceDirectory:)`
-and the public writer before persistence; deterministic runs require that
+file; its required existing `--manual-evidence-dir` value binds directly to
+`manualEvidenceDirectory` on internal compare together with the decoded
+pair artifact and separate `pairExecutionArtifactSHA256`; the public writer
+alone reads and validates the pair-execution URL before persistence; deterministic runs require that
 directory to be empty. It does not accept roots or refs because the eligibility
 file carries the prevalidated lineage. Invalid arguments, both/neither measurement source
 identity flags, malformed identities, or content-manifest identities on the
@@ -313,30 +354,39 @@ Expected: current launcher imports only PointerAppKit, no composition target exi
 
 - [ ] **Step 3: Implement the two-path launcher.**
 
-Import PointerComposition and PointerAppKit's @MainActor PerformanceCLI, retain
+Import PointerComposition and PointerAppKit's @MainActor PerformanceCLI from
+the already-existing E-foundation implementation, retain
 all diagnostic parsers before MainActor composition, and dispatch smoke, the
 model-only gesture benchmark, full quality-performance, and quality-compare
 branches before any composition is constructed. The quality-performance
 branch requires `--run-provenance-file <path>`; `PerformanceCLI` parses the
 typed `PerformanceRunProvenance` envelope, checks its embedded
 `BuildProvenance`, source identity, and artifact hashes, and embeds both typed
-artifacts in `PerformanceMeasurementReport`. E's script is the sole creator
-of the run envelope and `PerformancePairEligibility` during authoritative
+artifacts in `PerformanceMeasurementReport`. E-foundation's
+`benchmark-quality.sh` is the sole creator of the run envelope and
+`PerformancePairEligibility` during authoritative
 orchestration. The app does not assert Git status, ancestry, or checkout
 provenance; F/E shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
-the compare branch requires an existing `--manual-evidence-dir`, passes it as
-`manualEvidenceDirectory` to internal
-`compare(baseline:candidate:configuration:eligibility:manualEvidenceDirectory:)`,
-which loads and validates the evidence in Task 3 and returns only the
-hash-free `PerformanceComparisonDraft`. It then reaches E's public exact
-`writeComparison(draft:baselineURL:candidateURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`,
-which receives that same directory, reads and hashes the exact report bytes,
-decodes, cross-checks the draft, injects the hashes into the final report, and
-performs full preflight before writing. The internal seam is deferred and
-non-writing and makes no
-hash-verification claim. Hash, identity, fixture, provenance, or eligibility
+the compare branch requires an existing `--manual-evidence-dir` and the
+pair-execution artifact URL. The public writer privately reads, hashes, and
+decodes that URL, then supplies the decoded artifact and its separate SHA plus
+the manual directory to internal
+`compare(baseline:candidate:configuration:eligibility:pairExecutionArtifact:manualEvidenceDirectory:pairExecutionArtifactSHA256:baselineMeasurementReportSHA256:candidateMeasurementReportSHA256:)`,
+which loads and validates manual evidence and the artifact in Task 3 and returns only the hash-free
+`PerformanceComparisonDraft`. That public `Sendable, Equatable` opaque carrier has no public
+initializer or public stored properties and excludes `reportKind`,
+`schemaVersion`, and the two measurement-report hashes. The E-owned writer
+owns and injects those fields. It then reaches E's public exact
+`writeComparison(draft:baselineURL:candidateURL:pairExecutionURL:manualEvidenceDirectory:outputDirectory:configuration:eligibility:)`,
+which receives the same directory and pair-execution URL, cross-checks the
+draft/artifact, injects `reportKind == .comparison`, `schemaVersion == 1`, and
+the report hashes into the final report, and invokes
+internal measurement/configuration/eligibility preflight before writing. The
+internal seam is deferred and non-writing and recomputes/validates the
+canonical pair-artifact SHA from the decoded artifact. Exact input measurement-
+byte/source-URL hash verification remains public-writer-owned. Hash, identity, fixture, provenance, or eligibility
 mismatch must fail before any output file is created.
 only the no-flag branch executes:
 
@@ -544,6 +594,9 @@ compiled `Assets.car` using the injected bundle.
     func testEvidenceLedgerRejectsMissingHostDateStepsResultOrPath()
     func testCompletionMatrixHasOneRowPerOriginalRequirement()
     func testCompletionMatrixRejectsPairOrderBootstrapOrImprovementClaimTampering()
+    func testCompletionMatrixRequiresIndexedPairArtifactAndIdentityBoundManualEvidence()
+    func testCompletionMatrixUsesReviseForMissingFailedOrUnmeasuredMetric()
+    func testCompletionMatrixRequiresBothFixtureProfilesAndSeparateArtifacts()
 
 Expected: scripts/CI and final evidence files do not yet prove the complete
 scope. This task cannot start until E-execution has produced reconciled
@@ -572,11 +625,25 @@ identity, persistent control/row/status/focus counts, common-path
 clicks/keys/steps, additions/removals, and disposition. The D Task 4
 checkpoint is provenance only; it is linked as historical evidence and is
 never relabeled as the final report. CompletionMatrix links
-`measurements/baseline.json` and `candidate.json`,
-`comparisons/paired-comparison.json`, and `resilience/resilience.json` to the
-authoritative E evidence; it maps every original requirement to authoritative
-proof and marks missing/indirect/unsupported rows incomplete. It validates the
-comparison's full `baselineMeasurementIdentity` and
+`standard12/{measurements,provenance,comparisons,resilience}/**` and
+`dense1000/{measurements,provenance,comparisons,resilience}/**` to the
+authoritative E evidence; each fixture profile must link its own baseline/candidate
+reports, pair-execution artifact, and comparison, and it maps every original
+requirement to authoritative proof and marks missing/indirect/unsupported rows
+incomplete. It validates the
+canonical roots `build/<fixture-profile>/baseline` and
+`build/<fixture-profile>/candidate`, with profile reports under
+`.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/`; no report or
+pair artifact may be reused across fixture profiles.
+Task 3c's `PerformanceCampaignCompletionManifest` at
+`.codex/sdd/reports/quality-campaign/performance/campaign-completion/manifest.json`
+is the only aggregate completion contract: it must name exactly one accepted
+comparison for each profile and reject missing, duplicate, or concatenated
+profiles. Each individual comparison persists the baseline/candidate
+`PerformanceRunProvenance.configuration` values and full
+`baselineFixture`/`candidateFixture` values; it requires matching fixture
+profile/version/count and rejects cross-profile mixing. Its full
+`baselineMeasurementIdentity` and
 `candidateMeasurementIdentity`, exact host/macOS/Xcode/developerDirectory/
 power/display/buildConfiguration equality, distinct source commits matching
 run/build provenance, persisted lowercase 64-hex
@@ -588,26 +655,52 @@ It also validates the v1 raw timing arrays (`frameMilliseconds`, redraw/layout
 `sampleMilliseconds`, `responseMilliseconds`, and input-to-visible
 `sampleMilliseconds`) as exactly `trialCount` finite, strictly positive values
 for measured reports, with p95 recomputation; failed/unmeasured diagnostics may
-carry empty arrays. Each `MetricComparison.pairOrders` is typed `PairOrder` and
-must be exactly 15 baseline-first followed by 15 candidate-first entries. F
-checks deterministic bootstrap recomputation from deltas/seed/resample count,
+carry empty arrays. For measured frames, `missedFrameCount` must equal the
+count of raw `frameMilliseconds` samples greater than 16.7 ms.
+
+The retained artifact `records` are the sole observed `PairOrder` source:
+records 0–14 must be baseline-first and 15–29 candidate-first, with baseline/
+candidate sample indices and UTC start/end timestamps. Validation requires each
+variant's start ≤ its own end, the first variant's end < the second
+variant's start, and each pair's second end < the next pair's first start;
+every metric pairs by recorded sample indices. F checks
+deterministic bootstrap recomputation from deltas/seed/resample count,
 rejects tampering, and accepts `improvementClaimed` only when the recomputed
 delta upper bound is below zero; `acceptedNoRegression` is not an improvement
 claim.
+Any measurement report with a missing, failed, or unmeasured required metric
+structurally requires disposition `revise`, never `blocked` or
+`acceptedNoRegression`; comparison preflight rejects it
+before constructing or writing any comparison, even though it blocks F-final
+completion.
 It also requires nonempty ratio/delta arrays of
 exactly `totalPairs == pairsPerOrder * 2`. It also validates equal persisted
 `baselineFixture`/`candidateFixture` values against their measurement reports,
-the canonical `PerformanceMetricUnit`, finite strictly positive baseline and
-candidate samples, and recomputed ratio median/p95 at most `1.10`. Absolute
+the retained `pair-execution.json` artifact's 30 unique indexed records and
+artifact hash; all metric samples are paired by recorded indices.
+`benchmark-quality.sh` remains the producer that emits these records as it
+invokes each pair. Manual
+compositor/input evidence must bind both variants, commit/report hashes,
+pair-artifact hash, procedure version, typed pair orders, host, paired
+samples, and exactly the matching evidence file. Both variants must use the
+same ordered steps, permissions, evidencePath, and shared procedureVersion.
+The artifact and manual-evidence producers use the canonical sorted-key encoder;
+the artifact SHA is SHA-256 of its canonical bytes and is recomputable from the
+embedded artifact. Unknown fields, alternate whitespace, or alternate key
+order are rejected before decoding/acceptance. Procedures must be equivalent.
+The final report also validates the canonical `PerformanceMetricUnit`, finite
+strictly positive baseline and candidate samples, and recomputed ratio median/
+p95 at most `1.10`. Absolute
 `budgetLimit` is optional and must equal the canonical value only for
 `combinedFrame` (16.7 ms), `responsiveness` (100 ms), and `inputToVisible`
 (100 ms); other metrics must carry nil budgets. For `memoryRSS`, comparison
 samples are strictly positive absolute RSS bytes; signed
 `finalWindowDeltaBytes` and `postWarmupSlopeBytesPerSecond` (B/s) remain
 measurement-report fields validated during pair preflight, not comparison
-sample units or an absolute RSS p95. It also rejects a candidate whose renderer
-p95 plus compositor p95 exceeds 16.7 ms or whose combinedFrame p95 exceeds
-16.7 ms. The report also
+sample units or an absolute RSS p95. It rejects a candidate in either
+`standard12` or `dense1000` whose renderer p95 plus compositor p95 exceeds
+16.7 ms or whose combinedFrame p95 exceeds 16.7 ms; those gates are
+per-profile and never computed over concatenated samples. The report also
 links the canonical 420-point narrow-display evidence and accepted A-harness
 real-guide evidence before marking F-final complete.
 The final report tests also exercise hash, identity, fixture, provenance, and

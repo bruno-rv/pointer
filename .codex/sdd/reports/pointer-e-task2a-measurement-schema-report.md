@@ -16,7 +16,8 @@ Synchronized contract documentation: `121fdbf`.
   `pairsPerOrder` and derived `totalPairs`), all measurement payloads,
   resilience/resource types, and the shared bootstrap interval value type for
   later comparison work. Schema v1 now also carries raw frame, redraw/layout,
-  responsiveness, and input-to-visible timing arrays.
+  responsiveness, and input-to-visible timing arrays plus the explicit
+  `standard12`/`dense1000` fixture profiles.
 
 ## Validation decisions
 
@@ -33,13 +34,13 @@ Synchronized contract documentation: `121fdbf`.
   reports may retain `failed` or `unmeasured` statuses and partial arrays, but
   completion requires every required metric to be measured, valid final state,
   zero missed-frame/input samples and stalls, explicit 16.7 ms/100 ms budgets,
-  the exact campaign-standard configuration, bounded memory delta, clean
+  one of the exact canonical fixture configurations, bounded memory delta, clean
   resilience cases, and accepted disposition.
 - Memory validation enforces the 600-second/5-second contract, ordered samples,
   running/stopping/stopped/restarted phases, nonnegative/coherent resources,
   contiguous aggregates that reconcile to the running RSS series, exact peak
   RSS/resource maxima, the final resource checkpoint, and matched baseline
-  arrays. A measured standard report requires all 121 running samples at
+  arrays. A measured canonical report requires all 121 running samples at
   exactly 0...600 seconds in 5-second increments followed by stopping,
   stopped, and restarted checkpoints at 605/610/615 seconds; stopping and
   stopped resources must be exactly zero and restarted resources must exactly
@@ -61,11 +62,19 @@ Synchronized contract documentation: `121fdbf`.
 - Measured model, frame, launch, allocation, redraw/layout, and input evidence
   counts must match the fixture/trial configuration, and each raw timing
   array is finite, strictly positive, cardinality-aligned, and the source of
-  truth for its p95 value. Diagnostic failed or unmeasured objects carry empty
-  raw arrays while retaining finite scalar diagnostics. Completion additionally
-  requires the exact standard configuration, Release build identity and
+  truth for its p95 value. Measured frame evidence also derives
+  `missedFrameCount` exactly from raw samples above 16.7 ms, so a fast p95 does
+  not hide a single slow outlier. Diagnostic failed or unmeasured objects carry
+  empty raw arrays while retaining finite scalar diagnostics. Completion additionally
+  requires an exact canonical profile configuration, Release build identity and
   provenance, and a valid non-nil accepted foundation artifact hash echoed by
-  run provenance.
+  run provenance. Canonical profile identifiers and versions are bound to their
+  mark counts in both configuration and fixture identity, so a matching mark
+  count cannot spoof the other profile. Structurally valid failed or unmeasured reports must carry
+  `.revise` disposition; `.acceptedNoRegression` and `.blocked` are rejected
+  for those diagnostic states. Legacy standard-12 fixture identifiers are not
+  accepted; the internal compatibility initializer emits only the canonical
+  profile identifier.
 
 ## Evidence
 
@@ -77,7 +86,7 @@ then verified with:
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter PerformanceHarnessTests
 ```
 
-Result: 20 tests passed, including full Equatable round-trip coverage, typed report-kind
+Result: 57 tests passed, including full Equatable round-trip coverage, typed report-kind
 rejection, clean/dirty identity rules, provenance mismatches, non-finite and
 negative values, memory phase/duration/interval/aggregate/resource-checkpoint
 failures, derived RSS/delta and slope checks, full lifecycle cadence,
@@ -85,13 +94,14 @@ configuration cardinality, diagnostic status preservation, nonstandard/debug
 diagnostic configurations, named authoritative accepted-foundation rejection,
 and completion acceptance/rejection.
 
-Three selected raw-array/round-trip schema tests pass in the focused target.
-The shared branch currently has 27 Task3-integrated tests; its remaining
-integration failure is the separately owned OffscreenCanvasRendererAdapter
-still emitting a measured frame with no raw samples. The raw-array schema
-addition is a pre-release working-tree change pending that adapter handoff;
-the prior implementation and synchronized contract documentation are
-committed as noted above.
+The focused Task3-integrated target passes 57/57 tests, including raw-array
+round-trip, p95/cardinality, non-finite diagnostic, missed-frame outlier,
+canonical standard12/dense1000 profile identity, cross-profile spoof rejection,
+and dense single-profile report coverage. The full package suite passes 444/444
+tests. The profile schema addition is a pre-release working-tree change; the
+prior implementation and
+synchronized contract documentation are committed as noted above. The current
+build passes; no comparison or harness file is changed here.
 
 The implementation intentionally stops at schema/validation. Instrumentation,
 `PerformanceHarness`, CLI dispatch, paired comparisons, and runtime evidence
