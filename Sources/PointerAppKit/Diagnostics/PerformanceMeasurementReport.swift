@@ -304,6 +304,12 @@ public struct PerformanceRunProvenance: Codable, Sendable, Equatable {
     public let acceptedFoundationArtifactSHA256: String?
 }
 
+internal extension PerformanceRunProvenance {
+    func validateStructure() throws {
+        try PerformanceReportValidator.validateRunProvenance(self)
+    }
+}
+
 public struct ModelMeasurement: Codable, Sendable, Equatable {
     public let status: MeasurementStatus
     public let trialNanoseconds: [Double]
@@ -562,7 +568,7 @@ public struct PerformanceMeasurementReport: Codable, Sendable, Equatable {
     }
 }
 
-private enum PerformanceReportValidator {
+internal enum PerformanceReportValidator {
     private static let hexCharacters = CharacterSet(charactersIn: "0123456789abcdef")
     private static let emptyResources = ResourceCounts(overlays: 0, timers: 0, handlers: 0, windows: 0, observers: 0)
     private static let memorySlopeNoiseToleranceBytesPerSecond = 1e-9
@@ -621,7 +627,7 @@ private enum PerformanceReportValidator {
         try validateRedrawLayout(report.redrawLayout)
         try validateResponsiveness(report.responsiveness)
         try validateInputToVisible(report.inputToVisible)
-        try validateMemory(report.memory, warmupCount: report.runProvenance.configuration.warmupCount)
+        try validateMemory(report.memory, warmupCount: report.runProvenance.configuration.warmupCount, trialCount: report.runProvenance.configuration.trialCount)
         try validateResilience(report.resilience)
         try validateMeasuredCounts(report)
     }
@@ -667,6 +673,12 @@ private enum PerformanceReportValidator {
         try require(isHex(acceptedFoundation, count: 64), "accepted foundation artifact must be lowercase 64-hex")
         try require(report.runProvenance.acceptedFoundationArtifactSHA256 == acceptedFoundation, "run/foundation artifact mismatch")
         try require(memoryPostWarmupSlope(report.memory) <= memorySlopeNoiseToleranceBytesPerSecond, "post-warmup memory slope exceeds measurement noise")
+    }
+
+    static func validateRunProvenance(_ run: PerformanceRunProvenance) throws {
+        try validateBuild(run.build)
+        try validateRun(run)
+        try validateConfiguration(run.configuration)
     }
 
     private static func validateIdentity(_ identity: MeasurementIdentity, against build: BuildProvenance) throws {
@@ -717,7 +729,14 @@ private enum PerformanceReportValidator {
         try validateFoundation(run.foundation)
         try require(!run.harnessVersion.isEmpty, "run harnessVersion is required")
         try require(!run.buildContractVersion.isEmpty, "run buildContractVersion is required")
-        try require(run.sourceRef == run.build.sourceIdentity.value, "run/source identity mismatch")
+        if run.build.sourceIdentity.kind == .contentManifestSHA256 {
+            try require(
+                run.sourceRef == run.build.sourceIdentity.value || isHex(run.sourceRef, count: 40),
+                "content run sourceRef must be its manifest or canonical source commit"
+            )
+        } else {
+            try require(run.sourceRef == run.build.sourceIdentity.value, "run/source identity mismatch")
+        }
         if let accepted = run.acceptedFoundationArtifactSHA256 {
             try require(isHex(accepted, count: 64), "run accepted foundation artifact must be lowercase 64-hex")
         }
@@ -870,7 +889,7 @@ private enum PerformanceReportValidator {
         try require(input.p95Milliseconds.isFinite && input.p95Milliseconds >= 0, "input p95 must be finite and nonnegative")
     }
 
-    private static func validateMemory(_ memory: MemoryMeasurement, warmupCount: Int) throws {
+    private static func validateMemory(_ memory: MemoryMeasurement, warmupCount: Int, trialCount: Int) throws {
         try require(memory.windowSeconds == PerformanceConfiguration.standard.memoryWindowSeconds, "memory window must be 600 seconds")
         try require(memory.sampleIntervalSeconds == PerformanceConfiguration.standard.memorySampleIntervalSeconds, "memory sample interval must be 5 seconds")
         try require(memory.postWarmupSlopeBytesPerSecond.isFinite, "memory slope must be finite")
@@ -914,6 +933,25 @@ private enum PerformanceReportValidator {
             previousRank = rank
         }
         let runningSamples = memory.samples.filter { $0.phase == .running }
+        let isScalarSeries = memory.status == .measured
+            && memory.samples.count == trialCount
+            && runningSamples.count == trialCount
+            && memory.aggregates.isEmpty
+            && memory.matchedBaselineSeries.isEmpty
+            && memory.matchedBaselineValues.isEmpty
+            && memory.samples.allSatisfy { $0.phase == .running }
+        if isScalarSeries {
+            let maximumRSS = memory.samples.map(\.rssBytes).max()!
+            try require(memory.peakRSSBytes == maximumRSS, "peak RSS does not match sampled maximum")
+            try require(memory.peakLiveResourceCounts == maximumResources(in: memory.samples), "peak live resources do not match sampled maximum")
+            try require(memory.endLiveResourceCounts == memory.samples.last!.resources, "end live resources do not match final sample")
+            for (index, sample) in runningSamples.enumerated() {
+                try require(sample.elapsedSeconds == Double(index * memory.sampleIntervalSeconds), "scalar memory cadence has a gap")
+            }
+            let expectedSlope = leastSquaresSlope(for: runningSamples, warmupCount: warmupCount)
+            try require(abs(memory.postWarmupSlopeBytesPerSecond - expectedSlope) <= memorySlopeNoiseToleranceBytesPerSecond, "scalar memory slope does not match samples")
+            return
+        }
         if memory.status == .measured {
             let expectedRunningSampleCount = memory.windowSeconds / memory.sampleIntervalSeconds + 1
             try require(runningSampleCount == expectedRunningSampleCount, "memory running cadence is incomplete")

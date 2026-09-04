@@ -150,9 +150,9 @@ draft. Captured stale shortcut candidates, active tokens, and canceled timer
 actions do not mutate the stopped session, event log, shortcut state, stop
 result, or zero-resource checkpoint.
 
-The integrated `PointerApplicationController.start()` path loads
-`GuideAssetIdentity.json` and all 24 mapped PNGs through an injected bundle,
-then verifies the real `FirstUseGuideController` panel is visible, key,
+On a GUI-capable host, the integrated `PointerApplicationController.start()`
+path loads `GuideAssetIdentity.json` and all 24 mapped PNGs through an injected
+bundle, then verifies the real `FirstUseGuideController` panel is visible, key,
 Done-focused, fully resolved, and observing appearance changes. Stop hides the
 panel and removes its observer. First-use state changes only after a
 successful visible callback. Display loss hides and retries the guide without
@@ -160,6 +160,23 @@ marking it seen; application stop clears restore intent; restart does not
 replay stale restore work. A later explicit `showGuide()` creates a fresh real
 panel and `applicationShouldTerminate` completes teardown. This is real
 in-process controller/guide evidence, not executable launch proof.
+
+The real panel's pre-show metadata and Done target-action are covered by an
+always-running headless test. `GUIHostTestSupport` skips only activation policy
+`.prohibited`; inactive regular or accessory hosts are not skipped, so Pointer's
+inactive accessory/nonactivating-panel configuration remains eligible for the
+key-window test. The current SwiftPM host is `.prohibited` and inactive, and
+therefore records one explicit skip in `FirstUseGuideTests` and one in
+`LifecycleHarnessTests`. It cannot satisfy F's accepted A-harness real-guide
+prerequisite; historical key/focus counts above are conditional on a
+GUI-capable host, while deterministic lifecycle/resource/seen-state evidence
+remains valid.
+
+The current SwiftPM focused replay records one explicit `.prohibited` skip in
+each GUI-gated suite (`FirstUseGuideTests`: 28 executed, 1 skipped;
+`LifecycleHarnessTests`: 13 executed, 1 skipped), with zero failures. The
+historical checkpoint totals below remain historical evidence; they do not turn
+the current headless host into F's required built-app live proof.
 
 ## Reconciliation record
 

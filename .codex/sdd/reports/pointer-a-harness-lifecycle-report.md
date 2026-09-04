@@ -20,8 +20,11 @@ engine.
 the real D `FirstUseGuideController`, backed by a temporary bundle populated
 from the tracked guide manifest and all 24 source PNGs.
 
-Each test boots AppKit through `_ = NSApplication.shared`. No global event
-monitor, event tap, input synthesis, screen capture, or sleep is used.
+Each deterministic lifecycle test boots AppKit through `_ = NSApplication.shared`.
+The lifecycle fixture uses no global event monitor, event tap, input synthesis,
+screen capture, or sleep. The separate GUI-gated real-panel test routes one
+synthetic Return `NSEvent` through `NSApp.sendEvent` to exercise the actual
+key-equivalent path.
 
 ## Resource oracle
 
@@ -77,12 +80,12 @@ parameter notification. The complete stopped checkpoint and the original
 - Hides a visible guide on display loss without changing its seen state,
   restores it only after palette restoration, and clears the restoration intent
   on application stop so the next start does not replay a stale restore.
-- The integrated `PointerApplicationController.start()` path uses a concrete
-  `FirstUseGuideController` with the tracked `GuideAssetIdentity.json` and all
-  24 copied PNGs in an injected temporary bundle. The real
-  `FirstUseGuidePanelWindow` is checked for visibility, key focus, Done focus,
-  eight resolved images, and an active appearance observer; controller-stop
-  teardown removes visibility/key status and the observer.
+- On a GUI-capable host, the integrated `PointerApplicationController.start()`
+  path uses a concrete `FirstUseGuideController` with the tracked
+  `GuideAssetIdentity.json` and all 24 copied PNGs in an injected temporary
+  bundle. The real `FirstUseGuidePanelWindow` is checked for visibility, key
+  focus, Done focus, eight resolved images, and an active appearance observer;
+  controller-stop teardown removes visibility/key status and the observer.
 - After the integrated controller stops, a seen guide does not auto-reopen on
   restart; an explicit `showGuide()` creates a fresh real panel, and
   `applicationShouldTerminate` performs the second complete teardown.
@@ -104,9 +107,27 @@ evidence. This suite also does not prove WindowServer behavior across Spaces,
 physical pointer hit targets, or a person's live VoiceOver experience; those
 remain manual integration evidence.
 
+## GUI-host qualification
+
+`GUIHostTestSupport` skips only when AppKit reports activation policy
+`.prohibited`. Inactive `.regular` and `.accessory` hosts remain eligible,
+which covers Pointer's production accessory policy and its nonactivating panel.
+The real panel's pre-show metadata and Done target-action are asserted in an
+always-running headless test; only WindowServer key-window and physical
+key-equivalent routing remain GUI-gated.
+
+The current SwiftPM host reports activation policy `.prohibited` and
+`isActive == false`, so the current focused run records one explicit skip in
+`FirstUseGuideTests` and one in `LifecycleHarnessTests`. Those skips are
+intentional capability boundaries: this host cannot satisfy F's accepted
+A-harness real-guide prerequisite. Historical key/focus results in this report
+are therefore conditional on a GUI-capable host; deterministic resource
+counts, guide state transitions, image resolution, observer cleanup, and
+headless lifecycle coverage remain valid independently.
+
 ## Verification
 
-The focused lifecycle suite passed:
+The historical focused lifecycle suite at the implementation checkpoint passed:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter LifecycleHarnessTests
@@ -119,14 +140,14 @@ passed all thirteen tests, including concrete guide-panel teardown, active
 gesture cancellation, stale shortcut delivery, post-restart callback oracles,
 and unseen/pending-guide state checks.
 
-The related lifecycle/controller/guide/hotkey/display/render suites passed:
+The historical related lifecycle/controller/guide/hotkey/display/render suites passed:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter 'LifecycleHarnessTests|PointerApplicationControllerTests|GuideIntegrationTests|FirstUseGuideTests|HotKeyControllerTests|ShortcutLifecycleTests|DisplayLifecycleRegressionTests|CanvasIntegrationHarnessTests|CanvasViewRenderIntegrationTests'
 Executed 121 tests, with 0 failures
 ```
 
-The full package and build gates also passed:
+The historical full package and build gates also passed:
 
 ```text
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
@@ -136,3 +157,15 @@ Build complete
 git diff --check
 passed
 ```
+
+The current SwiftPM host replay is capability-qualified as follows:
+
+```text
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter FirstUseGuideTests
+Executed 28 tests, with 1 test skipped and 0 failures
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter LifecycleHarnessTests
+Executed 13 tests, with 1 test skipped and 0 failures
+```
+
+The two skips are the `.prohibited` GUI-host boundaries documented above; all
+headless guide metadata, target-action, resource, and lifecycle assertions ran.

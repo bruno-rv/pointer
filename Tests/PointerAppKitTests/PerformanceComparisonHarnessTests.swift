@@ -587,6 +587,7 @@ final class PerformanceComparisonHarnessTests: XCTestCase {
         let persisted = try JSONDecoder().decode(PerformanceComparisonReport.self, from: writtenData)
         XCTAssertEqual(persisted.baselineMeasurementReportSHA256, PerformanceFixtures.sha256(baselineData))
         XCTAssertEqual(persisted.candidateMeasurementReportSHA256, PerformanceFixtures.sha256(candidateData))
+        XCTAssertEqual(writtenData, try PerformanceCanonicalJSON.data(for: persisted))
     }
 
     func testWriteComparisonCrossChecksCallerReportAgainstDecodedInputsBeforeOutput() throws {

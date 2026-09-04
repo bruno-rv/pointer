@@ -26,8 +26,10 @@ evidence sets.
 - PointerComposition depends on PointerCore and PointerAppKit and is usable by composition tests without importing the executable.
 - Pointer parses `--smoke --format json`, the model-only
   `--benchmark-gestures --format json`, full-quality
-  `--quality-performance --format json`, and `--quality-compare --format json`
-  before composition. The full-quality branches carry exactly one
+`--quality-performance --format json` with explicit `--operation trial` or
+`--operation finalize`, and `--quality-compare --format json`
+  and `--quality-campaign-complete --format json` before composition. The
+  full-quality branches carry exactly one
   `--fixture-profile standard12|dense1000`; only the no-flag path calls
   `PointerCompositionRoot.make()`.
 - The accepted profiles are exact: `PerformanceFixtureProfile.standard12`
@@ -67,15 +69,13 @@ source status/identity, source/executable/bundle hashes, UTC timestamp,
 foundation identity/version, harness version, and build-contract version;
 exact `buildConfiguration` (`release` authoritative; `debug` bootstrap
 diagnostic), optional accepted-foundation artifact SHA, and no filesystem path.
-It has no
-pair ancestry or baseline/candidate claim. E's
-  `benchmark-quality.sh` is the sole creator of `PerformanceRunProvenance`
-  and `PerformancePairEligibility`, consumes two validated BuildProvenance
-  files plus roots/refs/foundation, proves Git cleanliness/ancestry and
-  checkout-to-binary correspondence, and passes the resulting run artifact
-  to the diagnostic executable. The app only validates the build artifact and
-  embeds the typed build/run artifacts; it does not replace the script's Git
-  proof.
+It has no pair ancestry or baseline/candidate claim. F owns clean/ref/
+ancestry/build-app/hash creation and supplies prevalidated build/provenance
+inputs. E's `benchmark-quality.sh` consumes those inputs, enforces its
+canonical path/JSON boundary, and passes them to the diagnostic executable;
+`PerformanceCLI` revalidates the typed provenance, eligibility, profile
+containment, and hashes before writing. The app only validates and embeds the
+typed build/run artifacts; it does not replace F's Git/build proof.
 - Evidence distinguishes deterministic proof, current-host physical proof, and unverified platform claims. A capable but untested supported case keeps the goal active; it cannot be marked not applicable.
 - The manual matrix covers every supported tool, mode, edit action, palette flow, shortcut path, display/Space condition, guide path, VoiceOver path, appearance state, permission condition, and long session available on the host.
 - Work only in /Users/bruno/Dev/pointer/.worktrees/stable-app; preserve the primary checkout's unrelated README/graphify-out and do not reset/clean it.
@@ -91,7 +91,8 @@ pair ancestry or baseline/candidate claim. E's
   `.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/measurements/**`
   for both `standard12` and `dense1000`, their typed provenance artifacts from
   each profile's `provenance/**`, paired reports from each profile's
-  `comparisons/**` including its persisted pair-execution artifact, and each
+  `comparisons/**`, the persisted
+  `pair-execution/pair-execution.json` artifact, and each
   profile's resilience evidence from `resilience/**`; F retains the exact E
   input reports and pair-execution artifacts unchanged, writes links/summaries
   under `final/**`, and never creates direct-root performance JSON.
@@ -101,7 +102,8 @@ pair ancestry or baseline/candidate claim. E's
   it never concatenates their measurements or treats one profile as a proxy for
   the other. Current E adapter fallbacks remain honest: WindowServer
   compositor, combined-frame, process, and manual writer evidence may remain
-  `.unmeasured`/`revise` until Task 3c/E-execution supplies external sidecars;
+  `.unmeasured`/`revise` until the F-owned authoritative caller supplies
+  accepted external sidecars through the unchanged E CLI/writer seams;
   `ManualMetricAdapter` is currently a Codable schema, not a physical-evidence
   writer. `CACurrentMediaTime` alone is not a WindowServer measurement, and
   combined-frame evidence must be independently measured. F-foundation does
@@ -114,9 +116,135 @@ pair ancestry or baseline/candidate claim. E's
   uncommitted plan/design state is a precondition failure, not a clean-clone
   result; a stale report or earlier clean/dirty claim cannot satisfy the gate.
 - F tasks 1–3 start only after E-foundation tasks 1–3 have reconciled the
-  benchmark/schema/harness contracts. E-execution then runs the paired
+  benchmark/schema/harness contracts, including the trial/finalize partial-pair
+  schemas. E-execution then runs the paired
   immutable protocol against this F foundation. F tasks 4–7 start only after
-  E-execution is reconciled and consume its immutable reports.
+  E-execution is reconciled and consume its immutable reports. F never promotes
+  Task3c diagnostic `revise` reports, invokes compare, or accepts a campaign
+  manifest before its own foundation and the typed external sidecars exist.
+  Before F-foundation, E's diagnostic script requires explicit F-supplied
+  build/provenance/eligibility inputs, accepts no foundation or manual-evidence
+  arguments, copies provenance into staged profile evidence, and makes no
+  checkout-to-binary hash-correspondence claim; it may perform exactly 60
+  trials and one finalize for a selected profile, then stops without compare or manifest;
+  an F-owned authoritative caller must validate F's foundation/sidecar gate
+  before invoking the unchanged E trial/finalize CLI and reject before the first
+  trial when it is absent. The diagnostic script has no authoritative mode.
+  Before any trial, the E-owned script canonicalizes and validates the selected
+  profile roots and destinations: baseline/candidate roots are distinct
+  non-symlink directories at `build/<fixture-profile>/{baseline,candidate}`;
+  the profile evidence destination is a non-symlink path outside both roots;
+  pair eligibility is exactly
+  `<profile-evidence>/comparisons/pair-eligibility.json`; and each provenance
+  file is a regular non-symlink file within its matching build root. Default
+  executable routing is
+  `<variant-root>/Pointer.app/Contents/MacOS/Pointer`; explicit executable
+  overrides remain executable, canonical, and contained by that variant root.
+  All build and evidence paths must resolve within the same physical
+  `<repo-root>`: `<repo-root>/build/<fixture-profile>/{baseline,candidate}` and
+  `<repo-root>/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>`.
+  Relative arguments resolve from that root, and absolute arguments must
+  canonicalize to those exact paths.
+  `$REPO` denotes that physical repository root. Production CLI accepts run
+  provenance only at `$REPO/build/<fixture-profile>/<variant>/provenance.json`,
+  and each `PerformanceRunProvenance.outputRoot` equals
+  `$REPO/build/<fixture-profile>/<variant>`;
+  `PerformancePairEligibility.baselineRoot` and `.candidateRoot` are exactly
+  `$REPO/build/<fixture-profile>/baseline` and
+  `$REPO/build/<fixture-profile>/candidate`, and the partial directory is
+  `$REPO/build/<fixture-profile>/pair-execution/partial`. Final evidence is
+  only `$REPO/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>`;
+  direct legacy evidence roots are rejected.
+  The script validates the logical output scope before creating any directory,
+  then acquires a live-owner profile lock before recovery or staging; that lock
+  remains held through trials, finalization, and publication. Before spawning a
+  child, the starting gate durably records only a starting intent/token, the
+  shell PID, and transaction identity in the profile lock. The child then enters
+  a private readiness gate; after readiness, the lock records its child PID and
+  child PGID/process-group identity before releasing
+  that gate. A recorded running owner may be taken over only after its shell
+  PID, child PID, and process group are dead and descendants are quiescent. If
+  the lock remains in the unrecorded `starting` state, it is the sole liveness
+  exception: the wrapper may still be alive only after recovery atomically
+  revokes and quarantines that transaction's private capability namespace/token
+  and guarantees that the wrapper fails closed before publication, readiness-gate
+  release, executable invocation, or mutation. The recovery operation is
+  restartable: a valid existing capability-revocation marker is accepted and
+  reused, while a valid deterministic `.revoked.<token>` quarantine is reopened
+  to resume cleanup. Each revocation marker, quarantine rename, and cleanup
+  transition is durably synced. After the quarantine validates, recovery
+  atomically renames it to the deterministic `.cleanup.<token>` tombstone and
+  durably syncs that transition.
+  The cleanup directory name is the authoritative resumable state: it permits
+  only the token-scoped `gate`, `ready`, `owner`,
+  `owner.tmp`, `capability`, and `capability.revoked` entries with their
+  expected physical node types, and accepts any subset after partial deletion,
+  including a missing revocation marker. Recovery deletes the remaining allowed
+  entries and then the empty tombstone, durably syncing each file-removal
+  transition and the final cleanup. A live namespace, `.revoked.<token>`
+  quarantine, and `.cleanup.<token>` tombstone may not coexist; malformed names,
+  node types, symlinks, or extra entries reject. The journal owns transaction
+  state and paths. When an existing profile lock appears stale, contenders
+  serialize through the durable guard
+  `$REPO/.codex/sdd/reports/quality-campaign/performance/.benchmark-quality.recovery.<fixture-profile>`.
+  The guard records its owner PID and transaction plus the exact observed lock
+  SHA-256 and complete observed owner tuple (shell PID, transaction, child,
+  state, token, and child PGID). While holding the guard, recovery re-reads and
+  re-fingerprints the exact stale lock and requires the tuple to remain identical
+  and every recorded owner/process group to remain dead before any mutation. A
+  changed, replaced, or newly live lock aborts without mutation; a live guard
+  blocks. A dead guard is reclaimed only by validating it and atomically renaming
+  it to the unique quarantine
+  `.benchmark-quality.recovery.<fixture-profile>.reclaimed.<oldTransaction>.<oldPID>.<newTransaction>`,
+  then durably cleaning that quarantine. After stale recovery, the guard is
+  released and contenders return to normal lock acquisition, so simultaneous
+  contenders allow exactly one publisher to proceed. An optional runner
+  receives the selected executable as its first argument and
+  the exact CLI argv, without `eval` or shell-string execution. Wrong-profile,
+  traversal, alias/symlink, overlap, and out-of-root paths reject before the
+  first trial. The staged diagnostic profile allowlist is exactly
+  `provenance/{baseline,candidate}.json`,
+  `comparisons/pair-eligibility.json`,
+  `measurements/{baseline,candidate}.json`, and
+  `pair-execution/pair-execution.json`, under only those four root directories;
+  manual/resilience/comparison/partial/lock files and every extra entry are
+  excluded. The shell's staged check requires only regular, non-symlink,
+  well-formed JSON files and does not re-encode or assert canonical bytes;
+  `PerformanceCLI` finalization owns canonical sorted-key bytes for generated
+  measurement reports and the pair artifact, and its real integration test
+  verifies that guarantee. Publication is a crash-recoverable journaled
+  transaction: after the scope check and live-owner lock, the script journals
+  transaction state plus canonical staging/destination/backup paths and
+  `had-existing` state before creating pending staging. It creates the pending
+  profile only at
+  `$REPO/.codex/sdd/reports/quality-campaign/performance/.benchmark-quality.pending.<fixture-profile>/<fixture-profile>`.
+  It then atomically installs
+  the fully validated profile through `prepared`, `backed-up`, and `installed`
+  states, records commit, and removes backup/journal only after commit. Recovery
+  and signal cleanup handle dead owners in journaled `prepared`, `backed-up`,
+  and `installed` states: `prepared` removes abandoned staging, `backed-up`
+  restores the prior destination, and `installed` resolves the destination from
+  the recorded `had-existing` and backup state. A pending tree or backup with
+  no journal is an orphan, not safely recoverable; only an empty pending tree
+  may be removed, while nonempty orphan state is rejected as requiring recovery.
+  Handled `INT`/`TERM` signals are forwarded to the child process group and
+  awaited until descendants quiesce. Each mutation-capable publication hook is
+  awaited and followed by complete path/allowlist/JSON revalidation before
+  commit. The lock's shell/child/process-group identity prevents a live owner
+  from being recovered by another invocation; an unrecorded starting wrapper is
+  eligible only after its capability namespace is atomically revoked/quarantined
+  and it is guaranteed to fail closed. No half-published tree is accepted.
+  `BenchmarkQualityScriptTests` covers an orphaned active-child/process-group
+  lock, handled-signal group forwarding and descendant waiting, successful hook
+  mutations followed by revalidation, the three pre-prepared, post-backup, and
+  post-install crash windows, two SIGKILL recovery-of-recovery cases that resume
+  from a valid revocation marker and from a deterministic `.revoked.<token>`
+  quarantine, and two mid-cleanup SIGKILL cases that resume after partial
+  deletion, including a missing revocation marker, from the `.cleanup.<token>`
+  tombstone; one resumes after a generic allowed-file removal and one after
+  revocation-marker removal. It also covers simultaneous stale contenders,
+  exactly one publisher proceeding, and a SIGKILL while the stale-recovery
+  guard is held that is reclaimed before recovery resumes.
 - F tasks 1–3 produce the tracked foundation checkpoint
   `.codex/sdd/reports/quality-campaign/foundation/accepted-foundation.json`.
   It is accepted only after the F worker, independent reviewer, and
@@ -309,41 +437,212 @@ Expected: composition identity passes and the source scan returns no production 
     func testBenchmarkBranchReturnsBeforeCompositionConstruction()
     func testQualityPerformanceAndComparisonBranchesReturnBeforeCompositionConstruction()
     func testQualityCompareRequiresManualEvidenceDirectory()
+    func testMetricSamplesCarryExplicitStatusAndStableDiagnosticInCanonicalOrder()
+    func testExactVersionedTrialWireTypesRoundTripAllCanonicalMetricSamples()
+    func testExternalTrialSidecarUsesExactNullableScalarWireShape()
+    func testExternalAggregateSidecarRequiresThirtyOrderedResultHashes()
+    func testTrialBuildsRequestFromFlagsAndRejectsOutputDirectory()
+    func testTrialRequiresValidatedProvenanceAndEligibilityBeforePartial()
+    func testTrialResultCarriesHashesWarmupsSamplesAndEvidence()
+    func testTrialEmitsEveryMetricWithUnmeasuredDiagnostics()
+    func testFinalizeDerivesContainedProfileEvidenceAndWritesArtifactLast()
+    func testPreFoundationDiagnosticStopsAfterSixtyTrialsAndFinalize()
+    func testDiagnosticScriptRejectsAuthoritativeFlagsBeforeTrials()
+    func testTrialCLIAcceptsDiagnosticContentManifestIdentityBoundToRunCommit()
+    func testCampaignCompletionCLIUsesExactAcceptedComparisonBindingsAndIsIdempotent()
     func testNoFlagBranchConstructsOneStrongCompositionBeforeRun()
 
 Use executable invocations plus the external-module/symbol-aware compile proof
 above. The smoke branch must accept
 `--smoke --format json` and optional built-in/external displays. The
 `--benchmark-gestures --format json` branch must remain the model-only
-`GestureBenchmark.Result` diagnostic. The quality branches must dispatch the
-full reports with these mutually exclusive measurement identities:
+`GestureBenchmark.Result` diagnostic. The quality branches must dispatch these
+operation-specific forms with their mutually exclusive measurement identities:
+Direct `PerformanceCLI` URL arguments below are canonical absolute paths and
+assume the command runs from the physical repository root (`$PWD == $REPO`).
+The shell wrapper's relative arguments are the exception: it resolves them from
+its own repository root before invoking the CLI.
 
 ```text
---quality-performance --format json --variant baseline|candidate \
-  --fixture-profile standard12|dense1000 \
+--quality-performance --format json --operation trial \
+  --fixture-profile <standard12|dense1000> --variant <baseline|candidate> \
+  --pair-order <baselineFirst|candidateFirst> --pair-index <0...29> \
   (--source-commit-sha <40hex> | --content-manifest-sha256 <64hex>) \
-  --run-provenance-file <path> --output-dir <directory>
+  --run-provenance-file "$PWD/build/<fixture-profile>/<variant>/provenance.json" \
+  --pair-eligibility-file "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/pair-eligibility.json" \
+  [--external-trial-sidecar "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/external/trials/<variant>/<pairIndex>.json"] \
+  --partial-pair-directory "$PWD/build/<fixture-profile>/pair-execution/partial"
+--quality-performance --format json --operation finalize \
+  --fixture-profile <standard12|dense1000> \
+  --partial-pair-directory "$PWD/build/<fixture-profile>/pair-execution/partial" \
+  --baseline-run-provenance-file "$PWD/build/<fixture-profile>/baseline/provenance.json" \
+  --candidate-run-provenance-file "$PWD/build/<fixture-profile>/candidate/provenance.json" \
+  --pair-eligibility-file "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/pair-eligibility.json" \
+  [--baseline-external-aggregate-sidecar "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/external/aggregate/baseline.json"] \
+  [--candidate-external-aggregate-sidecar "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/external/aggregate/candidate.json"] \
+  --output-dir "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>"
 --quality-compare --format json \
   --fixture-profile standard12|dense1000 \
-  --baseline-report <path> --candidate-report <path> \
-  --pair-eligibility-file <path> \
-  --pair-execution-artifact <path> \
-  --manual-evidence-dir <directory> --output-dir <directory>
+  --baseline-report "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/measurements/baseline.json" \
+  --candidate-report "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/measurements/candidate.json" \
+  --pair-eligibility-file "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/pair-eligibility.json" \
+  --pair-execution-artifact "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/pair-execution/pair-execution.json" \
+  --manual-evidence-dir "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons/manual" \
+  --output-dir "$PWD/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/comparisons"
+--quality-campaign-complete --format json \
+  --standard12-comparison "$PWD/.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/paired-comparison.json" \
+  --dense1000-comparison "$PWD/.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/paired-comparison.json" \
+  --output-file "$PWD/.codex/sdd/reports/quality-campaign/performance/campaign-completion/manifest.json"
 ```
 
-`--quality-performance` emits `PerformanceMeasurementReport` and requires a
-`--run-provenance-file` envelope. `--quality-compare` emits an authoritative
+The F-owned `--quality-campaign-complete` operation calls
+`PerformanceCampaignCompletion.writeManifest` to validate both canonical
+comparison files, their exact hashes, shared baseline/candidate lineage, and
+profile separation before atomically writing the sorted-key completion manifest.
+It accepts no path-only or concatenated evidence.
+
+The launcher dispatches `--operation trial` and `--operation finalize` without
+constructing composition. A trial performs five local warmups on an isolated
+fixture and emits one scalar sample per metric in strict canonical
+`PerformanceTrialRequest`, `PerformanceTrialMetricSample`,
+`PerformanceTrialResult`, and `PerformancePartialPair` schema-version-1 JSON;
+`sampleIndex == pairIndex`. Their exact fields are minimal request
+`schemaVersion`, `fixtureProfile`, typed `variant`, `order`, `pairIndex`, and
+`sampleIndex`; metric sample `metricID`, `unit`, `status`, `value`, and
+`diagnostic`; result `schemaVersion`, `request`, `sourceIdentity`,
+`runProvenanceSHA256`, `pairEligibilitySHA256`, `startedAtUTC`,
+`endedAtUTC`, `warmupCountExecuted`, `samples`, required
+`modelEvidence`, and required `rendererEvidence`; and partial `schemaVersion`,
+`fixtureProfile`, `pairIndex`,
+`order`, `baseline`, and `candidate`. Requests are in-memory values
+constructed from flags; only the derived partial is persisted. Every canonical
+metric is emitted exactly once; unavailable metrics use `unmeasured` with nil
+value and a nonempty diagnostic. Unknown fields, alternate whitespace/key order,
+duplicate/missing metrics, nonfinite values, and request/result identity
+mismatches reject before decoding or acceptance. Direct `Codable` decoding of
+the public request, result, and partial types enforces their exact key sets;
+unknown or missing keys do not silently default. `PerformanceModelTrialEvidence`
+owns `modelChecksum`, publication count, and final-state validity;
+`PerformanceRendererTrialEvidence` owns frame count, missed-frame count,
+instrumentation status, and required `semanticPass`. The result's
+provenance/eligibility hashes bind the canonical provenance and its embedded
+artifact hashes.
+The public `PerformanceExternalTrialSidecar` schema has `schemaVersion`,
+`binding`, and `measurements`; its binding carries the exact request, source
+identity, `runProvenanceSHA256`, `pairEligibilitySHA256`, and timestamps. Its
+measurements are exactly the ordered external metrics `compositor`,
+`combinedFrame`, `launchCold`, `launchWarm`, `allocations`, `redrawLayout`,
+`responsiveness`, and `inputToVisible`, each with `metricID`, `unit`, `status`,
+`value`, and `diagnostic`. When present, a sidecar's UTC binding interval must
+contain the actual in-process result interval (`startedAtUTC` through
+`endedAtUTC`); it supplies external metric values/status only and never
+replaces the persisted result timestamps. A retry for an already persisted
+variant must match its stored external metric values, statuses, and containing
+interval; a mismatched sidecar rejects before measurement. The trial operation
+accepts optional
+`--external-trial-sidecar <path>`; an absent sidecar supplies explicit
+unmeasured null-value diagnostics for those eight external metrics. The public
+`PerformanceExternalAggregateSidecar` schema has `schemaVersion`, typed
+variant/profile/source/hash `binding`, exactly 30 ordered `resultSHA256s`, and
+full typed `MemoryMeasurement` and `ResilienceMeasurement`. Finalize accepts
+optional `--baseline-external-aggregate-sidecar <path>` and
+`--candidate-external-aggregate-sidecar <path>`; when either is absent, it
+does not fabricate external evidence: memory falls back to the in-process
+`memoryRSS` aggregation when available, while resilience remains
+`unmeasured` with disposition `revise`. Nullable keys, including external
+scalar `value`/`diagnostic` and partial `baseline`/`candidate`, are always
+present as `null`, never omitted.
+When supplied, a trial sidecar is exactly
+`$REPO/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/external/trials/<variant>/<pairIndex>.json`;
+an aggregate sidecar is exactly
+`$REPO/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/external/aggregate/<variant>.json`.
+No alternate evidence root or direct legacy path is accepted.
+Before finalization accepts an existing external preseed, it audits every
+regular, non-symlink entry and binds each trial filename index to its request's
+`pairIndex`/`sampleIndex` plus the current variant source identity,
+run-provenance hash, and pair-eligibility hash; aggregate filenames must bind
+the current variant/profile and hashes as well. Stale, extra, or mismatched
+preseed files reject.
+The Swift `PerformanceCLI` finalizer uses the same physical performance root
+but a distinct publish transaction namespace. Its pending profile is exactly
+`$REPO/.codex/sdd/reports/quality-campaign/performance/.<fixture-profile>.pending-<transactionID>`,
+where `<transactionID>` is a UUID copied into the schema-version-1 journal at
+`$REPO/.codex/sdd/reports/quality-campaign/performance/.benchmark-quality.transaction.<fixture-profile>`.
+The journal records transaction state and canonical staging, destination,
+backup, and `hadExistingOutput` paths. Recovery validates the journal's
+canonical absolute paths and transaction-matching pending suffix before
+acting. Any surviving staged profile must be a physical, exact-topology
+profile containing only the four allowed root directories/files, with typed
+provenance, eligibility, measurements, pair artifact, and optional external
+evidence decoded and binding-validated. The backup is exactly
+`$REPO/.codex/sdd/reports/quality-campaign/performance/.benchmark-quality.backup.<fixture-profile>/<fixture-profile>`.
+Before a new transaction, any existing backup container must be physical and
+empty. Recovery preflights a journaled backup as a physical container holding
+only its recorded output; when restore moves that output out, it validates the
+container is empty before removing it. During recovery, installed-state
+cleanup removes the journaled backup container only after that preflight shape
+check, and any extra
+or malformed entry rejects. The `prepared`, `backed-up`, and `installed` crash
+windows respectively remove abandoned staging or restore the prior output,
+install validated staging or restore the backup, and resolve the output from
+recorded `hadExistingOutput` plus backup state before deleting journal and
+backup remnants.
+The finalizer requires exactly 30 complete partial-pair files, aggregates every
+metric's scalar values in sorted global-index order, requires model and renderer
+evidence on every result, and unconditionally requires model-checksum agreement
+within each variant regardless of sidecar presence. It derives
+`measurements/{baseline,candidate}.json` under the selected profile evidence
+directory before writing `pair-execution/pair-execution.json` as the last commit
+marker. Those 30 canonical partial-pair files are the only resumable state.
+Finalization sets `acceptedNoRegression` only when every required metric and
+the complete memory/resilience evidence are measured and valid; otherwise it
+preserves a diagnostic report with disposition `revise`.
+Before warmup or measurement, the store audits the whole partial directory,
+rejects symlinks/nonregular entries and illegal names, and canonical-decodes
+and validates every existing regular partial. It then acquires an exclusive
+per-slot `<pairIndex>.json.lock` and rechecks the directory while holding that
+lock. Around reservation and write, the store captures the partial directory's
+`lstat` `(st_dev, st_ino)` identity and requires the same device/inode after
+lock acquisition and immediately before the atomic partial write; a directory
+replacement, symlink, non-directory, or identity change rejects. Identical
+retries are no-ops and conflicting retries reject. Only slots
+0...29 may exist in the partial directory; filenames have no order prefix and
+any extra entry or active lock rejects. Final load repeats the
+regular/non-symlink audit and canonical decode before aggregation.
+Global indices 0...14 require `baselineFirst` and 15...29 require
+`candidateFirst`; the second variant merges into the same derived slot. No full
+measurement report is emitted during a trial. The CLI constructs and
+strictly validates each request from flags, provenance, and pair eligibility
+before writing a partial; there is no request file or trial output directory.
+Trial requires its `--run-provenance-file` and `--pair-eligibility-file`;
+finalize requires the explicit baseline and candidate run-provenance files,
+pair eligibility, and one profile evidence output directory. `--quality-compare`
+emits an authoritative
 `PerformanceComparisonReport` from the two report paths and typed eligibility
 file; its required existing `--manual-evidence-dir` value binds directly to
 `manualEvidenceDirectory` on internal compare together with the decoded
 pair artifact and separate `pairExecutionArtifactSHA256`; the public writer
 alone reads and validates the pair-execution URL before persistence; deterministic runs require that
 directory to be empty. It does not accept roots or refs because the eligibility
-file carries the prevalidated lineage. Invalid arguments, both/neither measurement source
+file carries the prevalidated lineage. Each `benchmark-quality.sh` invocation
+handles exactly one `--fixture-profile`; the campaign caller invokes it once
+for `standard12` and once for `dense1000`. Invalid arguments, both/neither measurement source
 identity flags, malformed identities, or content-manifest identities on the
-authoritative compare exit nonzero with concise stderr. Scripts orchestrate
-roots/refs/builds and then invoke these report-path commands after F tasks 1–3;
-the launcher never constructs interactive composition for any diagnostic
+authoritative compare exit nonzero with concise stderr. A diagnostic
+content-manifest identity binds the build source manifest; eligibility binds
+the corresponding commit through the run's 40-hex `sourceRef`, and pair IDs
+remain those 40-hex source-ref commits, never the selected 64-hex value.
+Separately scoped dirty diagnostic pairs may share a content-manifest hash when
+their source-ref commits are distinct; that shared hash is not a pair ID.
+F-owned build/ref/ancestry/hash
+orchestration supplies the prevalidated inputs; the Task3c diagnostic script
+invokes only the trial/finalize report-path commands. After F tasks 1–3 and
+its sidecar gate, the F-owned authoritative caller can supply sidecars to the
+unchanged CLI, invoke compare, and write the completion manifest;
+all derived partial, measurement, and pair-artifact paths must be physically
+contained under the selected profile roots, and finalization publishes the
+whole profile evidence atomically rather than leaving a partial profile.
+The launcher never constructs interactive composition for any diagnostic
 branch.
 
 - [ ] **Step 2: Run RED.**
@@ -362,11 +661,12 @@ branches before any composition is constructed. The quality-performance
 branch requires `--run-provenance-file <path>`; `PerformanceCLI` parses the
 typed `PerformanceRunProvenance` envelope, checks its embedded
 `BuildProvenance`, source identity, and artifact hashes, and embeds both typed
-artifacts in `PerformanceMeasurementReport`. E-foundation's
-`benchmark-quality.sh` is the sole creator of the run envelope and
-`PerformancePairEligibility` during authoritative
+artifacts in `PerformanceMeasurementReport`. F-owned orchestration supplies
+the prevalidated run envelope and `PerformancePairEligibility`; E-foundation's
+`benchmark-quality.sh` enforces its canonical path/JSON boundary, while
+`PerformanceCLI` revalidates the typed provenance and eligibility during
 orchestration. The app does not assert Git status, ancestry, or checkout
-provenance; F/E shell scripts own those proofs. The
+provenance; F-owned shell scripts own those proofs. The
 quality branches invoke PerformanceCLI through
 `MainActor.assumeIsolated { try PerformanceCLI.run(arguments:outputDirectory:) }`;
 the compare branch requires an existing `--manual-evidence-dir` and the
@@ -383,12 +683,14 @@ owns and injects those fields. It then reaches E's public exact
 which receives the same directory and pair-execution URL, cross-checks the
 draft/artifact, injects `reportKind == .comparison`, `schemaVersion == 1`, and
 the report hashes into the final report, and invokes
-internal measurement/configuration/eligibility preflight before writing. The
-internal seam is deferred and non-writing and recomputes/validates the
+internal measurement/configuration/eligibility preflight before writing. It
+serializes the persisted comparison with the canonical sorted-key JSON encoder
+and writes those bytes atomically. The internal seam is deferred and non-writing
+and recomputes/validates the
 canonical pair-artifact SHA from the decoded artifact. Exact input measurement-
 byte/source-URL hash verification remains public-writer-owned. Hash, identity, fixture, provenance, or eligibility
 mismatch must fail before any output file is created.
-only the no-flag branch executes:
+Only the no-flag branch executes:
 
     let composition = PointerCompositionRoot.make()
     composition.application.commandRouter = composition.commandRouter
@@ -597,6 +899,7 @@ compiled `Assets.car` using the injected bundle.
     func testCompletionMatrixRequiresIndexedPairArtifactAndIdentityBoundManualEvidence()
     func testCompletionMatrixUsesReviseForMissingFailedOrUnmeasuredMetric()
     func testCompletionMatrixRequiresBothFixtureProfilesAndSeparateArtifacts()
+    func testTask3cFinalizerRequiresThirtyPartialPairsAndWritesArtifactLast()
 
 Expected: scripts/CI and final evidence files do not yet prove the complete
 scope. This task cannot start until E-execution has produced reconciled
@@ -628,19 +931,43 @@ never relabeled as the final report. CompletionMatrix links
 `standard12/{measurements,provenance,comparisons,resilience}/**` and
 `dense1000/{measurements,provenance,comparisons,resilience}/**` to the
 authoritative E evidence; each fixture profile must link its own baseline/candidate
-reports, pair-execution artifact, and comparison, and it maps every original
+  reports, pair-execution artifact at
+  `pair-execution/pair-execution.json`, and comparison, and it maps every original
 requirement to authoritative proof and marks missing/indirect/unsupported rows
-incomplete. It validates the
-canonical roots `build/<fixture-profile>/baseline` and
-`build/<fixture-profile>/candidate`, with profile reports under
-`.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/`; no report or
-pair artifact may be reused across fixture profiles.
+  incomplete. It validates the canonical roots within one physical
+  `<repo-root>`: `<repo-root>/build/<fixture-profile>/baseline` and
+  `<repo-root>/build/<fixture-profile>/candidate`, with profile reports under
+  `<repo-root>/.codex/sdd/reports/quality-campaign/performance/<fixture-profile>/`;
+  no report or pair artifact may be reused across fixture profiles.
 Task 3c's `PerformanceCampaignCompletionManifest` at
 `.codex/sdd/reports/quality-campaign/performance/campaign-completion/manifest.json`
-is the only aggregate completion contract: it must name exactly one accepted
-comparison for each profile and reject missing, duplicate, or concatenated
-profiles. Each individual comparison persists the baseline/candidate
-`PerformanceRunProvenance.configuration` values and full
+is the only aggregate completion contract: its fixed entries carry each
+  `standard12ComparisonPath`/`standard12ComparisonSHA256` and
+  `dense1000ComparisonPath`/`dense1000ComparisonSHA256` values for the exact
+  profile-specific `comparisons/paired-comparison.json` paths and lowercase
+  64-hex report hashes. Those path fields contain exactly the repo-relative
+  strings `.codex/sdd/reports/quality-campaign/performance/standard12/comparisons/paired-comparison.json`
+  and `.codex/sdd/reports/quality-campaign/performance/dense1000/comparisons/paired-comparison.json`,
+  never absolute paths or paths from another repository root. It must name
+  exactly one accepted comparison for each
+  profile and reject missing, duplicate, or concatenated profiles. The two
+  comparison artifacts and the manifest must share one physical performance
+  root under the same `<repo-root>`. When `PerformanceCLI.run` invokes campaign
+  completion, its `outputDirectory` argument must resolve to that physical
+  repository root, not the `.codex/sdd/reports/quality-campaign/performance`
+  directory. Both entries must share the same complete baseline/candidate
+build lineage: source status/identity, source-manifest, executable, and
+bundle-manifest hashes, build configuration, foundation, harness,
+build-contract, and accepted-foundation values. Their complete measurement
+environment and run host identity must also match. Task3c's
+trial/finalize artifacts remain diagnostic `revise` and
+cannot promote or write the manifest until F tasks 1–3 and typed external
+trace/process/manual sidecars are accepted. After that gate, the F-owned
+authoritative caller invokes `PerformanceCLI`
+validated trial/finalize orchestration first, then invokes `PerformanceCLI`
+compare and writes the completion manifest; `benchmark-quality.sh` never
+invokes compare or writes the manifest. Each individual comparison persists
+the baseline/candidate `PerformanceRunProvenance.configuration` values and full
 `baselineFixture`/`candidateFixture` values; it requires matching fixture
 profile/version/count and rejects cross-profile mixing. Its full
 `baselineMeasurementIdentity` and
@@ -651,6 +978,12 @@ run/build provenance, persisted lowercase 64-hex
 bound to the exact input report bytes; `writeComparison` computes and verifies
 those hashes, injects them into the final report, and writes only after
 validation; F retains the exact input reports unchanged.
+F's acceptance test also rechecks the exact `--operation finalize` contract:
+exactly 30 complete partial-pair files, sorted aggregate arrays, baseline and
+candidate reports first, and the pair artifact as the last commit marker. The
+test invokes the real `PerformanceCLI.run` finalize operation with its exact
+argument order, and each profile/variant uses an independently valid lineage
+fixture before any cross-profile campaign assertion.
 It also validates the v1 raw timing arrays (`frameMilliseconds`, redraw/layout
 `sampleMilliseconds`, `responseMilliseconds`, and input-to-visible
 `sampleMilliseconds`) as exactly `trialCount` finite, strictly positive values
@@ -676,7 +1009,7 @@ completion.
 It also requires nonempty ratio/delta arrays of
 exactly `totalPairs == pairsPerOrder * 2`. It also validates equal persisted
 `baselineFixture`/`candidateFixture` values against their measurement reports,
-the retained `pair-execution.json` artifact's 30 unique indexed records and
+the retained `pair-execution/pair-execution.json` artifact's 30 unique indexed records and
 artifact hash; all metric samples are paired by recorded indices.
 `benchmark-quality.sh` remains the producer that emits these records as it
 invokes each pair. Manual
@@ -969,7 +1302,7 @@ pass.
 
 - [ ] **Step 2: Exercise the built app directly.**
 
-Record launch standby; annotation toggle; arrow, rectangle, ellipse, pen, emoji, spotlight; select/move/resize/delete; undo, clear, swept erase; palette drag/re-show; Escape/menu bar; shortcut change/conflict/timeout/recovery/relaunch; narrow/wide palette; keyboard-only; VoiceOver; dark/light/contrast; display pointer placement; two displays; full-screen Spaces; disconnect/reconnect/no-display; denied permissions; long session; and fresh-defaults first-use guide launch/reopen/Close/Done/Escape/annotation dismissal/display loss/reconnect/stop-start. Explicitly verify guide placement receives the palette frame and avoidance rects, stays clamped beside the palette, and does not cover a presentation target. Explicitly verify standby keeps marks/undo but removes selection/handles/Delete and requires re-selection.
+Record launch standby; annotation toggle; arrow, rectangle, ellipse, pen, emoji, spotlight; select/move/resize/delete; undo, clear, swept erase; palette drag/re-show; Escape/menu bar; shortcut change/conflict/timeout/recovery/relaunch; narrow/wide palette; keyboard-only; VoiceOver; dark/light/contrast; display pointer placement; two displays; full-screen Spaces; disconnect/reconnect/no-display; denied permissions; long session; and fresh-defaults first-use guide launch/reopen/Close/Done/Escape/annotation dismissal/display loss/reconnect/stop-start. For the guide row, run Pointer under accessory activation policy while another app is frontmost and record the app-active state before and after showing it; verify guide key-window and Done focus, physical Return dismissal, return of focus to the prior app, Close/Escape/annotation dismissal, reopen and restart behavior, display-loss/reconnect behavior, and that no orphan panel or appearance observer remains while the seen-state and resource checkpoint stay exact. Explicitly verify guide placement receives the palette frame and avoidance rects, stays clamped beside the palette, and does not cover a presentation target. Explicitly verify standby keeps marks/undo but removes selection/handles/Delete and requires re-selection.
 
 - [ ] **Step 3: Record every row.**
 

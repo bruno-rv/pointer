@@ -492,6 +492,47 @@ public enum PerformanceHarness {
 public final class GestureBenchmarkInstrumentationAdapter: ModelInstrumentationAdapter {
     public init() {}
 
+    /// Measures one scalar trial. GestureBenchmark owns its five local
+    /// warmups, so callers never run a thirty-trial batch and select a value.
+    internal func measureSingleTrial(configuration: PerformanceConfiguration) -> ModelMeasurement {
+        guard configuration.isCanonical else {
+            return ModelMeasurement(
+                status: .failed,
+                trialNanoseconds: [],
+                medianNanoseconds: 0,
+                p95Nanoseconds: 0,
+                madNanoseconds: 0,
+                publicationCount: 0,
+                modelChecksum: "unsupported-fixture-profile",
+                finalStateValid: false
+            )
+        }
+        if configuration.fixtureProfile == .dense1000 {
+            return Self.measureDense(configuration: configuration, trialCount: 1)
+        }
+        let result = GestureBenchmark.run(
+            trials: 1,
+            samples: configuration.samplesPerGesture
+        )
+        return ModelMeasurement(
+            status: result.trialNanoseconds.isEmpty
+                ? .unmeasured
+                : PerformanceHarness.modelStatus(
+                    checksumIsStable: result.checksumIsStable,
+                    finalStateValid: result.finalStateValid,
+                    publicationsPerGesture: result.publicationsPerGesture,
+                    expectedTrialCount: 1
+                ),
+            trialNanoseconds: result.trialNanoseconds,
+            medianNanoseconds: result.medianNanoseconds,
+            p95Nanoseconds: result.p95Nanoseconds,
+            madNanoseconds: result.madNanoseconds,
+            publicationCount: result.publicationsPerGesture.first ?? 0,
+            modelChecksum: result.modelChecksum,
+            finalStateValid: result.finalStateValid
+        )
+    }
+
     public func measureModel(configuration: PerformanceConfiguration) -> ModelMeasurement {
         guard configuration.isCanonical else {
             return ModelMeasurement(
@@ -507,7 +548,7 @@ public final class GestureBenchmarkInstrumentationAdapter: ModelInstrumentationA
         }
         let profile = configuration.fixtureProfile
         if profile == .dense1000 {
-            return Self.measureDense(configuration: configuration)
+            return Self.measureDense(configuration: configuration, trialCount: configuration.trialCount)
         }
         let result = GestureBenchmark.run(
             trials: configuration.trialCount,
@@ -532,7 +573,10 @@ public final class GestureBenchmarkInstrumentationAdapter: ModelInstrumentationA
         )
     }
 
-    private static func measureDense(configuration: PerformanceConfiguration) -> ModelMeasurement {
+    private static func measureDense(
+        configuration: PerformanceConfiguration,
+        trialCount: Int
+    ) -> ModelMeasurement {
         var trialNanoseconds: [Double] = []
         var checksums: [String] = []
         var publicationCounts: [Int] = []
@@ -540,10 +584,10 @@ public final class GestureBenchmarkInstrumentationAdapter: ModelInstrumentationA
         for _ in 0..<configuration.warmupCount {
             _ = denseMeasurement(configuration: configuration)
         }
-        trialNanoseconds.reserveCapacity(configuration.trialCount)
-        checksums.reserveCapacity(configuration.trialCount)
-        publicationCounts.reserveCapacity(configuration.trialCount)
-        for _ in 0..<configuration.trialCount {
+        trialNanoseconds.reserveCapacity(trialCount)
+        checksums.reserveCapacity(trialCount)
+        publicationCounts.reserveCapacity(trialCount)
+        for _ in 0..<trialCount {
             let measurement = denseMeasurement(configuration: configuration)
             trialNanoseconds.append(measurement.nanoseconds)
             checksums.append(measurement.checksum)
@@ -553,7 +597,7 @@ public final class GestureBenchmarkInstrumentationAdapter: ModelInstrumentationA
         let checksum = checksums.first ?? "dense1000-empty"
         let stable = !trialNanoseconds.isEmpty
             && checksums.allSatisfy { $0 == checksum }
-            && publicationCounts.count == configuration.trialCount
+            && publicationCounts.count == trialCount
             && publicationCounts.allSatisfy { $0 == 2 }
         return ModelMeasurement(
             status: stable && finalStateValid ? .measured : .failed,
@@ -853,7 +897,21 @@ public final class OffscreenCanvasRendererAdapter: RendererInstrumentationAdapte
     }
 
     public func measureRenderer(configuration: PerformanceConfiguration) -> FrameMeasurement {
-        guard configuration.trialCount > 0 else {
+        measureRenderer(configuration: configuration, sampleCount: configuration.trialCount)
+    }
+
+    /// Measures one renderer scalar after five local warmups. This seam is
+    /// used by the paired trial runner and intentionally does not call the
+    /// thirty-sample production method.
+    internal func measureSingleTrial(configuration: PerformanceConfiguration) -> FrameMeasurement {
+        measureRenderer(configuration: configuration, sampleCount: 1)
+    }
+
+    private func measureRenderer(
+        configuration: PerformanceConfiguration,
+        sampleCount: Int
+    ) -> FrameMeasurement {
+        guard sampleCount > 0 else {
             return Self.unmeasured("offscreen-canvasview-invalid-trial-count")
         }
         _ = NSApplication.shared
@@ -929,12 +987,21 @@ public final class OffscreenCanvasRendererAdapter: RendererInstrumentationAdapte
             renderIntoBitmap()
         }
         var samples: [Double] = []
-        samples.reserveCapacity(configuration.trialCount)
-        for _ in 0..<configuration.trialCount {
-            prepareBitmap()
-            let start = CACurrentMediaTime()
-            renderIntoBitmap()
-            samples.append((CACurrentMediaTime() - start) * 1_000)
+        samples.reserveCapacity(sampleCount)
+        if sampleCount == configuration.trialCount {
+            for _ in 0..<configuration.trialCount {
+                prepareBitmap()
+                let start = CACurrentMediaTime()
+                renderIntoBitmap()
+                samples.append((CACurrentMediaTime() - start) * 1_000)
+            }
+        } else {
+            for _ in 0..<sampleCount {
+                prepareBitmap()
+                let start = CACurrentMediaTime()
+                renderIntoBitmap()
+                samples.append((CACurrentMediaTime() - start) * 1_000)
+            }
         }
         guard samples.allSatisfy({ $0.isFinite && $0 > 0 }) else {
             return Self.failed("offscreen-canvasview-invalid-sample")

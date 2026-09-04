@@ -146,6 +146,7 @@ final class LifecycleHarnessTests: XCTestCase {
     }
 
     func testIntegratedControllerOwnsRealGuideAcrossStartStopAndExplicitReopen() throws {
+        try GUIHostTestSupport.requireGUIHost()
         let fixture = try IntegratedRealGuideLifecycleFixture()
         fixture.start()
         defer { fixture.cleanup() }

@@ -215,7 +215,7 @@ public enum PerformanceComparisonHarness {
 
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         let outputURL = outputDirectory.appendingPathComponent("paired-comparison.json")
-        let comparisonData = try JSONEncoder().encode(report)
+        let comparisonData = try PerformanceCanonicalJSON.data(for: report)
         try comparisonData.write(to: outputURL, options: .atomic)
         return report
     }

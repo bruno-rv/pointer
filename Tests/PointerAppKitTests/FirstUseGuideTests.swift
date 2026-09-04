@@ -4,6 +4,45 @@ import XCTest
 
 @MainActor
 final class FirstUseGuideTests: XCTestCase {
+    func testRealKeyWindowSkipPredicateSkipsOnlyProhibitedHosts() {
+        XCTAssertNotNil(
+            GUIHostTestSupport.skipReason(
+                for: .prohibited,
+                isActive: false
+            )
+        )
+        XCTAssertNotNil(
+            GUIHostTestSupport.skipReason(
+                for: .prohibited,
+                isActive: true
+            )
+        )
+        XCTAssertNil(
+            GUIHostTestSupport.skipReason(
+                for: .regular,
+                isActive: false
+            )
+        )
+        XCTAssertNil(
+            GUIHostTestSupport.skipReason(
+                for: .accessory,
+                isActive: false
+            )
+        )
+        XCTAssertNil(
+            GUIHostTestSupport.skipReason(
+                for: .regular,
+                isActive: true
+            )
+        )
+        XCTAssertNil(
+            GUIHostTestSupport.skipReason(
+                for: .accessory,
+                isActive: true
+            )
+        )
+    }
+
     func testFailedOrHiddenPanelDoesNotMarkGuideSeen() {
         let fixture = FirstUseGuideTestFixture()
         fixture.panel.becomesVisibleOnShow = false
@@ -423,7 +462,44 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertEqual(viewController.accessibilityOrderLabels, focusBeforeReshow)
     }
 
+    func testRealGuidePanelMetadataAndDoneActionAreAvailableBeforeShow() throws {
+        let fixture = FirstUseGuideTestFixture()
+        let panel = FirstUseGuidePanelWindow(
+            assetCatalog: fixture.catalog,
+            appearanceProvider: fixture.appearanceProvider
+        )
+        defer { panel.close() }
+
+        let viewController = try XCTUnwrap(
+            panel.contentViewController as? FirstUseGuideViewController
+        )
+        viewController.loadViewIfNeeded()
+        let doneButton = try XCTUnwrap(viewController.doneButton)
+
+        XCTAssertTrue(panel.canBecomeKey)
+        XCTAssertFalse(panel.canBecomeMain)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
+        XCTAssertTrue(panel.isFloatingPanel)
+        XCTAssertFalse(panel.hidesOnDeactivate)
+        XCTAssertTrue(panel.becomesKeyOnlyIfNeeded)
+        XCTAssertEqual(panel.identifier?.rawValue, "pointer.first-use-guide")
+        XCTAssertFalse(panel.isReleasedWhenClosed)
+        XCTAssertTrue(doneButton.isEnabled)
+        XCTAssertEqual(doneButton.keyEquivalent, "\r")
+        XCTAssertEqual(doneButton.accessibilityLabel(), "Done")
+        XCTAssertTrue(doneButton.target === viewController)
+        XCTAssertNotNil(doneButton.action)
+
+        panel.orderFrontRegardless()
+        XCTAssertTrue(panel.isVisible)
+        doneButton.performClick(nil)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertFalse(panel.isKeyWindow)
+        XCTAssertFalse(viewController.isAppearanceObservationActive)
+    }
+
     func testRealGuidePanelTakesKeyFocusAndReturnClosesWithoutOrphan() throws {
+        try GUIHostTestSupport.requireGUIHost()
         let fixture = FirstUseGuideTestFixture()
         let panel = FirstUseGuidePanelWindow(
             assetCatalog: fixture.catalog,
@@ -455,9 +531,31 @@ final class FirstUseGuideTests: XCTestCase {
         XCTAssertTrue(panel.initialFirstResponder === doneButton)
         XCTAssertEqual(doneButton.keyEquivalent, "\r")
 
-        doneButton.performClick(nil)
+        let returnEvent = try XCTUnwrap(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: panel.windowNumber,
+                context: nil,
+                characters: "\r",
+                charactersIgnoringModifiers: "\r",
+                isARepeat: false,
+                keyCode: 36
+            )
+        )
+        NSApp.sendEvent(returnEvent)
         XCTAssertFalse(panel.isVisible)
         XCTAssertFalse(panel.isKeyWindow)
+        XCTAssertFalse(viewController.isAppearanceObservationActive)
+        XCTAssertEqual(
+            NSApp.windows.filter {
+                $0.identifier?.rawValue == "pointer.first-use-guide" && $0.isVisible
+            }.count,
+            0,
+            "Done should not leave another visible guide panel orphaned"
+        )
         panel.close()
     }
 

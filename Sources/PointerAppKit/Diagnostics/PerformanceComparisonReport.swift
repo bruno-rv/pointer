@@ -129,12 +129,17 @@ internal extension PerformancePairExecutionArtifact {
         try Self.require(ordered.allSatisfy { $0.baselineSampleIndex >= 0 && $0.baselineSampleIndex < pairCount && $0.candidateSampleIndex >= 0 && $0.candidateSampleIndex < pairCount }, "pair execution sample index is out of range")
 
         let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let legacyFormatter = ISO8601DateFormatter()
+        func parseUTC(_ value: String) -> Date? {
+            formatter.date(from: value) ?? legacyFormatter.date(from: value)
+        }
         var previousPairEnd: Date?
         for record in ordered {
-            guard let baselineDate = formatter.date(from: record.baselineStartedAtUTC),
-                  let candidateDate = formatter.date(from: record.candidateStartedAtUTC),
-                  let baselineEndDate = formatter.date(from: record.baselineEndedAtUTC),
-                  let candidateEndDate = formatter.date(from: record.candidateEndedAtUTC),
+            guard let baselineDate = parseUTC(record.baselineStartedAtUTC),
+                  let candidateDate = parseUTC(record.candidateStartedAtUTC),
+                  let baselineEndDate = parseUTC(record.baselineEndedAtUTC),
+                  let candidateEndDate = parseUTC(record.candidateEndedAtUTC),
                   record.baselineStartedAtUTC.hasSuffix("Z"),
                   record.candidateStartedAtUTC.hasSuffix("Z"),
                   record.baselineEndedAtUTC.hasSuffix("Z"),
@@ -711,8 +716,10 @@ enum PerformanceComparisonReportValidator {
         try require(isHex(eligibility.baselineCommitSHA, count: 40), "baseline eligibility commit must be lowercase 40-hex")
         try require(isHex(eligibility.candidateCommitSHA, count: 40), "candidate eligibility commit must be lowercase 40-hex")
         try require(eligibility.baselineCommitSHA != eligibility.candidateCommitSHA, "eligibility commit identities must differ")
-        try require(eligibility.baselineCommitSHA == baseline.build.sourceIdentity.value, "baseline eligibility commit mismatch")
-        try require(eligibility.candidateCommitSHA == candidate.build.sourceIdentity.value, "candidate eligibility commit mismatch")
+        try require(isHex(baseline.sourceRef, count: 40), "baseline run source commit is required for eligibility")
+        try require(isHex(candidate.sourceRef, count: 40), "candidate run source commit is required for eligibility")
+        try require(eligibility.baselineCommitSHA == baseline.sourceRef, "baseline eligibility commit mismatch")
+        try require(eligibility.candidateCommitSHA == candidate.sourceRef, "candidate eligibility commit mismatch")
         try require(eligibility.foundationProvenance.foundation == foundation, "eligibility foundation mismatch")
         try require(!eligibility.foundationProvenance.path.isEmpty, "eligibility foundation path is required")
         try require(eligibility.foundationProvenance.path == baseline.foundationProvenancePath, "baseline eligibility foundation path mismatch")
